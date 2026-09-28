@@ -31,6 +31,24 @@ repository root. This is the preferred execution path because it makes the
   --queries /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet
 ```
 
+Both path arguments are optional. The CLI resolves data in this order:
+
+1. an explicitly supplied path;
+2. `data/<filename>` for local execution;
+3. the known `wedev-vlsp` Kaggle path;
+4. a recursive lookup under `/kaggle/input`, accepted only if exactly one file
+   with the expected name exists.
+
+Therefore, after attaching the Kaggle dataset, this shorter command is valid:
+
+```bash
+!drill-validate
+```
+
+The command prints the resolved corpus and query paths before reading them. If
+Kaggle mounts more than one matching dataset version, pass explicit paths to
+avoid an ambiguous or scientifically incorrect selection.
+
 The repository scripts remain supported without installation:
 
 ```bash

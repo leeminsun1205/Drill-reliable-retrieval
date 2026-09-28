@@ -35,6 +35,10 @@ drill-run --config configs/bm25.yaml
 The scripts in `scripts/` provide equivalent commands for environments where an
 editable install is not desired.
 
+`drill-validate` automatically checks the local `data/` paths and the configured
+Kaggle input location. Explicit `--corpus` and `--queries` paths remain available
+when multiple dataset versions are attached.
+
 ## Research documentation
 
 - [Research plan](docs/research_plan.md)
