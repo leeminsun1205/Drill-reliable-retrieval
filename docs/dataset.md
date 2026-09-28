@@ -43,21 +43,21 @@ The current Kaggle training path is:
 ```
 
 ```text
-id: int
+qid: int
 question: str
 relevant_laws: list[int]
 ```
 
 Despite its name, `relevant_laws` contains ground-truth article IDs (`aid`). The
-raw training-query identifier is named `id`; the official submission schema
-renames this identifier to `qid`.
+inspected training Parquet file uses `qid`, matching the official paper and the
+submission schema.
 
-The task website example supplied to this project uses `id`, while the official
-shared-task paper illustrates the training field as `qid`. Treat the actual
-Parquet schema as authoritative. The loader must accept either spelling,
-normalize it to `qid` internally, reject rows containing both with conflicting
-values, and test the conversion explicitly. A normal retrieval result maps the
-query identifier to a ranked list of `aid` values.
+The task website example supplied to this project uses `id`, while both the
+official shared-task paper and the inspected file use `qid`. Treat the actual
+Parquet schema as authoritative. The loader accepts either spelling for
+portability, normalizes it to `qid` internally, and rejects rows containing both
+with conflicting values. A normal retrieval result maps the query identifier to
+a ranked list of `aid` values.
 
 An article is relevant when the legal question can be answered Yes/No and that
 answer is entailed by the meaning of the article. Relevance is therefore based
@@ -100,3 +100,23 @@ Article lengths are highly skewed: median 835 characters, 99th percentile 8,835,
 and maximum 255,092. Dense encoders and cross-encoders must therefore record and
 test truncation or chunking behavior rather than relying on implicit tokenizer
 defaults.
+
+## Official split and evidence-set statistics
+
+The organizer reports 2,190 labeled training queries, 312 public-test queries,
+and 627 private-test queries. The average number of relevant articles is 1.34,
+1.31, and 1.32 respectively; the corresponding maxima are 9, 4, and 5. These
+published values confirm that DRiLL is a variable-size evidence-set retrieval
+task rather than a top-1 classification task.
+
+The organizer also groups queries into five legal domains: Economics and
+Finance (EF), State Management and Law (SL), Society, Culture and Education
+(SCE), Infrastructure and Development (ID), and Science and Technology (ST).
+Reported totals are 1,048, 1,052, 379, 431, and 219 queries respectively. The
+current Parquet files do not include a domain column or an official query-to-
+domain mapping. Domain-wise evaluation must therefore remain disabled until a
+reproducible mapping is obtained; inferred domain labels must not be presented
+as organizer annotations.
+
+Source: Vuong et al., DRiLL Shared Task 2025 overview and its extended journal
+version, linked from `docs/competition_review.md`.

@@ -99,7 +99,8 @@ The Codabench submission payload is a JSON array named `results.json`:
 ]
 ```
 
-Here `qid` corresponds to the raw query field `id`, and `relevant_laws` contains
+Here `qid` corresponds to the query identifier (the inspected training Parquet
+uses `qid`; the task-page example used `id`), and `relevant_laws` contains
 predicted article IDs (`aid`). Scores and other internal fields must not appear
 in the official payload unless the organizer changes the schema.
 
@@ -159,6 +160,16 @@ Use these destinations:
 Always distinguish values measured by this repository from values published by
 the organizer or other teams.
 
+### Organizer baseline configuration status
+
+The organizer's extended paper establishes `output_k=2` for the complete
+two-stage baseline and reports top-1/top-2/top-5 ablations. It does not reveal
+the BM25 candidate-pool depth used before reranking. Accordingly,
+`configs/organizer_two_stage.yaml` records final `output_k: 2` but remains a
+non-runnable specification until the missing model and training choices are made
+explicit. `configs/bm25.yaml` is this repository's reproducible BM25 baseline,
+not a claim of exact organizer-code reproduction.
+
 ## Recorded baseline runs
 
 ### BM25, seed-42 development split
@@ -173,7 +184,19 @@ Measured locally on 2026-09-28 using `configs/bm25.yaml`:
 - Precision: `0.1803652968`;
 - Recall: `0.4525929550`;
 - F2: `0.3476503328`;
-- local CPU runtime: approximately 66 seconds.
+- candidate Recall@1: `0.2673135464`;
+- candidate Recall@5: `0.5267938682`;
+- candidate Recall@10: `0.6378723636`;
+- candidate Recall@20: `0.7206349206`;
+- candidate Recall@50: `0.8040661013`;
+- candidate Recall@100: `0.8441563383`;
+- latest local CPU runtime: approximately 68 seconds.
+
+Candidate Recall@k is computed from the complete BM25 ranking up to 100, while
+official Precision, Recall, and F2 use only the final top three predictions.
+The values show that BM25 preserves substantially more gold evidence in its
+candidate pool than survives final fixed-k selection; future reranker comparisons
+must reuse or explicitly change this candidate budget.
 
 `output_k=3` was selected on this development split after comparing fixed cutoffs,
 so this is a development result rather than an unbiased final-test estimate. It

@@ -1,0 +1,262 @@
+# VLSP 2025 DRiLL competition review
+
+This document records publicly verifiable competition results, representative
+methods, and released code. It distinguishes organizer facts from participant
+self-reports and from this repository's local experiments.
+
+## Official evaluation split
+
+The organizer reports one shared legal corpus of 59,636 articles and three query
+subsets:
+
+| Subset | Queries | Labels available to participants | Intended use |
+|---|---:|---|---|
+| Train | 2,190 | Yes | Training and local development |
+| Public test | 312 | Hidden | Public leaderboard during development |
+| Private test | 627 | Hidden | Final ranking |
+
+Sources: the organizer's [VLSP 2025 paper](https://aclanthology.org/2025.vlsp-1.16/)
+and [extended journal article](https://doi.org/10.25073/2588-1086/vnucsce.6463).
+
+The competition did not publish an official labeled development subset inside
+the 2,190 training queries. Teams therefore created their own validation split
+or tuned indirectly on the public leaderboard. The official private set must not
+be treated as a development set.
+
+This repository currently makes a deterministic random 80/20 split of the
+official training set: 1,752 train and 438 development queries with seed 42. The
+development IDs are persisted per run. This split is a local research protocol,
+not an organizer split, and is not directly comparable with public/private
+leaderboard scores. It is currently random rather than domain- or label-count-
+stratified; future changes must preserve the existing split as a named baseline
+for comparability.
+
+The organizer reports a variable number of relevant articles per query. Train,
+public test, and private test average 1.34, 1.31, and 1.32 relevant articles,
+with maxima of 9, 4, and 5. This makes evidence completeness and final-set
+selection central to the task: a correct top-1 article may still be incomplete.
+
+The five reported domains are Economics and Finance (EF), State Management and
+Law (SL), Society, Culture and Education (SCE), Infrastructure and Development
+(ID), and Science and Technology (ST), with 1,048, 1,052, 379, 431, and 219
+queries across all splits. EF and SL therefore dominate the benchmark. The
+extended overview reports SCE as the weakest average top-10-team domain and
+identifies a domain-adaptation gap. The released local Parquet snapshot has no
+domain field, so this repository cannot yet reproduce domain-wise evaluation.
+
+## Private-test results
+
+The final private leaderboard reported by the organizer is:
+
+| Rank | Team | Precision | Recall | F2 |
+|---:|---|---:|---:|---:|
+| 1 | EDM | 0.6773 | 0.7394 | 0.7261 |
+| 2 | FPT IS | 0.6222 | 0.7181 | 0.6966 |
+| 3 | CUDO | 0.5097 | 0.7653 | 0.6955 |
+| 4 | Berry | 0.5509 | 0.7097 | 0.6710 |
+| 5 | IUH.TD | 0.4153 | 0.7605 | 0.6521 |
+| 6 | brain_rot | 0.4714 | 0.7172 | 0.6495 |
+| 7 | AImba | 0.4086 | 0.7498 | 0.6425 |
+| 8 | BK_DRiLL | 0.4329 | 0.7077 | 0.6280 |
+| 9 | Engineers | 0.3147 | 0.7478 | 0.5864 |
+| 10 | villageai | 0.3799 | 0.6332 | 0.5587 |
+| 11 | NaiveNotNice | 0.2769 | 0.7472 | 0.5578 |
+| 12 | Organizer two-stage baseline | 0.3740 | 0.6253 | 0.5512 |
+| 19 | Organizer BM25 baseline | 0.2265 | 0.3830 | 0.3365 |
+
+Source: [extended organizer paper, Table 7](https://doi.org/10.25073/2588-1086/vnucsce.6463).
+These are published competition values, not measurements from this repository.
+
+The public leaderboard had a different ordering: FPT IS, CUDO, and brain_rot
+were the top three, while eventual winner EDM ranked seventh. This change is a
+warning against selecting a method primarily from public-leaderboard feedback.
+
+## Representative approaches
+
+### EDM — rank 1
+
+EDM used a multi-stage learning-to-rank system. Candidate retrieval combined
+BM25, dense retrieval, HyDE, automatically generated titles, and explicit
+inter-article reference signals. It progressively reduced roughly 500 candidates
+to 100 and then 10. LambdaMART integrated retrieval, reranker, similarity, and
+statistical features; LLM pairwise and collective chain-of-thought scores were
+then fused with previous signals by pointwise LightGBM and a validation-selected
+threshold. The system is especially relevant to this project's structure and
+cross-reference research question.
+
+Source: [EDM working-notes paper](https://aclanthology.org/2025.vlsp-1.19/).
+No public GitHub repository was found in the paper or targeted searches as of
+2026-09-28.
+
+### FPT IS — rank 2
+
+FPT IS followed a data-centric pipeline: Qwen2.5-7B-Instruct generated missing
+titles and summaries; legal texts were hierarchically chunked, with 2,048-token
+chunks and 1,024-token overlap for very long leaves; BGE-M3 embeddings were
+stored in Milvus; the top 50 chunks were reranked with BGE-reranker-v2-m3 and
+filtered at 0.7; deduplication, score clustering, and Qwen2.5-72B entailment
+judgment formed the final stages.
+
+Source: [data augmentation and hierarchical chunking paper](https://aclanthology.org/2025.vlsp-1.18/).
+No confirmed public GitHub repository was found.
+
+### CUDO — rank 3
+
+CUDO enriched corpus articles with document hierarchy/titles, then used hybrid
+BM25 plus BGE-M3 retrieval and BGE-reranker-v2-m3. Their documented setup used
+BM25 parameters `k1=0.5`, `b=0.5`, a hybrid weight of 0.6, top-100 candidates,
+top-10 reranked candidates, and a score threshold above 0.99 with top-2 fallback.
+The reranker was fine-tuned for two epochs using hard negatives mined after
+skipping the first five high-scoring non-gold candidates.
+
+Source: [simple two-stage framework paper](https://aclanthology.org/2025.vlsp-1.20/).
+No confirmed public GitHub repository was found.
+
+### IUH.TD / ViDRILL — rank 5
+
+ViDRILL combined BM25 with multilingual dense retrievers including E5-Instruct
+and GTE, followed by BGE reranking. The work explored dual-level chunking and
+hard-negative training. Its authors state that the official competition pipeline
+did not use the repository's later LLM query-rewriting/reasoning extensions.
+
+Sources: [ViDRILL paper](https://aclanthology.org/2025.vlsp-1.17/) and
+[public ViDRILL repository](https://github.com/xndien2004/ViDrill).
+
+### BK_DRiLL — rank 8
+
+The organizer summary describes an initial GTE-multilingual-E2 retriever,
+ViRanker reranking to top 10, then multi-round voting/debate using Qwen2.5-14B
+and Qwen2.5-32B. A public repository by the rank-eight participant contains the
+released implementation and checkpoint links.
+
+Source: [rank-eight public repository](https://github.com/NgJaBach/VLSP-2025-Challenge-on-DRiLL-The-challenge-of-Deep-Retrieval-in-the-expansive-Legal-Landscape).
+
+### Engineers — rank 9
+
+Engineers used VnCoreNLP plus Pyserini BM25, fine-tuned multilingual-e5-large,
+and normalized linear hybrid fusion (`0.3 * sparse + 0.7 * dense`). Both sparse
+and dense retrieval returned top 100, followed by a fine-tuned
+BGE-reranker-v2-m3 trained with five hard negatives. Final selection used a 0.85
+reranker threshold and hybrid fallback.
+
+Source: [Engineers public repository](https://github.com/duongkstn/flow-vlsp-drill-legal-retrieval).
+
+### Public top-11 pipeline
+
+One public repository self-reports a top-11 private finish but does not clearly
+state the official team label. It uses chunking, BM25, BGE-M3 dense retrieval,
+rank/score fusion, BGE-reranker-v2-m3 over the top 100, and optional
+Qwen2.5-32B KEEP/DROP filtering.
+
+Source: [Vietnamese Legal Document Retrieval repository](https://github.com/chisngooo/Vietnamese-Legal-Document-Retrieval).
+
+## Confirmed public code
+
+The following repositories contain code and explicitly identify themselves as
+VLSP 2025 DRiLL systems:
+
+1. [xndien2004/ViDrill](https://github.com/xndien2004/ViDrill) — ViDRILL/IUH.TD.
+2. [NgJaBach/VLSP-2025-Challenge-on-DRiLL...](https://github.com/NgJaBach/VLSP-2025-Challenge-on-DRiLL-The-challenge-of-Deep-Retrieval-in-the-expansive-Legal-Landscape) — rank-eight participant.
+3. [duongkstn/flow-vlsp-drill-legal-retrieval](https://github.com/duongkstn/flow-vlsp-drill-legal-retrieval) — Engineers.
+4. [chisngooo/Vietnamese-Legal-Document-Retrieval](https://github.com/chisngooo/Vietnamese-Legal-Document-Retrieval) — self-reported top-11 system; official team label not confirmed from the README.
+
+No public organizer baseline repository was found. Public availability does not
+by itself guarantee that every leaderboard-producing checkpoint, generated
+artifact, or exact environment is included; each repository must be audited
+before using it as a reproducibility reference.
+
+## Main lessons for this project
+
+1. Candidate recall matters: successful systems generally retrieve 50–500
+   candidates before expensive ranking.
+2. Final selection matters as much as ranking: fixed top-k often lost to tuned
+   thresholds with a fallback policy.
+3. Structure helps, but evidence must be isolated: titles, hierarchy, and
+   cross-references appeared in strong systems, supporting controlled ablations
+   rather than assuming gains.
+4. Hard negatives consistently improved rerankers.
+5. Very long articles require an explicit chunking/truncation policy.
+6. Public/private rank shifts make private-test tuning scientifically unsafe.
+7. Several top solutions require large LLMs or external reconstruction steps;
+   they are useful upper references but are not appropriate first baselines for
+   a reproducible T4x2 research pipeline.
+8. Hybrid retrieval and reranking are competition-standard strong baselines,
+   not the proposed scientific contribution. The contribution must be isolated
+   in structure/reference-aware ablations over an unchanged strong baseline.
+
+## Competition-comparability boundary
+
+The official competition restricted external data, required eligible pretrained
+models to have been publicly available before the competition cutoff, prohibited
+closed-source models, and required reproducibility. Experiments may deliberately
+relax these rules for post-competition research, but their artifacts must record
+that choice and must not be described as directly competition-comparable.
+
+This distinction will later be represented explicitly in experiment metadata;
+for now it is a documented requirement rather than an implemented config field.
+
+## Method decomposition and reusable design patterns
+
+Participant systems can be understood as five separable decisions:
+
+1. **Representation:** raw article, title-enriched article, hierarchy-preserving
+   chunk, summary, or reference-aware representation.
+2. **Candidate generation:** BM25, dense retrieval, hybrid fusion, HyDE, or
+   explicit reference expansion. This stage should optimize candidate recall.
+3. **Candidate discrimination:** cross-encoder, learning-to-rank, or LLM judge.
+   This stage should improve precision without losing relevant candidates.
+4. **Final-set selection:** fixed top-k, calibrated threshold, fallback rule, or
+   learned pointwise decision. DRiLL evaluates a set, so this is part of the
+   method rather than output formatting.
+5. **Supervision:** gold positives, random/in-batch negatives, BM25/dense hard
+   negatives, and near-positive filtering.
+
+The organizer BM25 baseline exercises only candidate generation and fixed-k
+selection. The organizer two-stage baseline adds hard-negative cross-encoder
+training. Engineers and CUDO add hybrid candidates and threshold selection.
+FPT IS changes representation through hierarchy-aware chunking and adds an LLM
+judge. EDM modifies all five decisions and learns the final selection boundary.
+
+### Why candidate recall and final F2 differ
+
+A deep candidate list can have excellent Recall@100 or Recall@500 but extremely
+low precision if submitted directly. Candidate depth is therefore an internal
+budget, not the number of final predictions. Rerankers cannot recover a gold
+article absent from the candidate pool, while a high-recall pool alone performs
+poorly on final macro-F2. Record both candidate recall and final set metrics.
+
+### Why hard negatives matter
+
+Random negatives are usually obviously unrelated and teach little. Hard
+negatives share legal vocabulary or topic with the query but are not annotated
+as relevant, forcing the model to learn answer-bearing entailment rather than
+topic similarity. However, the highest-scoring unannotated articles may be
+unlabeled positives. CUDO's decision to skip the first five non-gold hits before
+sampling negatives is one practical defense against false-negative supervision.
+
+### Why thresholding often beats fixed top-k
+
+DRiLL queries have variable gold-set sizes. Fixed top-k always returns the same
+number, creating false positives for single-article questions and insufficient
+coverage for multi-article questions. A calibrated score threshold adapts output
+size, but score scales can drift across models and domains. A robust design
+therefore combines a dev-selected threshold with a deterministic fallback such
+as top-1 or top-2 and reports the output-size distribution.
+
+### Why title and hierarchy enrichment help
+
+Many supplied `content_Article` values omit the provision title and surrounding
+chapter context. Similar clause text can therefore be hard to distinguish.
+Prepending deterministically extracted titles or hierarchy paths gives both
+lexical and dense retrievers discriminative context. Generated titles may add
+hallucinations, so deterministic extraction and generated enrichment must be
+evaluated as separate treatments.
+
+### Why cross-reference features are promising
+
+A query may require a provision that defines a concept or exception referenced
+by the initially matched article. Reference-aware expansion can improve recall,
+while reference-edge features can help a ranker select supporting provisions.
+Unbounded expansion introduces many false positives. The controlled experiment
+should keep the same hybrid candidates and reranker, changing only deterministic
+reference extraction/expansion with an explicit edge budget.

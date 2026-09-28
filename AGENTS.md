@@ -32,6 +32,8 @@ Read the relevant document before changing methodology:
 - `docs/dataset.md`: schemas, IDs, and preprocessing.
 - `docs/evaluation.md`: splits, metrics, and leakage prevention.
 - `docs/experiments.md`: pipeline boundaries, configuration, and artifacts.
+- `docs/competition_review.md`: official splits, leaderboard results,
+  representative participant methods, and public implementations.
 
 Do not silently contradict them. Report conflicts before changing the protocol.
 

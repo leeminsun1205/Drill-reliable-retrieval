@@ -46,6 +46,7 @@ when multiple dataset versions are attached.
 - [Evaluation](docs/evaluation.md)
 - [Experiments and artifacts](docs/experiments.md)
 - [Local and Kaggle execution](docs/execution.md)
+- [Competition methods, results, and public code](docs/competition_review.md)
 
 Raw data, model checkpoints, embeddings, and large generated outputs must remain
 outside Git.

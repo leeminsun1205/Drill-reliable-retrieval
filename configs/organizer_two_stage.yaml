@@ -8,19 +8,25 @@ data:
   dev_fraction: 0.2
 
 retrieval:
-  top_k: 100
-  output_k: 5
+  # Unpublished BM25 candidate depth supplied to the cross-encoder.
+  top_k: null
+  # The organizer's extended paper reports final top-2 as the full baseline.
+  # The BM25 candidate depth passed to the reranker remains unpublished.
+  output_k: 2
   bm25:
     k1: 1.2
     b: 0.75
 
 reranking:
-  # The organizer paper does not specify these values. Fill them explicitly
+  # The organizer papers do not specify these values. Fill them explicitly
   # before this config becomes runnable; never infer them silently.
   model: null
   candidate_pool_size: null
-  threshold: null
   negative_to_positive_ratio: 5
+
+evaluation:
+  # Enable once the unpublished candidate depth is chosen explicitly.
+  recall_at_k: []
 
 runtime:
   accelerator: auto

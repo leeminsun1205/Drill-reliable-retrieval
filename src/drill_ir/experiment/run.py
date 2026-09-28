@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 
 from drill_ir.data import iter_articles, load_queries, validate_dataset
-from drill_ir.evaluation import evaluate_predictions
+from drill_ir.evaluation import evaluate_predictions, macro_recall_at_k
 from drill_ir.retrieval import BM25Retriever
 
 
@@ -63,7 +63,8 @@ def run_experiment(config: dict[str, Any]) -> Path:
         retriever = BM25Retriever(k1=float(params.get("k1", 1.2)), b=float(params.get("b", 0.75)))
     elif method == "organizer_two_stage":
         raise NotImplementedError(
-            "The organizer paper does not identify the cross-encoder, candidate depth, or threshold. "
+            "The organizer papers identify final output_k=2 but not the cross-encoder, "
+            "BM25 candidate depth, training hyperparameters, or any score threshold. "
             "Set these explicitly and implement the reranker before running this config."
         )
     else:  # protected by strict config validation
@@ -76,15 +77,28 @@ def run_experiment(config: dict[str, Any]) -> Path:
         raise ValueError("retrieval.output_k cannot exceed retrieval.top_k")
     ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
     predictions = {result.qid: result.aids[:output_k] for result in ranked}
+    candidate_rankings = {result.qid: result.aids for result in ranked}
     gold = {query.qid: query.relevant_aids for query in dev_queries}
     metrics = evaluate_predictions(gold, predictions)
+    recall_cutoffs = list(config.get("evaluation", {}).get("recall_at_k", []))
+    if any(cutoff > retrieve_k for cutoff in recall_cutoffs):
+        raise ValueError("evaluation.recall_at_k cutoffs cannot exceed retrieval.top_k")
+    recall_at_k = (
+        macro_recall_at_k(gold, candidate_rankings, recall_cutoffs)
+        if recall_cutoffs
+        else {}
+    )
 
     run_dir = Path(config["output"]["root_dir"]) / str(config["experiment_name"])
     run_dir.mkdir(parents=True, exist_ok=True)
     with (run_dir / "config.yaml").open("w", encoding="utf-8") as stream:
         yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
     with (run_dir / "metrics.json").open("w", encoding="utf-8") as stream:
-        json.dump(metrics.to_dict(), stream, ensure_ascii=False, indent=2)
+        metrics_payload = {
+            **metrics.to_dict(),
+            "recall_at_k": {str(k): value for k, value in recall_at_k.items()},
+        }
+        json.dump(metrics_payload, stream, ensure_ascii=False, indent=2)
     with (run_dir / "predictions.jsonl").open("w", encoding="utf-8") as stream:
         for result in ranked:
             record = {

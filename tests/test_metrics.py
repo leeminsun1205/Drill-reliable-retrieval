@@ -1,6 +1,6 @@
 import unittest
 
-from drill_ir.evaluation import evaluate_predictions
+from drill_ir.evaluation import evaluate_predictions, macro_recall_at_k
 
 
 class DrillMetricsTest(unittest.TestCase):
@@ -22,6 +22,28 @@ class DrillMetricsTest(unittest.TestCase):
     def test_unknown_prediction_qid_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             evaluate_predictions(gold={1: [2]}, predictions={1: [2], 9: [3]})
+
+    def test_macro_recall_at_k(self) -> None:
+        recalls = macro_recall_at_k(
+            gold={1: [2, 5], 2: [7]},
+            rankings={1: [2, 3, 5], 2: [8, 7, 9]},
+            cutoffs=[1, 2, 3],
+        )
+        self.assertAlmostEqual(recalls[1], 1 / 4)
+        self.assertAlmostEqual(recalls[2], 3 / 4)
+        self.assertEqual(recalls[3], 1.0)
+
+    def test_macro_recall_at_k_missing_ranking_is_zero(self) -> None:
+        recalls = macro_recall_at_k(
+            gold={1: [2], 2: [7]}, rankings={1: [2]}, cutoffs=[1]
+        )
+        self.assertEqual(recalls[1], 0.5)
+
+    def test_macro_recall_at_k_rejects_invalid_cutoff(self) -> None:
+        with self.assertRaises(ValueError):
+            macro_recall_at_k(gold={1: [2]}, rankings={1: [2]}, cutoffs=[0])
+        with self.assertRaises(ValueError):
+            macro_recall_at_k(gold={1: [2]}, rankings={1: [2]}, cutoffs=[1.5])
 
 
 if __name__ == "__main__":

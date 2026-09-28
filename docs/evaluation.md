@@ -44,6 +44,19 @@ Diagnostic ranking metrics may include Recall@k, MRR@k, and nDCG@k. Their cutoff
 and aggregation conventions must be explicit. Do not silently change metric
 definitions between experiments.
 
+The implemented candidate-stage diagnostic is macro Recall@k:
+
+```text
+recall_at_k_q = |top_k(q) ∩ G_q| / |G_q|
+Recall@k      = mean_q(recall_at_k_q)
+```
+
+Cutoffs are declared in the experiment YAML and cannot exceed the retrieved
+candidate depth. Missing query rankings contribute zero. Duplicate article IDs
+within the first k positions do not increase recall. `Recall@k` measures whether
+the first-stage candidate generator preserves gold evidence; it does not replace
+official Precision, Recall, or F2 computed on the final selected set.
+
 Metric implementations must be deterministic, independently testable, and
 documented. Verify them with hand-computable cases before reporting results:
 
