@@ -21,6 +21,11 @@ drill-package-submission = "drill_ir.cli:submission_main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+dense = [
+    "sentence-transformers>=5.0",
+    "torch>=2.1",
+    "transformers>=4.41",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -13,7 +13,7 @@ import yaml
 
 from drill_ir.data import iter_articles, load_queries, validate_dataset
 from drill_ir.evaluation import evaluate_predictions, macro_recall_at_k
-from drill_ir.retrieval import BM25Retriever
+from drill_ir.retrieval import build_retriever
 
 
 def _git_info() -> dict[str, Any]:
@@ -58,17 +58,17 @@ def run_experiment(config: dict[str, Any]) -> Path:
     )
 
     method = config["method"]
-    if method == "bm25":
-        params = config["retrieval"].get("bm25", {})
-        retriever = BM25Retriever(k1=float(params.get("k1", 1.2)), b=float(params.get("b", 0.75)))
-    elif method == "organizer_two_stage":
+    if method == "organizer_two_stage":
         raise NotImplementedError(
             "The organizer papers identify final output_k=2 but not the cross-encoder, "
             "BM25 candidate depth, training hyperparameters, or any score threshold. "
             "Set these explicitly and implement the reranker before running this config."
         )
-    else:  # protected by strict config validation
-        raise ValueError(f"Unsupported method: {method}")
+    retriever = build_retriever(
+        method,
+        config["retrieval"],
+        config.get("runtime", {}),
+    )
 
     retriever.fit(articles)
     retrieve_k = int(config["retrieval"]["top_k"])
@@ -121,6 +121,9 @@ def run_experiment(config: dict[str, Any]) -> Path:
         "dataset_validation": report.to_dict(),
         "indexed_articles": len(articles),
         "dev_queries": len(dev_queries),
+        "retriever": (
+            retriever.run_metadata() if hasattr(retriever, "run_metadata") else {}
+        ),
         **_git_info(),
     }
     with (run_dir / "run_info.json").open("w", encoding="utf-8") as stream:

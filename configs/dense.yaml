@@ -1,0 +1,45 @@
+experiment_name: dense_multilingual_e5_base_seed42
+method: dense
+seed: 42
+
+data:
+  corpus_path: data/legal-corpus.parquet
+  train_path: data/train.parquet
+  dev_fraction: 0.2
+
+retrieval:
+  # Candidate depth and final output size are method-independent.
+  top_k: 100
+  output_k: 3
+  dense:
+    encoder:
+      backend: sentence_transformers
+      model_name: intfloat/multilingual-e5-base
+      # Pin to a Hugging Face commit hash for publication-grade final runs.
+      revision: null
+      query_prefix: "query: "
+      document_prefix: "passage: "
+      max_seq_length: 512
+      batch_size: 64
+      normalize_embeddings: false
+      trust_remote_code: false
+    search:
+      # Exact cosine search is the correctness baseline before FAISS/ANN.
+      backend: exact
+      metric: cosine
+      query_batch_size: 64
+    cache:
+      enabled: true
+      directory: embeddings
+
+evaluation:
+  recall_at_k: [1, 5, 10, 20, 50, 100]
+
+runtime:
+  accelerator: auto
+  # auto uses all visible GPUs; on Kaggle T4x2 this resolves to both devices.
+  devices: auto
+  mixed_precision: false
+
+output:
+  root_dir: results

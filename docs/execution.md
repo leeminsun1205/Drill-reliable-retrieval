@@ -31,6 +31,19 @@ repository root. This is the preferred execution path because it makes the
   --queries /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet
 ```
 
+Dense experiments require the optional model stack:
+
+```bash
+!python -m pip install -e '.[dense]'
+!drill-run --config configs/dense.yaml \
+  --output-root /kaggle/working/results
+```
+
+`configs/dense.yaml` uses `devices: auto`. With two visible Kaggle T4 GPUs,
+Sentence Transformers receives both `cuda:0` and `cuda:1` for parallel corpus
+and query encoding; with one GPU or CPU it falls back deterministically. Set
+`devices: 2` only when failure on fewer devices is preferred over fallback.
+
 Both path arguments are optional. The CLI resolves data in this order:
 
 1. an explicitly supplied path;
@@ -119,3 +132,9 @@ defaults embedded in loaders. A local config can point to the future local
 Corpus embeddings and model caches may be reused between runs when their
 metadata matches the dataset checksum, preprocessing version, model identifier,
 and relevant encoding configuration. Never reuse an unverified cache.
+
+The implemented dense cache keys corpus embeddings by a SHA-256 fingerprint of
+ordered `(aid, law_id, text)` values plus the document-encoding configuration.
+Query prefixes are deliberately excluded because queries are not stored in the
+corpus cache. Each run records cache hit/miss and embedding shape in
+`run_info.json`.

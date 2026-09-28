@@ -32,6 +32,13 @@ drill-validate --corpus data/legal-corpus.parquet --queries data/train.parquet
 drill-run --config configs/bm25.yaml
 ```
 
+For the optional dense-retrieval stack:
+
+```bash
+python -m pip install -e '.[dense]'
+drill-run --config configs/dense.yaml
+```
+
 The scripts in `scripts/` provide equivalent commands for environments where an
 editable install is not desired.
 

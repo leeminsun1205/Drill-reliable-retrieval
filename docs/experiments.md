@@ -20,6 +20,20 @@ Fusion must be explicit. Reciprocal Rank Fusion is suitable for rank-based
 fusion. Direct weighted fusion of BM25 scores and cosine similarities requires a
 documented normalization strategy.
 
+The dense baseline is decomposed into encoder, cache, and search components in
+`configs/dense.yaml`. It uses `intfloat/multilingual-e5-base`, explicit E5 query
+and passage prefixes, a recorded maximum sequence length, and exact cosine
+search. Exact search is the correctness reference before adding FAISS or another
+approximate backend. Corpus embeddings are cached only after validating the
+corpus fingerprint, ordered aid mapping, and document-encoder configuration.
+
+The planned first hybrid method is weighted reciprocal rank fusion (WRRF; also
+sometimes shortened to weighted RRF), not direct addition of raw BM25 and cosine
+scores. Both retrievers already emit the same `RetrievalResult` structure, so
+fusion can consume ranks while preserving each method's original scores for
+analysis. Fusion weights and the RRF rank constant must be explicit config
+values and tuned only on the development split.
+
 ## Configuration
 
 Meaningful experiments should use explicit YAML configuration. For example:
