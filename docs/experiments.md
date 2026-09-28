@@ -27,6 +27,17 @@ search. Exact search is the correctness reference before adding FAISS or another
 approximate backend. Corpus embeddings are cached only after validating the
 corpus fingerprint, ordered aid mapping, and document-encoder configuration.
 
+Model trials reuse `configs/dense.yaml` and override experiment leaves through
+CLI flags. Common dense fields have readable flags such as `--model-name`, while
+repeatable `--set PATH=VALUE` supports less common fields without creating a
+YAML file per trial. Unknown paths are rejected and the fully resolved config is
+still saved in the run artifact.
+
+The current dense baseline has no chunking stage: one embedding is created per
+article and the tokenizer truncates at `max_seq_length`. This limitation must be
+kept distinct from a later chunking treatment, which will need explicit chunk
+boundaries, overlap, chunk-to-article mapping, and score aggregation.
+
 The planned first hybrid method is weighted reciprocal rank fusion (WRRF; also
 sometimes shortened to weighted RRF), not direct addition of raw BM25 and cosine
 scores. Both retrievers already emit the same `RetrievalResult` structure, so

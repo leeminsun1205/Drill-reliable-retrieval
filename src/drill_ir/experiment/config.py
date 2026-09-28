@@ -1,5 +1,6 @@
-"""Strict loading of experiment configuration."""
+"""Strict loading and explicit overrides of experiment configuration."""
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -19,3 +20,36 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if config["method"] not in supported:
         raise ValueError(f"Unknown method={config['method']!r}; expected one of {sorted(supported)}")
     return config
+
+
+def set_config_value(config: dict[str, Any], dotted_path: str, value: Any) -> None:
+    """Set one existing config leaf; reject typos and structural replacement."""
+    parts = dotted_path.split(".")
+    if not dotted_path or any(not part for part in parts):
+        raise ValueError(f"Invalid config path: {dotted_path!r}")
+    target: dict[str, Any] = config
+    for part in parts[:-1]:
+        child = target.get(part)
+        if not isinstance(child, dict):
+            raise ValueError(f"Unknown config path: {dotted_path!r}")
+        target = child
+    leaf = parts[-1]
+    if leaf not in target:
+        raise ValueError(f"Unknown config path: {dotted_path!r}")
+    if isinstance(target[leaf], dict):
+        raise ValueError(f"Cannot replace config section with --set: {dotted_path!r}")
+    target[leaf] = value
+
+
+def apply_config_overrides(
+    config: dict[str, Any], overrides: list[str]
+) -> dict[str, Any]:
+    """Apply repeatable PATH=YAML_VALUE overrides to a copied config."""
+    resolved = deepcopy(config)
+    for override in overrides:
+        if "=" not in override:
+            raise ValueError(f"Config override must use PATH=VALUE: {override!r}")
+        path, raw_value = override.split("=", 1)
+        value = "" if raw_value == "" else yaml.safe_load(raw_value)
+        set_config_value(resolved, path, value)
+    return resolved

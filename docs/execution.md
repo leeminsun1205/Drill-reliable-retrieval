@@ -39,6 +39,28 @@ Dense experiments require the optional model stack:
   --output-root /kaggle/working/results
 ```
 
+Use CLI flags for model trials instead of duplicating configuration files. For
+example, BGE-M3 on T4x2 can reuse the dense base config while clearing the E5
+prefixes:
+
+```bash
+!python scripts/run_experiment.py \
+  --config configs/dense.yaml \
+  --experiment-name dense_bge_m3_seed42 \
+  --model-name BAAI/bge-m3 \
+  --query-prefix "" \
+  --document-prefix "" \
+  --max-seq-length 1024 \
+  --encode-batch-size 4 \
+  --devices 2 \
+  --output-root /kaggle/working/results
+```
+
+Less common leaves can be overridden with repeatable typed flags, for example
+`--set retrieval.dense.search.query_batch_size=32`. Explicit convenience flags
+take precedence over `--set`, and the final resolved configuration is written to
+the result directory.
+
 `configs/dense.yaml` uses `devices: auto`. With two visible Kaggle T4 GPUs,
 Sentence Transformers receives both `cuda:0` and `cuda:1` for parallel corpus
 and query encoding; with one GPU or CPU it falls back deterministically. Set
