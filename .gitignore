@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments and local configuration
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+
+# Research data and large artifacts
+data/
+datasets/
+checkpoints/
+artifacts/
+outputs/
+embeddings/
+
+# Results are local by default. Commit selected small artifacts explicitly.
+results/*
+!results/.gitkeep
+
+# Notebook state
+.ipynb_checkpoints/

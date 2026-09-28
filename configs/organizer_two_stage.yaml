@@ -1,0 +1,31 @@
+experiment_name: organizer_two_stage_specification
+method: organizer_two_stage
+seed: 42
+
+data:
+  corpus_path: datasets/legal-corpus.parquet
+  train_path: datasets/train.parquet
+  dev_fraction: 0.2
+
+retrieval:
+  top_k: 100
+  output_k: 5
+  bm25:
+    k1: 1.2
+    b: 0.75
+
+reranking:
+  # The organizer paper does not specify these values. Fill them explicitly
+  # before this config becomes runnable; never infer them silently.
+  model: null
+  candidate_pool_size: null
+  threshold: null
+  negative_to_positive_ratio: 5
+
+runtime:
+  accelerator: auto
+  devices: auto
+  mixed_precision: false
+
+output:
+  root_dir: results

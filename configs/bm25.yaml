@@ -1,0 +1,19 @@
+experiment_name: bm25_seed42_k3
+method: bm25
+seed: 42
+
+data:
+  corpus_path: datasets/legal-corpus.parquet
+  train_path: datasets/train.parquet
+  dev_fraction: 0.2
+
+retrieval:
+  top_k: 100
+  # Selected on the persisted seed-42 dev split from a k sweep, not private test.
+  output_k: 3
+  bm25:
+    k1: 1.2
+    b: 0.75
+
+output:
+  root_dir: results
