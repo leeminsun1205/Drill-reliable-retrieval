@@ -3,8 +3,8 @@ method: bm25
 seed: 42
 
 data:
-  corpus_path: datasets/legal-corpus.parquet
-  train_path: datasets/train.parquet
+  corpus_path: data/legal-corpus.parquet
+  train_path: data/train.parquet
   dev_fraction: 0.2
 
 retrieval:

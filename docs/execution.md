@@ -69,7 +69,7 @@ The current Kaggle dataset locations are:
 
 Store these values in a Kaggle-specific data config or CLI arguments, not as
 defaults embedded in loaders. A local config can point to the future local
-`datasets/` directory while invoking the same experiment command.
+`data/` directory while invoking the same experiment command.
 
 Corpus embeddings and model caches may be reused between runs when their
 metadata matches the dataset checksum, preprocessing version, model identifier,

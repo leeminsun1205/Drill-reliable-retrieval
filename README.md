@@ -10,6 +10,7 @@ baselines before evaluating structure-aware and cross-reference-aware retrieval.
 
 ```text
 configs/             Experiment configurations
+data/                Local datasets (ignored by Git)
 docs/                Research protocol and data/evaluation documentation
 notebooks/           Exploration, visualization, and error analysis
 scripts/             Thin command-line entry points

@@ -35,6 +35,12 @@ Read the relevant document before changing methodology:
 
 Do not silently contradict them. Report conflicts before changing the protocol.
 
+When work produces an important decision, verified dataset fact, metric,
+experimental result, limitation, or reproducibility detail, update the relevant
+Markdown source of truth in the same task. Do not leave important knowledge only
+in chat, terminal output, or an ignored result artifact. Label measured,
+published, and illustrative values clearly.
+
 ## Critical data invariants
 
 - Corpus and query datasets are separate.
@@ -47,6 +53,8 @@ Do not silently contradict them. Report conflicts before changing the protocol.
   exactly once.
 - Preserve the mapping between vector/index positions and `aid`.
 - Never modify raw data in place; create deterministic derived data.
+- Store local raw and derived datasets under top-level `data/`, which is ignored
+  by Git. Do not create a parallel `datasets/` directory.
 
 Do not use document-level indexing unless an experiment explicitly studies it.
 

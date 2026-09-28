@@ -22,7 +22,6 @@ venv/
 
 # Research data and large artifacts
 data/
-datasets/
 checkpoints/
 artifacts/
 outputs/

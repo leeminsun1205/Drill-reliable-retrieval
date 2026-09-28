@@ -138,3 +138,44 @@ runtime where relevant.
 Large intermediate artifacts remain outside Git. Selected small configs,
 metrics, and provenance files may be force-added after review when they preserve
 a meaningful result.
+
+## Research record
+
+Important decisions, verified dataset statistics, measured results, limitations,
+and changes to the experimental protocol must also be recorded in the relevant
+Markdown document. Result artifacts remain the machine-readable source for a
+specific run, but important findings must not exist only in ignored artifacts or
+conversation history.
+
+Use these destinations:
+
+- dataset observations and preprocessing decisions: `docs/dataset.md`;
+- metric definitions and evaluator behavior: `docs/evaluation.md`;
+- method choices, ablations, and research direction: `docs/research_plan.md`;
+- configurations, measured runs, and artifact conventions:
+  `docs/experiments.md`;
+- local/Kaggle/runtime decisions: `docs/execution.md`.
+
+Always distinguish values measured by this repository from values published by
+the organizer or other teams.
+
+## Recorded baseline runs
+
+### BM25, seed-42 development split
+
+Measured locally on 2026-09-28 using `configs/bm25.yaml`:
+
+- corpus: 59,628 indexed non-blank articles;
+- split: deterministic 20% development split, 438 of 2,190 queries;
+- tokenizer: lowercase Unicode NFKC word tokens;
+- BM25: `k1=1.2`, `b=0.75`, retrieval `top_k=100`;
+- selected output size: `output_k=3`;
+- Precision: `0.1803652968`;
+- Recall: `0.4525929550`;
+- F2: `0.3476503328`;
+- local CPU runtime: approximately 66 seconds.
+
+`output_k=3` was selected on this development split after comparing fixed cutoffs,
+so this is a development result rather than an unbiased final-test estimate. It
+must not be compared directly with the organizer's published private-test BM25
+F2 of `0.3365`.
