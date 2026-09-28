@@ -22,6 +22,19 @@ results/             Small reproducibility artifacts; large outputs are ignored
 The repository is currently being scaffolded. Commands for data preparation and
 experiment execution will be documented as their implementations are added.
 
+## Installation and validation
+
+From the repository root:
+
+```bash
+python -m pip install -e .
+drill-validate --corpus data/legal-corpus.parquet --queries data/train.parquet
+drill-run --config configs/bm25.yaml
+```
+
+The scripts in `scripts/` provide equivalent commands for environments where an
+editable install is not desired.
+
 ## Research documentation
 
 - [Research plan](docs/research_plan.md)

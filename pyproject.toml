@@ -14,6 +14,11 @@ dependencies = [
     "PyYAML>=6",
 ]
 
+[project.scripts]
+drill-validate = "drill_ir.cli:validate_main"
+drill-run = "drill_ir.cli:run_main"
+drill-package-submission = "drill_ir.cli:submission_main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 

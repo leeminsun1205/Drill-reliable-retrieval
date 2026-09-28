@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+/build/
+/dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -20,16 +22,17 @@ venv/
 .vscode/
 .DS_Store
 
-# Research data and large artifacts
-data/
-checkpoints/
-artifacts/
-outputs/
-embeddings/
+# Research data and large artifacts (root-only; do not hide Python packages such
+# as src/drill_ir/data/ from Git).
+/data/
+/checkpoints/
+/artifacts/
+/outputs/
+/embeddings/
 
 # Results are local by default. Commit selected small artifacts explicitly.
-results/*
-!results/.gitkeep
+/results/*
+!/results/.gitkeep
 
 # Notebook state
 .ipynb_checkpoints/

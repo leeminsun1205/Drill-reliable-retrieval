@@ -17,6 +17,33 @@ Kaggle notebooks should be thin launchers: install dependencies, resolve input
 and output paths, call scripts, and display or export results. Core research
 logic belongs in `src/drill_ir/`.
 
+## Kaggle setup
+
+After cloning or updating the repository, install it in editable mode from the
+repository root. This is the preferred execution path because it makes the
+`src/` package importable independently of the notebook working directory:
+
+```bash
+%cd /kaggle/working/Drill-reliable-retrieval
+!python -m pip install -e .
+!drill-validate \
+  --corpus /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --queries /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet
+```
+
+The repository scripts remain supported without installation:
+
+```bash
+!python scripts/validate_data.py \
+  --corpus /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --queries /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet
+```
+
+If `ModuleNotFoundError: drill_ir.data` appears after pulling an older revision,
+verify that `src/drill_ir/data/` exists in the Kaggle checkout and pull the
+revision containing the root-anchored `/data/` ignore rule. The previous
+unanchored `data/` rule accidentally excluded the Python data package from Git.
+
 ## Hardware profiles
 
 Experiments should expose hardware choices in configuration. Support at least:
