@@ -55,6 +55,33 @@ class BM25Test(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "vncorenlp_jar_path"):
             processor("đăng ký kết hôn")
 
+    def test_vncorenlp_bounds_internal_requests(self) -> None:
+        class FakeSegmenter:
+            def __init__(self) -> None:
+                self.requests: list[str] = []
+
+            def tokenize(self, text: str) -> list[list[str]]:
+                self.requests.append(text)
+                return [text.split()]
+
+        processor = build_token_processor(
+            {
+                "tokenizer": {
+                    "word_segmenter": "vncorenlp",
+                    "vncorenlp_jar_path": "unused-in-test.jar",
+                    "segmenter_max_characters": 12,
+                }
+            }
+        )
+        fake = FakeSegmenter()
+        processor._segmenter = fake
+        self.assertEqual(
+            processor("mot hai ba bon nam sau bay"),
+            ["mot", "hai", "ba", "bon", "nam", "sau", "bay"],
+        )
+        self.assertGreater(len(fake.requests), 1)
+        self.assertTrue(all(len(request) <= 12 for request in fake.requests))
+
 
 if __name__ == "__main__":
     unittest.main()

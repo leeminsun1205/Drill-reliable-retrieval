@@ -60,6 +60,7 @@ class TokenizerConfig:
     backend: str = "regex_words"
     word_segmenter: str = "none"
     vncorenlp_jar_path: str | None = None
+    segmenter_max_characters: int = 20_000
     min_token_length: int = 1
     keep_numbers: bool = True
     stopwords: tuple[str, ...] = ()
@@ -92,6 +93,8 @@ class TokenizingTextProcessor:
             )
         if tokenizer.min_token_length <= 0:
             raise ValueError("tokenizer.min_token_length must be positive")
+        if tokenizer.segmenter_max_characters <= 0:
+            raise ValueError("tokenizer.segmenter_max_characters must be positive")
         if not 1 <= tokenizer.character_ngram_min <= tokenizer.character_ngram_max:
             raise ValueError("Invalid tokenizer character n-gram range")
         if tokenizer.backend == "character_ngram" and tokenizer.word_segmenter != "none":
@@ -134,7 +137,12 @@ class TokenizingTextProcessor:
                 annotators="wseg",
                 max_heap_size="-Xmx2g",
             )
-        return " ".join(token for sentence in self._segmenter.tokenize(text) for token in sentence)
+        tokens: list[str] = []
+        for chunk in _bounded_text_chunks(text, self.config.segmenter_max_characters):
+            tokens.extend(
+                token for sentence in self._segmenter.tokenize(chunk) for token in sentence
+            )
+        return " ".join(tokens)
 
     def _raw_tokens(self, text: str) -> list[str]:
         if self.config.backend == "regex_words":
@@ -193,6 +201,9 @@ def build_token_processor(config: dict[str, Any] | None = None) -> TokenizingTex
             backend=str(tokenizer.get("backend", "regex_words")),
             word_segmenter=str(tokenizer.get("word_segmenter", "none")),
             vncorenlp_jar_path=tokenizer.get("vncorenlp_jar_path"),
+            segmenter_max_characters=int(
+                tokenizer.get("segmenter_max_characters", 20_000)
+            ),
             min_token_length=int(tokenizer.get("min_token_length", 1)),
             keep_numbers=bool(tokenizer.get("keep_numbers", True)),
             stopwords=tuple(str(word) for word in tokenizer.get("stopwords", [])),
@@ -201,3 +212,22 @@ def build_token_processor(config: dict[str, Any] | None = None) -> TokenizingTex
             character_ngram_max=int(tokenizer.get("character_ngram_max", 5)),
         ),
     )
+
+
+def _bounded_text_chunks(text: str, max_characters: int) -> list[str]:
+    """Split oversized segmenter requests at whitespace where possible."""
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(start + max_characters, len(text))
+        if end < len(text):
+            boundary = text.rfind(" ", start, end + 1)
+            if boundary > start:
+                end = boundary
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end
+        while start < len(text) and text[start].isspace():
+            start += 1
+    return chunks

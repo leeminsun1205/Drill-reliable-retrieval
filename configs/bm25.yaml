@@ -25,6 +25,8 @@ retrieval:
         backend: regex_words     # regex_words, whitespace, character_ngram
         word_segmenter: none     # none, underthesea, pyvi, vncorenlp
         vncorenlp_jar_path: null # required only for word_segmenter=vncorenlp
+        # Bounds legacy VnCoreNLP HTTP-form requests; not retrieval chunking.
+        segmenter_max_characters: 20000
         min_token_length: 1
         keep_numbers: true       # legal article numbers are often informative
         stopwords: []            # removal is opt-in and must be documented

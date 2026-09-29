@@ -225,6 +225,14 @@ must be preserved with the resolved experiment configuration. Regex-word,
 whitespace, and character n-gram tokenization are independently selectable;
 character n-grams cannot be combined with word segmentation.
 
+The legacy VnCoreNLP Python wrapper sends text to its Java process through a
+local HTTP form whose request size is bounded. Before segmentation only, the
+adapter therefore divides oversized text at whitespace into requests of at most
+`segmenter_max_characters` (20,000 by default) and concatenates the resulting
+terms. This prevents long legal appendices from causing HTTP 400 errors. It is
+transport batching, not retrieval chunking: BM25 still indexes one document per
+`aid` and document length/statistics are computed from the combined terms.
+
 Dense encoders do not reuse the BM25 term tokenizer. E5/BGE/GTE inputs should
 normally retain natural Vietnamese text and use the tokenizer shipped with the
 pinned model checkpoint. Chunk boundaries and token budgets are a separate

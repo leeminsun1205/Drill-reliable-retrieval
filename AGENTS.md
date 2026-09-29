@@ -95,6 +95,14 @@ Do not use document-level indexing unless an experiment explicitly studies it.
   same repository code.
 - The primary workflow is local development -> Git push -> Kaggle execution.
   Keep commands and configs portable across both environments.
+- For user-facing Kaggle/Jupyter instructions, consistently use the explicit
+  `!python scripts/...` form. In particular, use
+  `scripts/validate_data.py`, `scripts/run_experiment.py`, and
+  `scripts/package_submission.py` rather than switching between those wrappers
+  and the installed `drill-*` console commands. The console commands remain
+  supported, but mention them only as optional aliases when relevant. Preserve
+  each script's actual flag names (`--corpus`/`--queries` for validation and
+  `--corpus-path`/`--train-path` for experiment execution).
 - Prefer configurations that can use both Kaggle T4 GPUs for suitable dense
   encoding, training, or reranking workloads, while retaining deterministic CPU
   and single-GPU fallbacks. Do not force multi-GPU onto CPU-bound stages.
