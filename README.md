@@ -16,11 +16,13 @@ notebooks/           Exploration, visualization, and error analysis
 scripts/             Thin command-line entry points
 src/drill_ir/        Reusable research implementation
 tests/               Scientific correctness and regression tests
-results/             Small reproducibility artifacts; large outputs are ignored
+results/             Local experiment artifacts (created on demand; ignored)
 ```
 
-The repository is currently being scaffolded. Commands for data preparation and
-experiment execution will be documented as their implementations are added.
+`AGENTS.md` contains concise repository-wide operating constraints for coding
+agents. Durable project knowledge is organized by topic under `docs/`; it is not
+duplicated into an agent-specific memory file. The root README remains the
+human-facing entry point.
 
 ## Installation and validation
 

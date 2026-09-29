@@ -32,6 +32,7 @@ Read the relevant document before changing methodology:
 - `docs/dataset.md`: schemas, IDs, and preprocessing.
 - `docs/evaluation.md`: splits, metrics, and leakage prevention.
 - `docs/experiments.md`: pipeline boundaries, configuration, and artifacts.
+- `docs/execution.md`: local/Kaggle commands and runtime behavior.
 - `docs/competition_review.md`: official splits, leaderboard results,
   representative participant methods, and public implementations.
 
@@ -48,7 +49,8 @@ published, and illustrative values clearly.
 - Corpus and query datasets are separate.
 - A raw corpus row is a document, but the normal retrieval unit is an article.
 - Flatten the corpus to at least `aid`, `law_id`, and `content_Article`.
-- Raw query field `id` identifies the query; official submissions call it `qid`.
+- The current training Parquet uses `qid`; loaders may also accept legacy `id`.
+- Official submissions use `qid`.
 - Query field `relevant_laws` contains ground-truth article IDs (`aid`).
 - A prediction maps the query ID to a ranked list of `aid` values.
 - Official `results.json` uses `qid` and `relevant_laws`; preserve every query

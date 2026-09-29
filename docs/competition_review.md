@@ -252,6 +252,61 @@ lexical and dense retrievers discriminative context. Generated titles may add
 hallucinations, so deterministic extraction and generated enrichment must be
 evaluated as separate treatments.
 
+## Published chunking strategies
+
+The DRiLL literature contains three relevant but distinct approaches:
+
+1. **FPT IS hierarchical chunking.** A generated article title is the root;
+   articles are split into smaller units such as clauses or bullet points; tree
+   leaves become chunks and receive their root-to-leaf hierarchy path as
+   metadata. A leaf over 4,000 tokens is further divided into 2,048-token
+   windows with 1,024-token overlap. Retrieval takes top 50 chunks, and
+   post-processing deduplicates by article ID while retaining the highest score.
+   This is the closest published design to Khoản/Điểm-aware retrieval, but the
+   paper does not publish its Vietnamese boundary parser, nested-amendment
+   handling, exact chunk schema, or a public implementation.
+
+   This should not be confused with the winning EDM system. EDM's paper also
+   reports clause segmentation and a hierarchical corpus containing laws,
+   articles, and clauses. Its LambdaMART features include `article_idx`,
+   `clause_idx`, `is_law`, `is_clause`, query/document token lengths, and
+   length ratios. However, EDM does not publish the clause-boundary algorithm,
+   a point-level split, maximum chunk length, overlap, oversized-clause policy,
+   or chunk-to-article score aggregation. The evidence therefore supports
+   **article plus clause representations**, but not the stronger claim that EDM
+   used the proposed Article -> Khoan -> Diem -> tokenizer-window procedure.
+   EDM also combines this representation with generated descriptions, HyDE,
+   reference expansion, neural reranking, LambdaMART/LightGBM, and large-LLM
+   relevance scoring, so its final score cannot be attributed to chunking
+   alone. Its paper provides no article-only versus clause-level ablation.
+
+2. **ViDRILL dual-level chunking.** Reranking uses chunks up to 2,000 characters
+   with overlap based on line-break boundaries. Dense retrieval uses independent
+   legal clauses capped at 450 characters without overlap; oversized clauses are
+   split again into smaller coherent segments. Multiple chunks retain their
+   source `aid`. For positive training data, BGE-M3, E5-Instruct, and GTE scores
+   rank chunks belonging to a gold aid, and the highest-scoring chunk is selected
+   as the representative positive. The paper does not specify a Khoản/Điểm
+   parser, clause-lead propagation, nested quotation handling, or the complete
+   final chunk-to-aid aggregation rule.
+
+3. **Public top-11 fixed-window implementation.** The released `utils/chunk.py`
+   uses LangChain `RecursiveCharacterTextSplitter`, `len(text.split())`, a
+   400-word budget, 50-word overlap, and separators `\n\n`, `\n`, space, then
+   character fallback. It preserves `aid` and assigns `{aid}_{chunk_index}`.
+   This is reproducible and useful as a non-structural baseline, but it does not
+   explicitly model Khoản, Điểm, hierarchy paths, or amendment nesting.
+
+CUDO's “document-based chunking with titles” reconstructs external document
+hierarchy and maps titles back to the organizer's article-level chunks; it is
+primarily article enrichment rather than intra-article Khoản/Điểm splitting.
+
+These approaches support three controlled baselines for this repository:
+fixed-window chunks, clause-level chunks, and point-level chunks with clause
+context. Our proposed deterministic parser differs by explicitly retaining raw
+offsets and parse status, separating outer amendment structure from quoted
+inner provisions where possible, and using tokenizer windows only as fallback.
+
 ### Why cross-reference features are promising
 
 A query may require a provision that defines a concept or exception referenced

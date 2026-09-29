@@ -30,9 +30,9 @@ venv/
 /outputs/
 /embeddings/
 
-# Results are local by default. Commit selected small artifacts explicitly.
+# Results are local by default. The runner creates this directory as needed;
+# commit selected small artifacts explicitly with `git add -f`.
 /results/*
-!/results/.gitkeep
 
 # Notebook state
 .ipynb_checkpoints/

@@ -38,6 +38,28 @@ article and the tokenizer truncates at `max_seq_length`. This limitation must be
 kept distinct from a later chunking treatment, which will need explicit chunk
 boundaries, overlap, chunk-to-article mapping, and score aggregation.
 
+Length settings are tokenizer-token counts, not words or characters. A dense
+bi-encoder encodes query and document independently, so each side has its own
+maximum. A cross-encoder instead encodes a query-document pair; its configured
+`max_length` is the combined budget for query tokens, document tokens, and
+model-specific special tokens. Reranking must therefore preserve the query and
+truncate only the second sequence when truncation is unavoidable. Production
+chunk preparation must use the exact model tokenizer and record its model ID,
+revision, token budget, and overlap. Whitespace word counts remain diagnostic
+proxies only.
+
+The initial controlled chunking matrix is planned as: article truncation,
+fixed-window, Khoan-level with tokenizer-window fallback, and Diem plus Khoan
+lead-in with the same fallback. A 512-token document window with 64-token
+overlap is the cost-conscious starting point; BGE-M3 1,024-token windows with
+128-token overlap are an ablation rather than a universal default. For
+`BAAI/bge-reranker-v2-m3`, 1,024 pair tokens are the initial operational setting
+because that is the length reported for fine-tuning and recommended by its
+authors, despite the architecture accepting up to 8,192. The exact query cap
+must be selected from measured training-query token lengths before the
+reranker experiment; 192 tokens is only a provisional engineering value, not a
+settled dataset fact.
+
 The planned first hybrid method is weighted reciprocal rank fusion (WRRF; also
 sometimes shortened to weighted RRF), not direct addition of raw BM25 and cosine
 scores. Both retrievers already emit the same `RetrievalResult` structure, so
