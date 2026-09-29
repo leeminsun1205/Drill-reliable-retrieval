@@ -72,6 +72,18 @@ or assigned fabricated boundaries. Parse-status counts, oversized fallback
 windows, maximum encoded length, and maximum chunks per article are recorded in
 run metadata.
 
+The implemented `diem` treatment first applies the same conservative Khoản
+parser, then accepts only consecutive Vietnamese lettered Điểm sequences within
+each accepted Khoản. Each Điểm representation repeats the raw Khoản lead-in and
+records the lead-in and Điểm as separate source spans. Long Điểm are split with
+the exact model tokenizer while repeating the lead-in in every window. A Khoản
+with no accepted Điểm, ambiguous point numbering, or a lead-in that exhausts
+the token budget falls back to raw Khoản token windows; an article whose Khoản
+structure is unavailable falls back to article token windows. Thus the
+treatment changes only representation granularity and preserves the same
+512/64 budget, max chunk-to-aid aggregation, and lossless fallback policy used
+by the Khoản experiment.
+
 The chunk cache key includes the model/revision, tokenizer-window budget,
 overlap, document prefix, and chunker version. Run metadata records the content
 token budget, chunk count, maximum chunks per article, representation count,
@@ -342,7 +354,7 @@ best measured final-output BM25 treatment and retain PyVi as a lightweight
 candidate-recall alternative. Before final reporting, archive and inspect each
 resolved config, metrics, split IDs, run metadata, and dependency versions.
 
-### Multilingual-E5-base fixed token-window run
+### Multilingual-E5-base chunking runs
 
 Reported from Kaggle by the project owner on 2026-09-29 for the 438-query
 seed-42 development split. From the run context, the treatment is
@@ -379,15 +391,17 @@ controlled setup, fixed 512/64 token windows improve F2 by `0.029628` absolute
 | E5 representation | Precision | Recall | F2 | R@1 | R@5 | R@10 | R@20 | R@50 | R@100 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Article truncate | 0.191781 | 0.485350 | 0.371588 | 0.300609 | 0.580311 | 0.670303 | 0.775516 | 0.848184 | 0.879849 |
-| Token window 512/64 | **0.207002** | **0.524163** | **0.401217** | **0.325342** | **0.605806** | **0.698407** | **0.796467** | **0.874766** | **0.904659** |
+| Token window 512/64 | 0.207002 | 0.524163 | 0.401217 | 0.325342 | 0.605806 | 0.698407 | **0.796467** | **0.874766** | 0.904659 |
+| Recursive token 512/64 | 0.204718 | 0.514650 | 0.395037 | 0.325342 | 0.613416 | 0.705121 | 0.793803 | 0.873625 | **0.905420** |
+| Khoản 512/64 fallback | **0.221461** | **0.557154** | **0.427540** | **0.354262** | **0.647663** | **0.728142** | 0.786628 | 0.869684 | 0.901288 |
 
 The improvement is present at every recorded cutoff and in both final precision
 and recall. Article-truncated E5 is below the measured VnCoreNLP BM25 F2
 (`0.371588` versus `0.379908`), whereas fixed-window E5 exceeds it. This supports
 using fixed-window E5, not truncated E5, as the dense component entering later
-hybrid experiments. It does not yet show that recursive or legal-structure
-boundaries outperform fixed windows. A paired per-query analysis and artifact
-verification remain required before a statistical claim.
+hybrid experiments. This fixed-versus-truncate comparison alone does not test
+recursive or legal-structure boundaries. A paired per-query analysis and
+artifact verification remain required before a statistical claim.
 
 The matching `recursive_token` 512/64 run was reported from Kaggle on
 2026-09-29 with Precision `0.2047184170`, Recall `0.5146499239`, F2
@@ -399,3 +413,23 @@ Recall@10 by `0.006713`, and Recall@100 by only `0.000761`. Fixed 512/64 windows
 therefore remain the primary non-structural dense baseline. Recursive splitting
 is retained as an ablation showing that generic paragraph/sentence boundary
 preference does not automatically improve final DRiLL effectiveness.
+
+The matching `khoan` run was reported from Kaggle by the project owner on
+2026-09-29 with Precision `0.2214611872`, Recall `0.5571537291`, F2
+`0.4275400431`, and candidate Recall@1/5/10/20/50/100 of `0.3542617960`,
+`0.6476625353`, `0.7281419874`, `0.7866275277`, `0.8696836269`, and
+`0.9012883235`. This attribution assumes the same model, seed-42 split,
+512-token budget, 64-token fallback overlap, max chunk-to-aid aggregation,
+candidate `top_k=100`, and final `output_k=3`; the Kaggle artifact remains to be
+copied and checked.
+
+Under that controlled attribution, Khoản chunking improves F2 over fixed token
+windows by `0.026324` absolute (about 6.56% relative), final precision by
+`0.014460`, and final recall by `0.032991`. It also improves candidate Recall@1,
+@5, and @10 by `0.028919`, `0.041857`, and `0.029735`, respectively. Recall@20,
+@50, and @100 are lower by `0.009839`, `0.005083`, and `0.003370`. The result is
+therefore evidence that legal Khoản boundaries improve early ranking and the
+selected final output, not that they increase deep candidate coverage. Pending
+artifact and paired per-query verification, `khoan` is the leading dense
+representation while fixed 512/64 remains the appropriate non-structural
+control.

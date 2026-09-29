@@ -9,7 +9,7 @@ import re
 from typing import Any, Protocol, Sequence
 
 from drill_ir.data.models import Article
-from drill_ir.structure import parse_clause_spans
+from drill_ir.structure import parse_clause_spans, parse_point_spans
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,6 +423,282 @@ class KhoanChunker:
             "chunks": len(chunks),
             "parse_status_counts": dict(sorted(statuses.items())),
             "oversized_clause_extra_windows": oversized_clause_windows,
+            "max_encoded_tokens_observed": maximum_encoded_tokens,
+            "overlap_tokens": self.config.overlap_tokens,
+            "max_chunks_per_article": max(per_aid.values(), default=0),
+        }
+        return chunks
+
+
+class DiemChunker:
+    """Use Điểm text with its Khoản lead-in and conservative fallbacks."""
+
+    def __init__(self, config: TokenWindowChunkerConfig, *, tokenizer: Any = None) -> None:
+        self.config = config
+        self._window_chunker = TokenWindowChunker(config, tokenizer=tokenizer)
+        self.last_stats: dict[str, Any] = {}
+
+    @property
+    def cache_key(self) -> str:
+        return json.dumps(
+            {
+                "method": "diem",
+                "version": 1,
+                "clause_parser": "conservative_line_sequence_v1",
+                "point_parser": "conservative_vietnamese_letter_sequence_v1",
+                **asdict(self.config),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def _raw_span_chunks(
+        self,
+        article: Article,
+        *,
+        char_start: int,
+        char_end: int,
+        first_index: int,
+        chunk_type: str,
+        parse_status: str,
+        structure_path: tuple[str, ...],
+    ) -> list[Chunk]:
+        local = Article(
+            aid=article.aid,
+            law_id=article.law_id,
+            text=article.text[char_start:char_end],
+        )
+        windows = self._window_chunker.chunk_articles([local])
+        chunks = []
+        for offset, window in enumerate(windows):
+            global_start = char_start + window.char_start
+            global_end = char_start + window.char_end
+            window_type = chunk_type if len(windows) == 1 else f"{chunk_type}_token_window"
+            chunks.append(
+                Chunk(
+                    chunk_id=f"{article.aid}:diem:{first_index + offset}",
+                    aid=article.aid,
+                    law_id=article.law_id,
+                    chunk_index=first_index + offset,
+                    chunk_type=window_type,
+                    text=window.text,
+                    char_start=global_start,
+                    char_end=global_end,
+                    token_count=window.token_count,
+                    parse_status=parse_status,
+                    structure_path=structure_path,
+                    source_spans=((global_start, global_end),),
+                )
+            )
+        return chunks
+
+    def _point_chunks(
+        self,
+        article: Article,
+        *,
+        clause_start: int,
+        lead_in_end: int,
+        point_start: int,
+        point_end: int,
+        clause_number: int,
+        point_letter: str,
+        first_index: int,
+    ) -> list[Chunk] | None:
+        tokenizer = self._window_chunker._load_tokenizer()
+        lead_text = article.text[clause_start:lead_in_end]
+        point_text = article.text[point_start:point_end]
+        encoded = tokenizer(
+            point_text,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+            truncation=False,
+            verbose=False,
+        )
+        offsets = encoded["offset_mapping"]
+        if not encoded["input_ids"] or len(encoded["input_ids"]) != len(offsets):
+            return None
+        full_representation = lead_text + point_text
+        full_token_count = len(
+            tokenizer(
+                self.config.document_prefix + full_representation,
+                add_special_tokens=True,
+                truncation=False,
+            )["input_ids"]
+        )
+        full_source_spans = tuple(
+            span
+            for span in ((clause_start, lead_in_end), (point_start, point_end))
+            if span[1] > span[0]
+        )
+        if full_token_count <= self.config.max_tokens:
+            return [
+                Chunk(
+                    chunk_id=f"{article.aid}:diem:{first_index}",
+                    aid=article.aid,
+                    law_id=article.law_id,
+                    chunk_index=first_index,
+                    chunk_type="diem",
+                    text=full_representation,
+                    char_start=min(start for start, _ in full_source_spans),
+                    char_end=max(end for _, end in full_source_spans),
+                    token_count=full_token_count,
+                    parse_status="parsed",
+                    structure_path=(f"khoan:{clause_number}", f"diem:{point_letter}"),
+                    source_spans=full_source_spans,
+                )
+            ]
+
+        base_tokens = len(
+            tokenizer(
+                self.config.document_prefix + lead_text,
+                add_special_tokens=True,
+                truncation=False,
+            )["input_ids"]
+        )
+        point_budget = self.config.max_tokens - base_tokens
+        if point_budget <= self.config.overlap_tokens:
+            return None
+
+        chunks: list[Chunk] = []
+        token_start = 0
+        while token_start < len(offsets):
+            token_end = min(token_start + point_budget, len(offsets))
+            while True:
+                usable = [
+                    (int(start), int(end))
+                    for start, end in offsets[token_start:token_end]
+                    if int(end) > int(start)
+                ]
+                if not usable:
+                    return None
+                local_start = usable[0][0]
+                local_end = usable[-1][1]
+                point_window = point_text[local_start:local_end]
+                representation = lead_text + point_window
+                token_count = len(
+                    tokenizer(
+                        self.config.document_prefix + representation,
+                        add_special_tokens=True,
+                        truncation=False,
+                    )["input_ids"]
+                )
+                if token_count <= self.config.max_tokens:
+                    break
+                token_end -= max(1, token_count - self.config.max_tokens)
+                if token_end <= token_start:
+                    return None
+
+            global_point_start = point_start + local_start
+            global_point_end = point_start + local_end
+            source_spans = tuple(
+                span
+                for span in (
+                    (clause_start, lead_in_end),
+                    (global_point_start, global_point_end),
+                )
+                if span[1] > span[0]
+            )
+            index = first_index + len(chunks)
+            chunks.append(
+                Chunk(
+                    chunk_id=f"{article.aid}:diem:{index}",
+                    aid=article.aid,
+                    law_id=article.law_id,
+                    chunk_index=index,
+                    chunk_type="diem_token_window",
+                    text=representation,
+                    char_start=min(start for start, _ in source_spans),
+                    char_end=max(end for _, end in source_spans),
+                    token_count=token_count,
+                    parse_status="parsed",
+                    structure_path=(f"khoan:{clause_number}", f"diem:{point_letter}"),
+                    source_spans=source_spans,
+                )
+            )
+            if token_end == len(offsets):
+                break
+            next_start = token_end - self.config.overlap_tokens
+            if next_start <= token_start:
+                return None
+            token_start = next_start
+        return chunks
+
+    def chunk_articles(self, articles: Sequence[Article]) -> list[Chunk]:
+        chunks: list[Chunk] = []
+        article_statuses: Counter[str] = Counter()
+        point_statuses: Counter[str] = Counter()
+        per_aid: Counter[int] = Counter()
+        oversized_point_extra_windows = 0
+        lead_in_budget_fallback_clauses = 0
+        maximum_encoded_tokens = 0
+        for article in articles:
+            parsed_clauses = parse_clause_spans(article.text)
+            article_statuses[parsed_clauses.status] += 1
+            article_chunks: list[Chunk] = []
+            next_index = 0
+            if parsed_clauses.status != "parsed":
+                article_chunks = self._raw_span_chunks(
+                    article,
+                    char_start=0,
+                    char_end=len(article.text),
+                    first_index=0,
+                    chunk_type="article_fallback",
+                    parse_status=parsed_clauses.status,
+                    structure_path=(),
+                )
+            else:
+                for clause in parsed_clauses.spans:
+                    clause_text = article.text[clause.char_start:clause.char_end]
+                    parsed_points = parse_point_spans(clause_text)
+                    point_statuses[parsed_points.status] += 1
+                    clause_chunks: list[Chunk] = []
+                    if parsed_points.status == "parsed":
+                        lead_in_end = clause.char_start + parsed_points.lead_in_end
+                        for point in parsed_points.spans:
+                            point_chunks = self._point_chunks(
+                                article,
+                                clause_start=clause.char_start,
+                                lead_in_end=lead_in_end,
+                                point_start=clause.char_start + point.char_start,
+                                point_end=clause.char_start + point.char_end,
+                                clause_number=clause.number,
+                                point_letter=point.letter,
+                                first_index=next_index + len(clause_chunks),
+                            )
+                            if point_chunks is None:
+                                clause_chunks = []
+                                lead_in_budget_fallback_clauses += 1
+                                break
+                            oversized_point_extra_windows += max(0, len(point_chunks) - 1)
+                            clause_chunks.extend(point_chunks)
+                    if not clause_chunks:
+                        clause_chunks = self._raw_span_chunks(
+                            article,
+                            char_start=clause.char_start,
+                            char_end=clause.char_end,
+                            first_index=next_index,
+                            chunk_type="khoan_fallback",
+                            parse_status=f"point_{parsed_points.status}",
+                            structure_path=(f"khoan:{clause.number}",),
+                        )
+                    article_chunks.extend(clause_chunks)
+                    next_index += len(clause_chunks)
+            chunks.extend(article_chunks)
+            per_aid[article.aid] = len(article_chunks)
+            maximum_encoded_tokens = max(
+                maximum_encoded_tokens,
+                max((chunk.token_count or 0 for chunk in article_chunks), default=0),
+            )
+        self.last_stats = {
+            "method": "diem",
+            "clause_parser": "conservative_line_sequence_v1",
+            "point_parser": "conservative_vietnamese_letter_sequence_v1",
+            "articles": len(articles),
+            "chunks": len(chunks),
+            "article_parse_status_counts": dict(sorted(article_statuses.items())),
+            "point_parse_status_counts": dict(sorted(point_statuses.items())),
+            "oversized_point_extra_windows": oversized_point_extra_windows,
+            "lead_in_budget_fallback_clauses": lead_in_budget_fallback_clauses,
             "max_encoded_tokens_observed": maximum_encoded_tokens,
             "overlap_tokens": self.config.overlap_tokens,
             "max_chunks_per_article": max(per_aid.values(), default=0),

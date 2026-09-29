@@ -11,6 +11,23 @@ from drill_ir.data.models import Article
 from .clauses import parse_clause_spans
 
 
+def sample_articles_by_law(
+    articles: Sequence[Article],
+    *,
+    law_count: int,
+    seed: int,
+    excluded_law_ids: Sequence[str] = (),
+) -> tuple[list[Article], list[str]]:
+    """Select all articles from a deterministic random sample of law IDs."""
+    excluded = set(excluded_law_ids)
+    law_ids = sorted({article.law_id for article in articles} - excluded)
+    if not 0 < law_count <= len(law_ids):
+        raise ValueError("law_count must be between 1 and the number of distinct laws")
+    selected_laws = sorted(random.Random(seed).sample(law_ids, law_count))
+    selected_set = set(selected_laws)
+    return [article for article in articles if article.law_id in selected_set], selected_laws
+
+
 def audit_clause_parser(
     articles: Sequence[Article],
     *,

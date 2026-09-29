@@ -186,6 +186,48 @@ legitimate unnumbered articles. The review template retains explicit
 is still required before making a parser-accuracy claim. These coverage values
 are measured parser behavior, not boundary precision or recall.
 
+An independent seed-44 audit then selected 50 distinct `law_id` values and
+reviewed all 1,675 non-blank articles belonging to them, rather than sampling
+individual articles. It produced 1,347 `parsed` (80.42%), 294 `no_structure`
+(17.55%), and 34 `ambiguous_sequence` (2.03%) articles. Concatenating every
+accepted span reconstructed its source article exactly (0/1,347 coverage
+failures). The observed exception types were already known: glued outer markers
+such as `...2023.2.`, isolated single Khoản, and amendment text containing
+nested or restarted numbering. No new failure category was found. Because both
+fallback statuses retain the complete article through token-window chunking,
+this is sufficient to use parser v1 for the controlled Khoản-chunking
+experiment. It does not establish parser boundary accuracy; that would still
+require completed human labels. The ignored review artifact is stored under
+`results/khoan_parser_audit_50laws_seed44/`.
+
+A second production audit used seed 45 to select 50 additional `law_id` values
+after explicitly excluding all 50 seed-44 laws. Its 1,583 non-blank articles
+contained 1,280 `parsed` (80.86%), 270 `no_structure` (17.06%), and 33
+`ambiguous_sequence` (2.08%) cases, with zero accepted-span reconstruction
+failures. The exceptions remained glued or malformed markers, sequences
+starting above one, and nested amendment numbering; no new failure category was
+observed. The ignored artifact is under
+`results/khoan_parser_audit_50laws_seed45_disjoint/`.
+
+### Production Điểm parser v1 audit
+
+`conservative_vietnamese_letter_sequence_v1` detects `a)`, `b)`, ... markers
+only inside accepted Khoản spans and only at a span start or after a line, tab,
+colon, or semicolon separator. It follows the Vietnamese legal sequence
+`a, b, c, d, đ, e, g, ...`, requires at least two consecutive markers, and
+marks gaps, duplicates, or restarts ambiguous. This rejects incidental
+parenthetical letters and treats nested amendment lists conservatively.
+
+On the disjoint seed-45 sample, the 1,280 accepted articles contained 4,568
+Khoản spans. The Điểm parser classified 893 Khoản as `parsed`, 3,664 as
+`no_structure`, and 11 as `ambiguous_sequence`, producing 3,388 Điểm
+representations before tokenizer-window fallback. Inspection of all 11
+ambiguous cases found nested amendment lists, Roman sublists, or duplicated
+letters (including likely `d`/`đ` source errors), rather than a new safe global
+sequence rule. The ignored artifact is under
+`results/diem_parser_audit_50laws_seed45_disjoint/`. These are parser coverage
+counts, not manually labelled boundary precision or recall.
+
 ## Query dataset
 
 The current Kaggle training path is:

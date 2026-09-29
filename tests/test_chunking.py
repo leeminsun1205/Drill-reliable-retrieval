@@ -3,6 +3,7 @@ import unittest
 from drill_ir.data import Article
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
+    DiemChunker,
     KhoanChunker,
     RecursiveTokenChunker,
     RecursiveTokenChunkerConfig,
@@ -172,6 +173,72 @@ class ChunkingTest(unittest.TestCase):
         self.assertTrue(all(chunk.chunk_type == "article_fallback_window" for chunk in chunks))
         self.assertTrue(all(chunk.parse_status == "ambiguous_sequence" for chunk in chunks))
         self.assertEqual(chunker.last_stats["parse_status_counts"], {"ambiguous_sequence": 1})
+
+    def test_diem_mode_repeats_khoan_lead_in_and_tracks_source_spans(self) -> None:
+        article = Article(
+            9,
+            "law",
+            "1. Dẫn nhập:\t\ta) Điểm một;\t\tb) Điểm hai\n2. Khoản không có điểm",
+        )
+        chunker = DiemChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=12,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        point_chunks = [chunk for chunk in chunks if chunk.chunk_type == "diem"]
+        self.assertEqual(
+            [chunk.structure_path for chunk in point_chunks],
+            [("khoan:1", "diem:a"), ("khoan:1", "diem:b")],
+        )
+        self.assertTrue(all(chunk.text.startswith("1. Dẫn nhập:\t\t") for chunk in point_chunks))
+        self.assertTrue(all(len(chunk.source_spans) == 2 for chunk in point_chunks))
+        self.assertEqual(chunks[-1].chunk_type, "khoan_fallback")
+        self.assertLessEqual(chunker.last_stats["max_encoded_tokens_observed"], 12)
+
+    def test_diem_mode_falls_back_for_restarted_point_sequence(self) -> None:
+        article = Article(
+            10,
+            "law",
+            "1. Dẫn:\t\ta) Một;\t\tb) Hai;\t\ta) Lại\n2. Khoản hai",
+        )
+        chunker = DiemChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=20,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        self.assertEqual(chunks[0].chunk_type, "khoan_fallback")
+        self.assertEqual(chunks[0].parse_status, "point_ambiguous_sequence")
+
+    def test_diem_mode_windows_long_points_with_repeated_lead_in(self) -> None:
+        article = Article(
+            11,
+            "law",
+            "1. Dẫn:\t\ta) aa bb cc dd;\t\tb) ee ff\n2. Khoản hai",
+        )
+        chunker = DiemChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=7,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        point_chunks = [chunk for chunk in chunks if chunk.chunk_type == "diem_token_window"]
+        self.assertGreater(len(point_chunks), 1)
+        self.assertTrue(all(chunk.text.startswith("1. Dẫn:\t\t") for chunk in point_chunks))
+        self.assertTrue(all((chunk.token_count or 0) <= 7 for chunk in chunks))
 
 
 if __name__ == "__main__":

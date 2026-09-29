@@ -106,6 +106,27 @@ aggregation as the fixed-window baseline:
   --output-root /kaggle/working/results
 ```
 
+After the Khoản run, audit Điểm boundaries and run the Điểm-plus-Khoản-lead-in
+treatment without changing the model or retrieval settings:
+
+```python
+!python scripts/audit_point_parser.py \
+  --corpus data/legal-corpus.parquet \
+  --seed 45 \
+  --sample-law-count 50 \
+  --exclude-summary /kaggle/working/results/khoan_parser_audit_50laws_seed44/summary.json \
+  --samples-per-status 30 \
+  --output-dir /kaggle/working/results/diem_parser_audit_seed45
+
+!python scripts/run_experiment.py \
+  --config configs/dense.yaml \
+  --experiment-name dense_e5_diem_512_64_seed42 \
+  --set retrieval.dense.chunking.method=diem \
+  --set retrieval.dense.chunking.max_tokens=512 \
+  --set retrieval.dense.chunking.overlap_tokens=64 \
+  --output-root /kaggle/working/results
+```
+
 Use CLI flags for model trials instead of duplicating configuration files. For
 example, BGE-M3 on T4x2 can reuse the dense base config while clearing the E5
 prefixes:
