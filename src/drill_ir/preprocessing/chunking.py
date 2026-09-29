@@ -9,6 +9,7 @@ import re
 from typing import Any, Protocol, Sequence
 
 from drill_ir.data.models import Article
+from drill_ir.structure import parse_clause_spans
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,4 +311,120 @@ class RecursiveTokenChunker(TokenWindowChunker):
         chunks = super().chunk_articles(articles)
         self.last_stats["minimum_fill_ratio"] = self.config.minimum_fill_ratio
         self.last_stats["boundary_counts"] = dict(sorted(self._boundary_counts.items()))
+        return chunks
+
+
+class KhoanChunker:
+    """Use validated numbered-clause spans with token-window fallback."""
+
+    def __init__(self, config: TokenWindowChunkerConfig, *, tokenizer: Any = None) -> None:
+        self.config = config
+        self._window_chunker = TokenWindowChunker(config, tokenizer=tokenizer)
+        self.last_stats: dict[str, Any] = {}
+
+    @property
+    def cache_key(self) -> str:
+        return json.dumps(
+            {
+                "method": "khoan",
+                "version": 1,
+                "parser": "conservative_line_sequence_v1",
+                **asdict(self.config),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def _window_span(
+        self,
+        article: Article,
+        *,
+        char_start: int,
+        char_end: int,
+        clause_number: int | None,
+        parse_status: str,
+        first_index: int,
+    ) -> list[Chunk]:
+        span_text = article.text[char_start:char_end]
+        local = Article(aid=article.aid, law_id=article.law_id, text=span_text)
+        windows = self._window_chunker.chunk_articles([local])
+        chunks: list[Chunk] = []
+        for offset, window in enumerate(windows):
+            global_start = char_start + window.char_start
+            global_end = char_start + window.char_end
+            is_fallback_window = len(windows) > 1
+            if clause_number is None:
+                chunk_type = "article_fallback_window"
+                structure_path: tuple[str, ...] = ()
+            else:
+                chunk_type = "khoan_token_window" if is_fallback_window else "khoan"
+                structure_path = (f"khoan:{clause_number}",)
+            chunks.append(
+                Chunk(
+                    chunk_id=f"{article.aid}:khoan:{first_index + offset}",
+                    aid=article.aid,
+                    law_id=article.law_id,
+                    chunk_index=first_index + offset,
+                    chunk_type=chunk_type,
+                    text=window.text,
+                    char_start=global_start,
+                    char_end=global_end,
+                    token_count=window.token_count,
+                    parse_status=parse_status,
+                    structure_path=structure_path,
+                    source_spans=((global_start, global_end),),
+                )
+            )
+        return chunks
+
+    def chunk_articles(self, articles: Sequence[Article]) -> list[Chunk]:
+        chunks: list[Chunk] = []
+        statuses: Counter[str] = Counter()
+        oversized_clause_windows = 0
+        maximum_encoded_tokens = 0
+        per_aid: Counter[int] = Counter()
+        for article in articles:
+            parsed = parse_clause_spans(article.text)
+            statuses[parsed.status] += 1
+            article_chunks: list[Chunk] = []
+            if parsed.status == "parsed":
+                next_index = 0
+                for span in parsed.spans:
+                    span_chunks = self._window_span(
+                        article,
+                        char_start=span.char_start,
+                        char_end=span.char_end,
+                        clause_number=span.number,
+                        parse_status="parsed",
+                        first_index=next_index,
+                    )
+                    oversized_clause_windows += max(0, len(span_chunks) - 1)
+                    article_chunks.extend(span_chunks)
+                    next_index += len(span_chunks)
+            else:
+                article_chunks = self._window_span(
+                    article,
+                    char_start=0,
+                    char_end=len(article.text),
+                    clause_number=None,
+                    parse_status=parsed.status,
+                    first_index=0,
+                )
+            chunks.extend(article_chunks)
+            per_aid[article.aid] = len(article_chunks)
+            maximum_encoded_tokens = max(
+                maximum_encoded_tokens,
+                max((chunk.token_count or 0 for chunk in article_chunks), default=0),
+            )
+        self.last_stats = {
+            "method": "khoan",
+            "parser": "conservative_line_sequence_v1",
+            "articles": len(articles),
+            "chunks": len(chunks),
+            "parse_status_counts": dict(sorted(statuses.items())),
+            "oversized_clause_extra_windows": oversized_clause_windows,
+            "max_encoded_tokens_observed": maximum_encoded_tokens,
+            "overlap_tokens": self.config.overlap_tokens,
+            "max_chunks_per_article": max(per_aid.values(), default=0),
+        }
         return chunks

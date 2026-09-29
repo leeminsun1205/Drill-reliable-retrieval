@@ -63,6 +63,15 @@ an unnecessarily small chunk. This is a deterministic in-repository recursive-
 separator baseline, not a claim of byte-for-byte LangChain equivalence. Run
 metadata records how many final boundaries came from each separator level.
 
+The implemented `khoan` treatment uses `conservative_line_sequence_v1`. Parsed
+Khoản are contiguous raw spans; an unnumbered article lead-in is retained in the
+first span. Oversized Khoản use the same tokenizer-window fallback and overlap
+as the fixed baseline. Articles with no accepted structure or ambiguous
+numbering fall back to whole-article token windows, so text is never discarded
+or assigned fabricated boundaries. Parse-status counts, oversized fallback
+windows, maximum encoded length, and maximum chunks per article are recorded in
+run metadata.
+
 The chunk cache key includes the model/revision, tokenizer-window budget,
 overlap, document prefix, and chunker version. Run metadata records the content
 token budget, chunk count, maximum chunks per article, representation count,
@@ -379,3 +388,14 @@ using fixed-window E5, not truncated E5, as the dense component entering later
 hybrid experiments. It does not yet show that recursive or legal-structure
 boundaries outperform fixed windows. A paired per-query analysis and artifact
 verification remain required before a statistical claim.
+
+The matching `recursive_token` 512/64 run was reported from Kaggle on
+2026-09-29 with Precision `0.2047184170`, Recall `0.5146499239`, F2
+`0.3950373221`, and candidate Recall@1/5/10/20/50/100 of `0.3253424658`,
+`0.6134159600`, `0.7051206784`, `0.7938030007`, `0.8736247010`, and
+`0.9054196564`. Relative to fixed token windows, recursive boundaries reduce F2
+by `0.006179` and final recall by `0.009513`; they improve Recall@5 by `0.007610`,
+Recall@10 by `0.006713`, and Recall@100 by only `0.000761`. Fixed 512/64 windows
+therefore remain the primary non-structural dense baseline. Recursive splitting
+is retained as an ablation showing that generic paragraph/sentence boundary
+preference does not automatically improve final DRiLL effectiveness.

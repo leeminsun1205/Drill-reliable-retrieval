@@ -83,6 +83,29 @@ with all other settings unchanged:
   --output-root /kaggle/working/results
 ```
 
+Audit Khoản boundaries before running the structure treatment:
+
+```python
+!python scripts/audit_clause_parser.py \
+  --corpus data/legal-corpus.parquet \
+  --seed 42 \
+  --samples-per-status 30 \
+  --output-dir /kaggle/working/results/khoan_parser_audit_seed42
+```
+
+Then run Khoản-aware dense retrieval with the same E5 budget, overlap, and max
+aggregation as the fixed-window baseline:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/dense.yaml \
+  --experiment-name dense_e5_khoan_512_64_seed42 \
+  --set retrieval.dense.chunking.method=khoan \
+  --set retrieval.dense.chunking.max_tokens=512 \
+  --set retrieval.dense.chunking.overlap_tokens=64 \
+  --output-root /kaggle/working/results
+```
+
 Use CLI flags for model trials instead of duplicating configuration files. For
 example, BGE-M3 on T4x2 can reuse the dense base config while clearing the E5
 prefixes:

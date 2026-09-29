@@ -160,6 +160,32 @@ ambiguous and use a non-structural fallback. Other confirmed exceptions were
 glued markers, unnumbered lead-ins, tables, administrative tails, and provisions
 whose numbering begins above one.
 
+### Production Khoản parser v1 audit
+
+The first production parser, `conservative_line_sequence_v1`, was audited over
+all 59,628 non-blank articles on 2026-09-29. It recognizes small positive
+integer markers at the article start or a physical line start, requires a space
+after `.` or `)`, and accepts only locally consecutive sequences of at least two
+markers. Sequences may begin above one. Gaps, duplicates, and restarts are
+marked ambiguous; decimal headings and glued markers are not forced into
+structure.
+
+| Parse status | Articles | Rate | Retrieval behavior |
+|---|---:|---:|---|
+| `parsed` | 47,959 | 80.43% | contiguous Khoản spans |
+| `no_structure` | 10,066 | 16.88% | article token-window fallback |
+| `ambiguous_sequence` | 1,603 | 2.69% | article token-window fallback |
+
+A deterministic seed-42 review artifact sampled 30 articles per status under
+`results/khoan_parser_audit_seed42/`. Preliminary inspection of the 30 `parsed`
+examples found plausible numbered-clause boundaries. The ambiguous sample
+confirmed both intended nested-amendment/restarted numbering and formatting
+misses such as glued `2.` markers, while the no-structure sample included
+legitimate unnumbered articles. The review template retains explicit
+`boundary_correct`, `failure_type`, and `notes` fields; a completed human review
+is still required before making a parser-accuracy claim. These coverage values
+are measured parser behavior, not boundary precision or recall.
+
 ## Query dataset
 
 The current Kaggle training path is:

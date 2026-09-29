@@ -14,6 +14,7 @@ from .dense import (
 )
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
+    KhoanChunker,
     RecursiveTokenChunker,
     RecursiveTokenChunkerConfig,
     TokenWindowChunker,
@@ -111,7 +112,7 @@ def build_retriever(
         raise ValueError("Only dense chunk aggregation='max' is currently supported")
     if chunking_method == "article_truncate":
         chunker = ArticleTruncationChunker()
-    elif chunking_method in {"token_window", "recursive_token"}:
+    elif chunking_method in {"token_window", "recursive_token", "khoan"}:
         max_tokens = int(chunking_config.get("max_tokens", 512))
         encoder_max = encoder_config.get("max_seq_length")
         if encoder_max is not None and max_tokens > int(encoder_max):
@@ -130,7 +131,7 @@ def build_retriever(
         }
         if chunking_method == "token_window":
             chunker = TokenWindowChunker(TokenWindowChunkerConfig(**common_chunking))
-        else:
+        elif chunking_method == "recursive_token":
             chunker = RecursiveTokenChunker(
                 RecursiveTokenChunkerConfig(
                     **common_chunking,
@@ -139,9 +140,11 @@ def build_retriever(
                     ),
                 )
             )
+        else:
+            chunker = KhoanChunker(TokenWindowChunkerConfig(**common_chunking))
     else:
         raise ValueError(
             "retrieval.dense.chunking.method must be 'article_truncate', "
-            "'token_window', or 'recursive_token'"
+            "'token_window', 'recursive_token', or 'khoan'"
         )
     return DenseRetriever(encoder=encoder, search=search, cache=cache, chunker=chunker)

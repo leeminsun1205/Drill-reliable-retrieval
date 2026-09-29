@@ -3,6 +3,7 @@ import unittest
 from drill_ir.data import Article
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
+    KhoanChunker,
     RecursiveTokenChunker,
     RecursiveTokenChunkerConfig,
     TokenWindowChunker,
@@ -136,6 +137,41 @@ class ChunkingTest(unittest.TestCase):
                 ),
                 tokenizer=FakeFastTokenizer(),
             )
+
+    def test_khoan_mode_emits_structured_chunks(self) -> None:
+        article = Article(7, "law", "Dẫn nhập\n1. Khoản một\n2. Khoản hai")
+        chunker = KhoanChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=12,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        self.assertEqual([chunk.structure_path for chunk in chunks], [("khoan:1",), ("khoan:2",)])
+        self.assertEqual([chunk.chunk_type for chunk in chunks], ["khoan", "khoan"])
+        self.assertEqual(chunker.last_stats["parse_status_counts"], {"parsed": 1})
+        for chunk in chunks:
+            self.assertEqual(article.text[chunk.char_start : chunk.char_end], chunk.text)
+            self.assertLessEqual(chunk.token_count, 12)
+
+    def test_khoan_mode_falls_back_for_ambiguous_sequence(self) -> None:
+        article = Article(8, "law", "1. Một\n2. Hai\n2. Hai lại\n3. Ba")
+        chunker = KhoanChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=8,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        self.assertTrue(all(chunk.chunk_type == "article_fallback_window" for chunk in chunks))
+        self.assertTrue(all(chunk.parse_status == "ambiguous_sequence" for chunk in chunks))
+        self.assertEqual(chunker.last_stats["parse_status_counts"], {"ambiguous_sequence": 1})
 
 
 if __name__ == "__main__":
