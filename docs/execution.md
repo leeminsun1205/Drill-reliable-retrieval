@@ -127,22 +127,114 @@ treatment without changing the model or retrieval settings:
   --output-root /kaggle/working/results
 ```
 
-Use CLI flags for model trials instead of duplicating configuration files. For
-example, BGE-M3 on T4x2 can reuse the dense base config while clearing the E5
-prefixes:
+Use CLI flags for model trials instead of duplicating configuration files.
+Evaluate BGE-M3 with the non-structural fixed token-window control before the
+legal-structure treatments:
 
 ```bash
 !python scripts/run_experiment.py \
   --config configs/dense.yaml \
-  --experiment-name dense_bge_m3_seed42 \
+  --experiment-name dense_bge_m3_token_window_512_64_seed42 \
+  --model-name BAAI/bge-m3 \
+  --query-prefix "" \
+  --document-prefix "" \
+  --max-seq-length 512 \
+  --encode-batch-size 4 \
+  --devices 2 \
+  --set retrieval.dense.chunking.method=token_window \
+  --set retrieval.dense.chunking.max_tokens=512 \
+  --set retrieval.dense.chunking.overlap_tokens=64 \
+  --output-root /kaggle/working/results
+```
+
+Then keep the 512/64 budget fixed and switch only to the winning Điểm
+representation:
+
+```bash
+!python scripts/run_experiment.py \
+  --config configs/dense.yaml \
+  --experiment-name dense_bge_m3_diem_512_64_seed42 \
+  --model-name BAAI/bge-m3 \
+  --query-prefix "" \
+  --document-prefix "" \
+  --max-seq-length 512 \
+  --encode-batch-size 4 \
+  --devices 2 \
+  --set retrieval.dense.chunking.method=diem \
+  --set retrieval.dense.chunking.max_tokens=512 \
+  --set retrieval.dense.chunking.overlap_tokens=64 \
+  --output-root /kaggle/working/results
+```
+
+Only after that run, test BGE-M3's longer context with 1,024/128. This second
+run changes both encoder and token-window budget relative to E5 and is therefore
+a context-length ablation, not a model-only comparison:
+
+```bash
+!python scripts/run_experiment.py \
+  --config configs/dense.yaml \
+  --experiment-name dense_bge_m3_diem_1024_128_seed42 \
   --model-name BAAI/bge-m3 \
   --query-prefix "" \
   --document-prefix "" \
   --max-seq-length 1024 \
   --encode-batch-size 4 \
   --devices 2 \
+  --set retrieval.dense.chunking.method=diem \
+  --set retrieval.dense.chunking.max_tokens=1024 \
+  --set retrieval.dense.chunking.overlap_tokens=128 \
   --output-root /kaggle/working/results
 ```
+
+If a Kaggle T4 reports CUDA out-of-memory at 1,024 tokens, lower only
+`--encode-batch-size` from 4 to 2 or 1; do not change chunk size, overlap, split,
+or retrieval depth in that retry.
+
+## Hybrid retrieval
+
+The initial hybrid run combines BM25 and Điểm-aware dense retrieval with
+equal-weight WRRF (`rrf_k=60`). The portable config uses regex/NFKC BM25 and E5;
+if its matching dense embeddings already exist, the validated cache is reused:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/hybrid.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --experiment-name hybrid_regex_e5_diem_wrrf60_equal_seed42 \
+  --output-root /kaggle/working/results
+```
+
+To use BGE-M3 while retaining Điểm 512/64 and the same fusion settings:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/hybrid.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --experiment-name hybrid_regex_bge_m3_diem_wrrf60_equal_seed42 \
+  --model-name BAAI/bge-m3 \
+  --query-prefix "" \
+  --document-prefix "" \
+  --max-seq-length 512 \
+  --encode-batch-size 4 \
+  --devices 2 \
+  --output-root /kaggle/working/results
+```
+
+The best measured VnCoreNLP BM25 treatment can replace the portable regex
+branch by additionally setting `word_segmenter=vncorenlp` and an explicit local
+JAR path. Keep the same path used by the standalone VnCoreNLP run so the hybrid
+comparison changes only fusion:
+
+```python
+  --set retrieval.bm25.preprocessing.tokenizer.word_segmenter=vncorenlp \
+  --set retrieval.bm25.preprocessing.tokenizer.vncorenlp_jar_path=/kaggle/working/VnCoreNLP-1.2.jar
+```
+
+Each hybrid artifact includes fused `predictions.jsonl` and the untouched BM25
+and dense lists in `component_rankings.jsonl`. Tune weights or `rrf_k` only
+after preserving the equal-weight run as the fixed starting point.
 
 Less common leaves can be overridden with repeatable typed flags, for example
 `--set retrieval.dense.search.query_batch_size=32`. Explicit convenience flags

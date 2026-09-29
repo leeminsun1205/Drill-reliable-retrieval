@@ -107,6 +107,23 @@ def run_experiment(config: dict[str, Any]) -> Path:
                 "scores": list(result.scores),
             }
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    component_results = getattr(retriever, "component_results", None)
+    if callable(component_results):
+        components = component_results()
+        indexed_components = {
+            name: {result.qid: result for result in results}
+            for name, results in components.items()
+        }
+        with (run_dir / "component_rankings.jsonl").open("w", encoding="utf-8") as stream:
+            for query in dev_queries:
+                record: dict[str, Any] = {"qid": query.qid, "components": {}}
+                for name, by_qid in indexed_components.items():
+                    result = by_qid[query.qid]
+                    record["components"][name] = {
+                        "retrieved_aids": list(result.aids),
+                        "scores": list(result.scores),
+                    }
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
     (run_dir / "split_dev_qids.json").write_text(
         json.dumps([query.qid for query in dev_queries], indent=2), encoding="utf-8"
     )

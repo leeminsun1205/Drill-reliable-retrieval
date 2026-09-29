@@ -104,7 +104,9 @@ The initial controlled chunking matrix is planned as: article truncation,
 fixed-window, Khoan-level with tokenizer-window fallback, and Diem plus Khoan
 lead-in with the same fallback. A 512-token document window with 64-token
 overlap is the cost-conscious starting point; BGE-M3 1,024-token windows with
-128-token overlap are an ablation rather than a universal default. For
+128-token overlap are an ablation rather than a universal default. Before that
+ablation, BGE-M3 must be run with the winning Điểm representation at 512/64 so
+the first E5-versus-BGE comparison changes only the encoder. For
 `BAAI/bge-reranker-v2-m3`, 1,024 pair tokens are the initial operational setting
 because that is the length reported for fine-tuning and recommended by its
 authors, despite the architecture accepting up to 8,192. The exact query cap
@@ -121,12 +123,22 @@ so document truncation is the immediate concern for this bi-encoder. The fixed
 structure-aware treatments. Do not infer an exact chunk count from length
 percentiles; record it from the executed chunker metadata.
 
-The planned first hybrid method is weighted reciprocal rank fusion (WRRF; also
-sometimes shortened to weighted RRF), not direct addition of raw BM25 and cosine
-scores. Both retrievers already emit the same `RetrievalResult` structure, so
-fusion can consume ranks while preserving each method's original scores for
-analysis. Fusion weights and the RRF rank constant must be explicit config
-values and tuned only on the development split.
+The implemented first hybrid method is weighted reciprocal rank fusion (WRRF;
+also sometimes shortened to weighted RRF), not direct addition of raw BM25 and
+cosine scores. For one-indexed component ranks, the fused score is
+`w_sparse/(rrf_k + rank_sparse) + w_dense/(rrf_k + rank_dense)`, omitting a
+term when the article is absent from that component. Ties are resolved by
+ascending `aid`. Sparse and dense candidate depths, weights, and `rrf_k` are
+explicit configuration values and must be tuned only on the development split.
+
+BM25's standalone implementation fills a fixed-depth list with score-zero aids
+when too few articles have lexical overlap. Hybrid fusion excludes those
+arbitrary sparse fillers by default through `include_zero_score_sparse: false`;
+the original component ranking is still written to
+`component_rankings.jsonl`. The hybrid run metadata nests both retrievers'
+metadata, so model, chunking, BM25 preprocessing, cache behavior, and fusion
+parameters remain inspectable. `configs/hybrid.yaml` provides the equal-weight
+`rrf_k=60` starting point; it is not a claim that those values are optimal.
 
 BM25 preprocessing is part of the method configuration. The initial ablation
 compared the NFKC/lowercase regex baseline with Underthesea, PyVi, and VnCoreNLP
@@ -391,9 +403,10 @@ controlled setup, fixed 512/64 token windows improve F2 by `0.029628` absolute
 | E5 representation | Precision | Recall | F2 | R@1 | R@5 | R@10 | R@20 | R@50 | R@100 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Article truncate | 0.191781 | 0.485350 | 0.371588 | 0.300609 | 0.580311 | 0.670303 | 0.775516 | 0.848184 | 0.879849 |
-| Token window 512/64 | 0.207002 | 0.524163 | 0.401217 | 0.325342 | 0.605806 | 0.698407 | **0.796467** | **0.874766** | 0.904659 |
-| Recursive token 512/64 | 0.204718 | 0.514650 | 0.395037 | 0.325342 | 0.613416 | 0.705121 | 0.793803 | 0.873625 | **0.905420** |
-| Khoản 512/64 fallback | **0.221461** | **0.557154** | **0.427540** | **0.354262** | **0.647663** | **0.728142** | 0.786628 | 0.869684 | 0.901288 |
+| Token window 512/64 | 0.207002 | 0.524163 | 0.401217 | 0.325342 | 0.605806 | 0.698407 | 0.796467 | 0.874766 | 0.904659 |
+| Recursive token 512/64 | 0.204718 | 0.514650 | 0.395037 | 0.325342 | 0.613416 | 0.705121 | 0.793803 | 0.873625 | 0.905420 |
+| Khoản 512/64 fallback | 0.221461 | 0.557154 | 0.427540 | 0.354262 | 0.647663 | 0.728142 | 0.786628 | 0.869684 | 0.901288 |
+| Điểm + Khoản lead-in 512/64 | **0.230594** | **0.582763** | **0.446409** | **0.367199** | **0.661285** | **0.738035** | **0.796521** | **0.879273** | **0.911562** |
 
 The improvement is present at every recorded cutoff and in both final precision
 and recall. Article-truncated E5 is below the measured VnCoreNLP BM25 F2
@@ -431,5 +444,40 @@ windows by `0.026324` absolute (about 6.56% relative), final precision by
 therefore evidence that legal Khoản boundaries improve early ranking and the
 selected final output, not that they increase deep candidate coverage. Pending
 artifact and paired per-query verification, `khoan` is the leading dense
-representation while fixed 512/64 remains the appropriate non-structural
-control.
+representation before the finer Điểm treatment, while fixed 512/64 remains the
+appropriate non-structural control.
+
+The matching `diem` run was reported from Kaggle by the project owner on
+2026-09-29 with Precision `0.2305936073`, Recall `0.5827625571`, F2
+`0.4464089364`, and candidate Recall@1/5/10/20/50/100 of `0.3671993912`,
+`0.6612850620`, `0.7380354425`, `0.7965209828`, `0.8792726680`, and
+`0.9115622962`. This attribution assumes the same seed-42 split, E5 model,
+512/64 budget and fallback, max chunk-to-aid aggregation, candidate `top_k=100`,
+and final `output_k=3`; artifact metadata remains pending inspection.
+
+Relative to Khoản chunking, Điểm plus Khoản lead-in improves F2 by `0.018869`
+absolute (about 4.41% relative), precision by `0.009132`, and recall by
+`0.025609`. Unlike the Khoản-versus-fixed comparison, it also improves candidate
+recall at every recorded cutoff: +`0.012938`, +`0.013623`, +`0.009893`,
++`0.009893`, +`0.009589`, and +`0.010274` at @1/5/10/20/50/100. It exceeds the
+fixed-window F2 by `0.045192` absolute (about 11.26% relative). Pending artifact
+and paired per-query verification, `diem` is now the leading dense
+representation and provides the strongest evidence so far that progressively
+finer legal structure improves this retrieval setup.
+
+### BGE-M3 dense runs
+
+The project owner reported a BGE-M3 Khoản 512/64 run on 2026-09-30 with
+Precision `0.2382039574`, Recall `0.5985540335`, F2 `0.4595227189`, and
+candidate Recall@1/5/10/20/50/100 of `0.4077245053`, `0.6648401826`,
+`0.7567569037`, `0.8311480757`, `0.8807186345`, and `0.9119428137`. Attribution
+to the same seed-42 split, max chunk-to-aid aggregation, candidate `top_k=100`,
+and final `output_k=3` is user-reported pending artifact inspection.
+
+Two earlier BGE-M3 results had F2 `0.4695224772` and `0.4678786481`, but their
+exact `chunking.method` attribution remains unresolved in chat. They must not be
+labelled fixed-window, Điểm, or article-truncate until their saved `config.yaml`
+or `run_info.json` is inspected. In particular, the previously supplied BGE-M3
+commands selected `diem` explicitly. A BGE-M3 `token_window` 512/64 run is still
+required as the non-structural control before attributing gains to legal
+structure under the stronger encoder.

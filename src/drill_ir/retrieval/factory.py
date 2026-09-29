@@ -12,6 +12,7 @@ from .dense import (
     SentenceTransformerEncoder,
     SentenceTransformerEncoderConfig,
 )
+from .fusion import WeightedRRFRetriever
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
     DiemChunker,
@@ -45,6 +46,24 @@ def build_retriever(
 ) -> Retriever:
     """Build one first-stage retriever behind the common Retriever protocol."""
     runtime = runtime_config or {}
+    if method == "hybrid":
+        hybrid = retrieval_config.get("hybrid")
+        if not isinstance(hybrid, dict):
+            raise ValueError("retrieval.hybrid must be a YAML mapping")
+        if hybrid.get("fusion", "weighted_rrf") != "weighted_rrf":
+            raise ValueError("Only hybrid fusion='weighted_rrf' is currently supported")
+        return WeightedRRFRetriever(
+            sparse=build_retriever("bm25", retrieval_config, runtime),
+            dense=build_retriever("dense", retrieval_config, runtime),
+            sparse_weight=float(hybrid.get("sparse_weight", 1.0)),
+            dense_weight=float(hybrid.get("dense_weight", 1.0)),
+            rrf_k=int(hybrid.get("rrf_k", 60)),
+            sparse_top_k=int(hybrid.get("sparse_top_k", 100)),
+            dense_top_k=int(hybrid.get("dense_top_k", 100)),
+            include_zero_score_sparse=bool(
+                hybrid.get("include_zero_score_sparse", False)
+            ),
+        )
     if method == "bm25":
         params = retrieval_config.get("bm25", {})
         return BM25Retriever(

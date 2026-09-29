@@ -8,11 +8,17 @@ from drill_ir.data import Query
 from drill_ir.experiment import (
     apply_config_overrides,
     deterministic_split,
+    load_config,
     package_submission,
 )
 
 
 class ExperimentTest(unittest.TestCase):
+    def test_hybrid_config_is_supported(self) -> None:
+        config = load_config(Path(__file__).parents[1] / "configs" / "hybrid.yaml")
+        self.assertEqual(config["method"], "hybrid")
+        self.assertEqual(config["retrieval"]["hybrid"]["fusion"], "weighted_rrf")
+
     def test_config_overrides_are_typed_and_do_not_mutate_source(self) -> None:
         source = {"retrieval": {"top_k": 100, "prefix": "query: "}}
         resolved = apply_config_overrides(
