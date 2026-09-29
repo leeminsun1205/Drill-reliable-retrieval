@@ -1,0 +1,90 @@
+experiment_name: hybrid_bge_m3_diem_wrrf30_d08_s02_reranker_seed42
+method: hybrid_reranker
+seed: 42
+
+data:
+  corpus_path: data/legal-corpus.parquet
+  train_path: data/train.parquet
+  dev_fraction: 0.2
+
+retrieval:
+  top_k: 100
+  output_k: 3
+  hybrid:
+    fusion: weighted_rrf
+    rrf_k: 30
+    sparse_weight: 0.2
+    dense_weight: 0.8
+    sparse_top_k: 100
+    dense_top_k: 100
+    include_zero_score_sparse: false
+  bm25:
+    k1: 1.2
+    b: 0.75
+    min_document_frequency: 1
+    max_document_frequency: null
+    max_document_frequency_ratio: 1.0
+    preprocessing:
+      normalization:
+        unicode_form: NFKC
+        lowercase: true
+        normalize_whitespace: true
+        strip_control_characters: true
+      tokenizer:
+        word_segmenter: none
+        vncorenlp_jar_path: null
+        segmenter_max_characters: 20000
+        stopword_preset: none
+  dense:
+    chunking:
+      method: diem
+      max_tokens: 512
+      overlap_tokens: 64
+      minimum_fill_ratio: 0.5
+      aggregation: max
+    encoder:
+      backend: sentence_transformers
+      model_name: BAAI/bge-m3
+      revision: null
+      query_prefix: ""
+      document_prefix: ""
+      max_seq_length: 512
+      batch_size: 4
+      normalize_embeddings: false
+      trust_remote_code: false
+    search:
+      backend: exact
+      metric: cosine
+      query_batch_size: 64
+    cache:
+      enabled: true
+      directory: embeddings
+
+reranking:
+  enabled: true
+  backend: hf_sequence_classification
+  model_name: BAAI/bge-reranker-v2-m3
+  revision: null
+  candidate_pool_size: 50
+  representation: diem
+  # Pre-chunk documents with the reranker tokenizer, leaving ample pair budget
+  # for the observed short queries and pair special tokens.
+  document_max_tokens: 768
+  overlap_tokens: 64
+  max_length: 1024
+  batch_size: 8
+  positive_label_index: 1
+  trust_remote_code: false
+  fp16: true
+
+evaluation:
+  # These remain diagnostics for the unchanged first-stage hybrid candidates.
+  recall_at_k: [1, 5, 10, 20, 50, 100]
+
+runtime:
+  accelerator: auto
+  devices: auto
+  mixed_precision: false
+
+output:
+  root_dir: results

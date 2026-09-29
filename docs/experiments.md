@@ -481,3 +481,57 @@ or `run_info.json` is inspected. In particular, the previously supplied BGE-M3
 commands selected `diem` explicitly. A BGE-M3 `token_window` 512/64 run is still
 required as the non-structural control before attributing gains to legal
 structure under the stronger encoder.
+
+### BGE-M3 plus VnCoreNLP WRRF runs
+
+On 2026-09-30, the project owner reported a VnCoreNLP BM25 plus BGE-M3 dense
+WRRF run using sparse/dense weights `0.4/0.6` with Precision `0.2404870624`,
+Recall `0.6006468798`, F2 `0.4622048314`, and candidate
+Recall@1/5/10/20/50/100 of `0.3976407915`, `0.6862252664`, `0.7847249402`,
+`0.8475918678`, `0.9054740161`, and `0.9307240705`. It improved deep candidate
+recall but underperformed the strongest reported standalone BGE result at the
+final top three.
+
+Changing only the WRRF weights to sparse/dense `0.2/0.8` produced Precision
+`0.2496194825`, Recall `0.6200532725`, F2 `0.4781414679`, and candidate
+Recall@1/5/10/20/50/100 of `0.3942161339`, `0.6910958904`, `0.7754022614`,
+`0.8368558382`, `0.8941128506`, and `0.9161285062`. Relative to the `0.4/0.6`
+run, final F2 improves by `0.015937` even though recall at deeper candidate
+cutoffs falls. Relative to the strongest earlier reported standalone BGE result
+(F2 `0.4695224772`), it improves Precision by `0.005327`, Recall by `0.009893`,
+and F2 by `0.008619` (about 1.84% relative). This indicates that BM25 is useful
+as a low-weight complement, while a `0.4` sparse weight over-influences final
+top-three ordering.
+
+The run-directory name used in chat contained `wrrf60`, while the executed
+command set `rrf_k=30`; the saved resolved config must settle this attribution.
+All hybrid values remain user-reported pending inspection of `config.yaml`,
+`run_info.json`, component rankings, and confirmation that the hybrid dense
+ranking matches its standalone cached run.
+
+## Cross-encoder reranking
+
+The implemented `hybrid_reranker` pipeline freezes the hybrid first stage and
+reranks only its configured candidate pool. `configs/hybrid_reranker.yaml`
+starts from BGE-M3 Điểm 512/64 plus BM25, WRRF `rrf_k=30`, sparse/dense weights
+`0.2/0.8`, first-stage `top_k=100`, reranker candidate pool 50, and final
+`output_k=3`. The untouched first-stage list is written to
+`first_stage_predictions.jsonl`; BM25 and dense component lists remain in
+`component_rankings.jsonl`. Candidate Recall@k continues to describe the fixed
+first stage rather than the reranked list.
+
+The initial zero-shot reranker is `BAAI/bge-reranker-v2-m3`. Candidate articles
+are represented as Điểm plus their Khoản lead-in using the reranker's own
+tokenizer. Documents are pre-windowed to at most 768 single-sequence tokens with
+64-token overlap, then paired with the complete query under a 1,024-token pair
+budget. Pair tokenization explicitly uses `truncation="only_second"`, so query
+tokens are never discarded. Chunk scores are max-aggregated to `aid`; equal
+scores preserve first-stage order and then ascending `aid`.
+
+Only articles occurring in the frozen candidate pools are represented and
+scored. The Hugging Face sequence-classification backend supports deterministic
+CPU or one-GPU execution and `torch.nn.DataParallel` across configured CUDA
+devices. FP16 autocast is enabled by config on CUDA only. Run metadata records
+the reranker model/revision, resolved devices, pair and document budgets,
+representation counts, structure parser statistics, aggregation, and candidate
+pool size. This is zero-shot inference, not a fine-tuned DRiLL reranker.

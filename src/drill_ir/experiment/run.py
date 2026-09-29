@@ -13,6 +13,7 @@ import yaml
 
 from drill_ir.data import iter_articles, load_queries, validate_dataset
 from drill_ir.evaluation import evaluate_predictions, macro_recall_at_k
+from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
 
 
@@ -64,8 +65,9 @@ def run_experiment(config: dict[str, Any]) -> Path:
             "BM25 candidate depth, training hyperparameters, or any score threshold. "
             "Set these explicitly and implement the reranker before running this config."
         )
+    retrieval_method = "hybrid" if method == "hybrid_reranker" else method
     retriever = build_retriever(
-        method,
+        retrieval_method,
         config["retrieval"],
         config.get("runtime", {}),
     )
@@ -75,9 +77,29 @@ def run_experiment(config: dict[str, Any]) -> Path:
     output_k = int(config["retrieval"]["output_k"])
     if output_k > retrieve_k:
         raise ValueError("retrieval.output_k cannot exceed retrieval.top_k")
-    ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
+    first_stage_ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
+    ranked = first_stage_ranked
+    reranker = None
+    if method == "hybrid_reranker":
+        reranking_config = config.get("reranking")
+        if not isinstance(reranking_config, dict):
+            raise ValueError("hybrid_reranker requires a reranking mapping")
+        candidate_pool_size = int(reranking_config.get("candidate_pool_size", 50))
+        if not output_k <= candidate_pool_size <= retrieve_k:
+            raise ValueError(
+                "reranking.candidate_pool_size must be between output_k and retrieval.top_k"
+            )
+        candidate_aids = {
+            aid
+            for result in first_stage_ranked
+            for aid in result.aids[:candidate_pool_size]
+        }
+        candidate_articles = [article for article in articles if article.aid in candidate_aids]
+        reranker = build_reranker(reranking_config, config.get("runtime", {}))
+        reranker.fit(candidate_articles)
+        ranked = reranker.rerank(dev_queries, first_stage_ranked)
     predictions = {result.qid: result.aids[:output_k] for result in ranked}
-    candidate_rankings = {result.qid: result.aids for result in ranked}
+    candidate_rankings = {result.qid: result.aids for result in first_stage_ranked}
     gold = {query.qid: query.relevant_aids for query in dev_queries}
     metrics = evaluate_predictions(gold, predictions)
     recall_cutoffs = list(config.get("evaluation", {}).get("recall_at_k", []))
@@ -107,6 +129,17 @@ def run_experiment(config: dict[str, Any]) -> Path:
                 "scores": list(result.scores),
             }
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    if reranker is not None:
+        with (run_dir / "first_stage_predictions.jsonl").open(
+            "w", encoding="utf-8"
+        ) as stream:
+            for result in first_stage_ranked:
+                record = {
+                    "qid": result.qid,
+                    "retrieved_aids": list(result.aids),
+                    "scores": list(result.scores),
+                }
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
     component_results = getattr(retriever, "component_results", None)
     if callable(component_results):
         components = component_results()
@@ -140,6 +173,9 @@ def run_experiment(config: dict[str, Any]) -> Path:
         "dev_queries": len(dev_queries),
         "retriever": (
             retriever.run_metadata() if hasattr(retriever, "run_metadata") else {}
+        ),
+        "reranker": (
+            reranker.run_metadata() if reranker is not None else None
         ),
         **_git_info(),
     }

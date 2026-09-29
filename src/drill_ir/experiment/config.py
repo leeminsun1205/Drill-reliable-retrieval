@@ -16,7 +16,13 @@ def load_config(path: str | Path) -> dict[str, Any]:
     missing = required - set(config)
     if missing:
         raise ValueError(f"Config is missing keys: {sorted(missing)}")
-    supported = {"bm25", "dense", "hybrid", "organizer_two_stage"}
+    supported = {
+        "bm25",
+        "dense",
+        "hybrid",
+        "hybrid_reranker",
+        "organizer_two_stage",
+    }
     if config["method"] not in supported:
         raise ValueError(f"Unknown method={config['method']!r}; expected one of {sorted(supported)}")
     return config

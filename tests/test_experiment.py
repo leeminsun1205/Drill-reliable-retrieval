@@ -19,6 +19,13 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(config["method"], "hybrid")
         self.assertEqual(config["retrieval"]["hybrid"]["fusion"], "weighted_rrf")
 
+    def test_hybrid_reranker_config_is_supported(self) -> None:
+        config = load_config(
+            Path(__file__).parents[1] / "configs" / "hybrid_reranker.yaml"
+        )
+        self.assertEqual(config["method"], "hybrid_reranker")
+        self.assertEqual(config["reranking"]["model_name"], "BAAI/bge-reranker-v2-m3")
+
     def test_config_overrides_are_typed_and_do_not_mutate_source(self) -> None:
         source = {"retrieval": {"top_k": 100, "prefix": "query: "}}
         resolved = apply_config_overrides(

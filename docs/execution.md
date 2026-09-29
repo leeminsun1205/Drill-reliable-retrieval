@@ -236,6 +236,38 @@ Each hybrid artifact includes fused `predictions.jsonl` and the untouched BM25
 and dense lists in `component_rankings.jsonl`. Tune weights or `rrf_k` only
 after preserving the equal-weight run as the fixed starting point.
 
+## Hybrid plus cross-encoder reranking
+
+After fixing the hybrid candidates, run the zero-shot BGE reranker over the top
+50 candidates with Điểm plus Khoản lead-in representations:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/hybrid_reranker.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --experiment-name hybrid_vncorenlp_bge_m3_diem_wrrf30_d08_s02_reranker50_seed42 \
+  --devices 2 \
+  --set retrieval.bm25.preprocessing.tokenizer.word_segmenter=vncorenlp \
+  --set retrieval.bm25.preprocessing.tokenizer.vncorenlp_jar_path=/kaggle/working/VnCoreNLP/VnCoreNLP-1.2.jar \
+  --output-root /kaggle/working/results
+```
+
+Replace the VnCoreNLP JAR path with the verified path used by the standalone
+BM25 run. The BGE-M3 dense corpus cache should hit when model, Điểm 512/64
+chunking, prefixes, and corpus are unchanged. Cross-encoder scores are not
+cached in this first implementation and must be computed for every
+query–representation pair. If T4 memory is insufficient, lower only
+`reranking.batch_size` while retaining the same candidates and token budgets:
+
+```python
+  --set reranking.batch_size=4
+```
+
+The result directory contains reranked `predictions.jsonl`, frozen
+`first_stage_predictions.jsonl`, component rankings, resolved config, metrics,
+split IDs, and both retriever and reranker metadata in `run_info.json`.
+
 Less common leaves can be overridden with repeatable typed flags, for example
 `--set retrieval.dense.search.query_batch_size=32`. Explicit convenience flags
 take precedence over `--set`, and the final resolved configuration is written to
