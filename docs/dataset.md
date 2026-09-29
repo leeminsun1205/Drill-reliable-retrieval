@@ -217,22 +217,21 @@ diacritics, numbers, and stopwords are retained: accents and provision numbers
 carry legal meaning, while an undocumented generic stopword list can remove
 useful modality or negation terms.
 
-The supported optional Vietnamese segmenters are Underthesea, PyVi, and
-VnCoreNLP. They are experimental treatments, not interchangeable
-normalization. VnCoreNLP additionally requires an explicit local JAR path. The
-segmenter name, dependency/model version, configuration, and any stopword file
-must be preserved with the resolved experiment configuration. Regex-word,
-whitespace, and character n-gram tokenization are independently selectable;
-character n-grams cannot be combined with word segmentation.
+The maintained optional Vietnamese segmenters are PyVi and VnCoreNLP. They are
+experimental treatments, not interchangeable normalization. VnCoreNLP
+additionally requires an explicit local JAR path. The segmenter name,
+dependency/model version, and configuration must be preserved with the resolved
+experiment configuration. With no word segmenter, the dependency-light Unicode
+regex-word baseline is used. Earlier Underthesea and character/whitespace modes
+were removed after the initial ablation to keep the active matrix focused.
 
-Two built-in stopword presets are available for controlled BM25 ablations:
-`vi_legal_conservative` retains legal modality, condition, temporal, threshold,
-and reference terms; `vi_legacy` reproduces the broader list supplied from an
-older project, including potentially consequential words such as `phải`,
-`được`, `nếu`, `trước`, `sau`, `theo`, and `điều`. Neither preset is enabled by
-default. Multi-syllable entries containing underscores only match a segmenter
-that emits the same compound token, so comparisons must hold the segmenter
-fixed.
+One built-in `vi_legal_conservative` stopword preset is available for controlled
+BM25 ablation. It retains legal modality, condition, temporal, threshold, and
+reference terms and is disabled by default. Multi-syllable entries containing
+underscores only match a segmenter that emits the same compound token, so
+comparisons must hold the segmenter fixed. The broader legacy list and arbitrary
+inline/file lists were removed because they increased configuration surface and
+could silently delete consequential legal terms.
 
 BM25 also supports vocabulary pruning by article-level document frequency.
 `min_document_frequency` removes terms found in too few indexed articles;

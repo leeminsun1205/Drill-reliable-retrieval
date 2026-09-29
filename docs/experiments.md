@@ -67,14 +67,14 @@ fusion can consume ranks while preserving each method's original scores for
 analysis. Fusion weights and the RRF rank constant must be explicit config
 values and tuned only on the development split.
 
-BM25 preprocessing is part of the method configuration. Compare tokenizer
-treatments on the persisted split while keeping `k1`, `b`, candidate depth, and
-output selection fixed initially. The first lexical ablation is the existing
-NFKC/lowercase regex baseline versus VnCoreNLP word segmentation; Underthesea,
-PyVi, and character n-grams are available alternatives rather than assumed
-improvements. Only tune BM25 parameters after isolating the tokenizer effect.
-Dense model tokenization and chunking remain separate experiments and must not
-silently inherit the BM25 word-segmented representation.
+BM25 preprocessing is part of the method configuration. The initial ablation
+compared the NFKC/lowercase regex baseline with Underthesea, PyVi, and VnCoreNLP
+while holding `k1`, `b`, candidate depth, and output selection fixed. The
+maintained implementation now retains regex, PyVi, and the best measured
+VnCoreNLP treatment; Underthesea and character/whitespace tokenizer modes were
+removed to reduce unsupported experimental branches. Dense model tokenization
+and chunking remain separate experiments and must not silently inherit the BM25
+word-segmented representation.
 
 Stopword and document-frequency treatments must be evaluated after fixing the
 word segmenter. The initial matrix is: no stopwords/pruning, conservative legal

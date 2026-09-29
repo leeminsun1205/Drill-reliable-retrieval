@@ -21,33 +21,6 @@ class BM25Test(unittest.TestCase):
         self.assertEqual(result.aids[0], 10)
         self.assertEqual(len(result.aids), 2)
 
-    def test_configurable_normalization_and_filters(self) -> None:
-        processor = build_token_processor(
-            {
-                "normalization": {"strip_accents": True},
-                "tokenizer": {
-                    "backend": "regex_words",
-                    "keep_numbers": False,
-                    "stopwords": ["va"],
-                    "min_token_length": 2,
-                },
-            }
-        )
-        self.assertEqual(processor("ĐIỀU 12 và án lệ"), ["dieu", "an", "le"])
-
-    def test_character_ngrams_are_explicit(self) -> None:
-        processor = build_token_processor(
-            {
-                "normalization": {"lowercase": False},
-                "tokenizer": {
-                    "backend": "character_ngram",
-                    "character_ngram_min": 2,
-                    "character_ngram_max": 2,
-                },
-            }
-        )
-        self.assertEqual(processor("ABC"), ["AB", "BC"])
-
     def test_vncorenlp_requires_model_path(self) -> None:
         processor = build_token_processor(
             {"tokenizer": {"word_segmenter": "vncorenlp"}}
@@ -86,11 +59,7 @@ class BM25Test(unittest.TestCase):
         conservative = build_token_processor(
             {"tokenizer": {"stopword_preset": "vi_legal_conservative"}}
         )
-        legacy = build_token_processor(
-            {"tokenizer": {"stopword_preset": "vi_legacy"}}
-        )
         self.assertEqual(conservative("người phải đăng ký và nộp thuế"), ["người", "phải", "đăng", "ký", "nộp", "thuế"])
-        self.assertEqual(legacy("người phải đăng ký và nộp thuế"), ["người", "đăng", "ký", "nộp", "thuế"])
 
     def test_document_frequency_pruning(self) -> None:
         articles = [
