@@ -14,6 +14,10 @@ retrieval:
   bm25:
     k1: 1.2
     b: 0.75
+    # Document-frequency vocabulary pruning; disabled by these defaults.
+    min_document_frequency: 1
+    max_document_frequency: null
+    max_document_frequency_ratio: 1.0
     preprocessing:
       normalization:
         unicode_form: NFKC       # null, NFC, or NFKC
@@ -29,6 +33,8 @@ retrieval:
         segmenter_max_characters: 20000
         min_token_length: 1
         keep_numbers: true       # legal article numbers are often informative
+        # none, vi_legal_conservative, or vi_legacy
+        stopword_preset: none
         stopwords: []            # removal is opt-in and must be documented
         stopwords_path: null
         character_ngram_min: 3

@@ -54,6 +54,11 @@ PyVi is selected with `pyvi`. VnCoreNLP also requires
 local JAR. The default remains the dependency-light regex tokenizer used by the
 recorded baseline.
 
+Stopword and document-frequency ablations are config-driven and disabled by
+default. After selecting a word segmenter, use
+`--set retrieval.bm25.preprocessing.tokenizer.stopword_preset=vi_legal_conservative`
+or `--set retrieval.bm25.min_document_frequency=2` in a separate run.
+
 The scripts in `scripts/` provide equivalent commands for environments where an
 editable install is not desired.
 

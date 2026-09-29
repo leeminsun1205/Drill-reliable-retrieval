@@ -76,6 +76,14 @@ improvements. Only tune BM25 parameters after isolating the tokenizer effect.
 Dense model tokenization and chunking remain separate experiments and must not
 silently inherit the BM25 word-segmented representation.
 
+Stopword and document-frequency treatments must be evaluated after fixing the
+word segmenter. The initial matrix is: no stopwords/pruning, conservative legal
+stopwords, the broader legacy stopwords, `min_df` pruning, and `max_df` pruning.
+Change one factor at a time and initially retain the same BM25 parameters and
+output policy. Because BM25 IDF already suppresses ubiquitous terms, pruning is
+an empirical treatment rather than an assumed improvement. Inspect candidate
+Recall@100 as well as final F2 before selecting a treatment.
+
 ## Configuration
 
 Meaningful experiments should use explicit YAML configuration. For example:
@@ -258,3 +266,29 @@ must reuse or explicitly change this candidate budget.
 so this is a development result rather than an unbiased final-test estimate. It
 must not be compared directly with the organizer's published private-test BM25
 F2 of `0.3365`.
+
+### BM25 Vietnamese word-segmentation ablation
+
+Reported from Kaggle runs by the project owner on 2026-09-29. These values use
+the same 438-query seed-42 development split, BM25 `k1=1.2`, `b=0.75`,
+candidate `top_k=100`, and final `output_k=3`, according to the run context.
+“PyVi” below interprets the submitted label `pypi` as PyVi. The corresponding
+Kaggle artifacts have not yet been copied into or independently inspected from
+this checkout, so the values are measured but user-reported pending artifact
+verification.
+
+| Tokenization | Precision | Recall | F2 | R@1 | R@5 | R@10 | R@20 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Regex/NFKC default | 0.180365 | 0.452593 | 0.347650 | 0.267314 | 0.526794 | 0.637872 | 0.720635 | 0.804066 | 0.844156 |
+| PyVi | 0.196347 | 0.490645 | 0.377485 | 0.324908 | 0.579305 | 0.669129 | 0.742895 | **0.842803** | **0.878593** |
+| Underthesea | 0.194825 | 0.491977 | 0.376981 | **0.325288** | 0.575500 | 0.673695 | **0.756023** | 0.835192 | 0.876310 |
+| VnCoreNLP | **0.196347** | **0.495782** | **0.379908** | 0.323386 | **0.584442** | **0.674837** | 0.754120 | 0.834758 | 0.877452 |
+
+Relative to the regex baseline, VnCoreNLP improves development F2 by `0.032257`
+absolute (about 9.28% relative). PyVi has the highest candidate Recall@50 and
+Recall@100, while VnCoreNLP has the best final top-three F2. The differences
+among the three segmenters are small enough that this single split does not
+establish general superiority. For the immediate pipeline, use VnCoreNLP as the
+best measured final-output BM25 treatment and retain PyVi as a lightweight
+candidate-recall alternative. Before final reporting, archive and inspect each
+resolved config, metrics, split IDs, run metadata, and dependency versions.

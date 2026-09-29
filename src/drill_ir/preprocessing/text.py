@@ -12,6 +12,31 @@ from typing import Any, Protocol
 WORD_PATTERN = re.compile(r"\w+", flags=re.UNICODE)
 WHITESPACE_PATTERN = re.compile(r"\s+")
 
+STOPWORD_PRESETS: dict[str, frozenset[str]] = {
+    "none": frozenset(),
+    "vi_legal_conservative": frozenset(
+        {
+            "cả", "các", "cái", "chiếc", "chứ", "cứ", "cùng", "cũng",
+            "đây", "để", "đó", "gì", "là", "lại", "lúc", "mà", "mỗi",
+            "một_cách", "này", "ngay", "nhiều", "như", "nhưng", "những",
+            "nữa", "qua", "ra", "rằng", "rất", "rồi", "so", "thì", "từng",
+            "và", "vẫn", "vào", "vậy", "vì", "với", "vừa",
+        }
+    ),
+    "vi_legacy": frozenset(
+        {
+            "bị", "bởi", "cả", "các", "cái", "cần", "càng", "chỉ", "chiếc",
+            "cho", "chứ", "có", "có_thể", "cứ", "cùng", "cũng", "đã", "đang",
+            "đây", "để", "đến_nỗi", "đều", "điều", "do", "đó", "được", "gì",
+            "khi", "là", "lại", "lên", "lúc", "mà", "mỗi", "một_cách", "này",
+            "nên", "nếu", "ngay", "nhiều", "như", "nhưng", "những", "nữa",
+            "phải", "qua", "ra", "rằng", "rất", "rồi", "sau", "sẽ", "so",
+            "tại", "theo", "thì", "trên", "trước", "từ", "từng", "và", "vẫn",
+            "vào", "vậy", "vì", "với", "vừa",
+        }
+    ),
+}
+
 
 @dataclass(frozen=True, slots=True)
 class TextNormalizerConfig:
@@ -63,6 +88,7 @@ class TokenizerConfig:
     segmenter_max_characters: int = 20_000
     min_token_length: int = 1
     keep_numbers: bool = True
+    stopword_preset: str = "none"
     stopwords: tuple[str, ...] = ()
     stopwords_path: str | None = None
     character_ngram_min: int = 3
@@ -99,10 +125,16 @@ class TokenizingTextProcessor:
             raise ValueError("Invalid tokenizer character n-gram range")
         if tokenizer.backend == "character_ngram" and tokenizer.word_segmenter != "none":
             raise ValueError("character_ngram cannot be combined with a word segmenter")
+        if tokenizer.stopword_preset not in STOPWORD_PRESETS:
+            raise ValueError(
+                f"Unknown tokenizer.stopword_preset={tokenizer.stopword_preset!r}; "
+                f"expected one of {sorted(STOPWORD_PRESETS)}"
+            )
         self.normalizer = normalizer
         self.config = tokenizer
         self._segmenter: Any = None
-        self._stopwords = set(tokenizer.stopwords)
+        self._stopwords = set(STOPWORD_PRESETS[tokenizer.stopword_preset])
+        self._stopwords.update(tokenizer.stopwords)
         if tokenizer.stopwords_path is not None:
             path = Path(tokenizer.stopwords_path)
             self._stopwords.update(
@@ -206,6 +238,7 @@ def build_token_processor(config: dict[str, Any] | None = None) -> TokenizingTex
             ),
             min_token_length=int(tokenizer.get("min_token_length", 1)),
             keep_numbers=bool(tokenizer.get("keep_numbers", True)),
+            stopword_preset=str(tokenizer.get("stopword_preset", "none")),
             stopwords=tuple(str(word) for word in tokenizer.get("stopwords", [])),
             stopwords_path=tokenizer.get("stopwords_path"),
             character_ngram_min=int(tokenizer.get("character_ngram_min", 3)),

@@ -20,17 +20,30 @@ class BM25Retriever:
         k1: float = 1.2,
         b: float = 0.75,
         text_processor: TokenProcessor | None = None,
+        min_document_frequency: int = 1,
+        max_document_frequency: int | None = None,
+        max_document_frequency_ratio: float = 1.0,
     ) -> None:
         if k1 <= 0 or not 0 <= b <= 1:
             raise ValueError("BM25 requires k1 > 0 and 0 <= b <= 1")
+        if min_document_frequency <= 0:
+            raise ValueError("BM25 min_document_frequency must be positive")
+        if max_document_frequency is not None and max_document_frequency <= 0:
+            raise ValueError("BM25 max_document_frequency must be null or positive")
+        if not 0 < max_document_frequency_ratio <= 1:
+            raise ValueError("BM25 max_document_frequency_ratio must be in (0, 1]")
         self.k1 = k1
         self.b = b
         self.text_processor = text_processor or build_token_processor()
+        self.min_document_frequency = min_document_frequency
+        self.max_document_frequency = max_document_frequency
+        self.max_document_frequency_ratio = max_document_frequency_ratio
         self._aids: list[int] = []
         self._doc_lengths: list[int] = []
         self._postings: dict[str, list[tuple[int, int]]] = {}
         self._idf: dict[str, float] = {}
         self._avgdl = 0.0
+        self._vocabulary_stats: dict[str, int | float | None] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
         postings: defaultdict[str, list[tuple[int, int]]] = defaultdict(list)
@@ -46,11 +59,33 @@ class BM25Retriever:
         document_count = len(self._aids)
         if not document_count:
             raise ValueError("Cannot fit BM25 on an empty corpus")
+        maximum_df = int(document_count * self.max_document_frequency_ratio)
+        if self.max_document_frequency is not None:
+            maximum_df = min(maximum_df, self.max_document_frequency)
+        retained = {
+            term: items
+            for term, items in postings.items()
+            if self.min_document_frequency <= len(items) <= maximum_df
+        }
+        self._postings = retained
+        # Length normalization must use the same retained vocabulary as scoring.
+        self._doc_lengths = [0] * document_count
+        for items in retained.values():
+            for position, frequency in items:
+                self._doc_lengths[position] += frequency
         self._avgdl = sum(self._doc_lengths) / document_count
-        self._postings = dict(postings)
         self._idf = {
             term: math.log(1.0 + (document_count - len(items) + 0.5) / (len(items) + 0.5))
             for term, items in self._postings.items()
+        }
+        self._vocabulary_stats = {
+            "original_terms": len(postings),
+            "retained_terms": len(retained),
+            "pruned_terms": len(postings) - len(retained),
+            "min_document_frequency": self.min_document_frequency,
+            "max_document_frequency": self.max_document_frequency,
+            "max_document_frequency_ratio": self.max_document_frequency_ratio,
+            "effective_max_document_frequency": maximum_df,
         }
 
     def retrieve(self, queries: Sequence[Query], top_k: int) -> list[RetrievalResult]:
@@ -96,4 +131,5 @@ class BM25Retriever:
             "k1": self.k1,
             "b": self.b,
             "preprocessing": metadata() if callable(metadata) else None,
+            "vocabulary": self._vocabulary_stats,
         }

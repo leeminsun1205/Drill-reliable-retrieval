@@ -42,6 +42,15 @@ def build_retriever(
             k1=float(params.get("k1", 1.2)),
             b=float(params.get("b", 0.75)),
             text_processor=build_token_processor(params.get("preprocessing")),
+            min_document_frequency=int(params.get("min_document_frequency", 1)),
+            max_document_frequency=(
+                int(params["max_document_frequency"])
+                if params.get("max_document_frequency") is not None
+                else None
+            ),
+            max_document_frequency_ratio=float(
+                params.get("max_document_frequency_ratio", 1.0)
+            ),
         )
     if method != "dense":
         raise ValueError(f"No retriever factory registered for method={method!r}")

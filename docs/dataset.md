@@ -225,6 +225,24 @@ must be preserved with the resolved experiment configuration. Regex-word,
 whitespace, and character n-gram tokenization are independently selectable;
 character n-grams cannot be combined with word segmentation.
 
+Two built-in stopword presets are available for controlled BM25 ablations:
+`vi_legal_conservative` retains legal modality, condition, temporal, threshold,
+and reference terms; `vi_legacy` reproduces the broader list supplied from an
+older project, including potentially consequential words such as `phải`,
+`được`, `nếu`, `trước`, `sau`, `theo`, and `điều`. Neither preset is enabled by
+default. Multi-syllable entries containing underscores only match a segmenter
+that emits the same compound token, so comparisons must hold the segmenter
+fixed.
+
+BM25 also supports vocabulary pruning by article-level document frequency.
+`min_document_frequency` removes terms found in too few indexed articles;
+`max_document_frequency` and `max_document_frequency_ratio` remove terms found
+in too many. This is corpus-derived stopword/noise filtering, not raw collection
+term-frequency filtering. BM25 already downweights common terms through IDF, so
+the defaults (`1`, null, and `1.0`) disable pruning. When enabled, scoring and
+document-length normalization both use the retained vocabulary, and run
+metadata records original, retained, and pruned vocabulary sizes.
+
 The legacy VnCoreNLP Python wrapper sends text to its Java process through a
 local HTTP form whose request size is bounded. Before segmentation only, the
 adapter therefore divides oversized text at whitespace into requests of at most

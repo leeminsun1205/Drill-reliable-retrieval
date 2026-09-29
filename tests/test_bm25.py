@@ -82,6 +82,34 @@ class BM25Test(unittest.TestCase):
         self.assertGreater(len(fake.requests), 1)
         self.assertTrue(all(len(request) <= 12 for request in fake.requests))
 
+    def test_stopword_presets_are_selectable(self) -> None:
+        conservative = build_token_processor(
+            {"tokenizer": {"stopword_preset": "vi_legal_conservative"}}
+        )
+        legacy = build_token_processor(
+            {"tokenizer": {"stopword_preset": "vi_legacy"}}
+        )
+        self.assertEqual(conservative("người phải đăng ký và nộp thuế"), ["người", "phải", "đăng", "ký", "nộp", "thuế"])
+        self.assertEqual(legacy("người phải đăng ký và nộp thuế"), ["người", "đăng", "ký", "nộp", "thuế"])
+
+    def test_document_frequency_pruning(self) -> None:
+        articles = [
+            Article(10, "law-a", "chung alpha"),
+            Article(20, "law-b", "chung beta"),
+            Article(30, "law-c", "chung beta"),
+        ]
+        retriever = BM25Retriever(
+            min_document_frequency=2,
+            max_document_frequency_ratio=0.9,
+        )
+        retriever.fit(articles)
+        metadata = retriever.run_metadata()["vocabulary"]
+        self.assertEqual(metadata["original_terms"], 3)
+        self.assertEqual(metadata["retained_terms"], 1)
+        self.assertEqual(metadata["pruned_terms"], 2)
+        result = retriever.retrieve([Query(1, "beta", ())], top_k=1)[0]
+        self.assertEqual(result.aids[0], 20)
+
 
 if __name__ == "__main__":
     unittest.main()
