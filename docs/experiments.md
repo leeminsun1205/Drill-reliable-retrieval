@@ -54,6 +54,15 @@ candidate chunk is then tokenized again as the exact full encoder input
 records `max_encoded_tokens_observed`; a 512-token treatment must therefore
 report a value no greater than 512.
 
+The implemented `recursive_token` baseline keeps the same tokenizer, total
+budget, overlap, aggregation, and exact full-input post-check as `token_window`.
+For each candidate window it recursively falls back through paragraph, newline,
+sentence-ending punctuation, whitespace, and finally a hard token boundary. A
+`minimum_fill_ratio` (0.5 by default) prevents an early separator from producing
+an unnecessarily small chunk. This is a deterministic in-repository recursive-
+separator baseline, not a claim of byte-for-byte LangChain equivalence. Run
+metadata records how many final boundaries came from each separator level.
+
 The chunk cache key includes the model/revision, tokenizer-window budget,
 overlap, document prefix, and chunker version. Run metadata records the content
 token budget, chunk count, maximum chunks per article, representation count,
@@ -323,3 +332,50 @@ establish general superiority. For the immediate pipeline, use VnCoreNLP as the
 best measured final-output BM25 treatment and retain PyVi as a lightweight
 candidate-recall alternative. Before final reporting, archive and inspect each
 resolved config, metrics, split IDs, run metadata, and dependency versions.
+
+### Multilingual-E5-base fixed token-window run
+
+Reported from Kaggle by the project owner on 2026-09-29 for the 438-query
+seed-42 development split. From the run context, the treatment is
+`intfloat/multilingual-e5-base` with 512 total tokens, 64-token overlap, max
+chunk-to-aid aggregation, candidate `top_k=100`, and final `output_k=3`.
+Artifacts have not yet been copied into or independently inspected from this
+checkout, so the configuration attribution is user-reported pending verification.
+
+- Precision: `0.2070015221`;
+- Recall: `0.5241628615`;
+- F2: `0.4012165424`;
+- candidate Recall@1: `0.3253424658`;
+- candidate Recall@5: `0.6058056099`;
+- candidate Recall@10: `0.6984072624`;
+- candidate Recall@20: `0.7964666232`;
+- candidate Recall@50: `0.8747662535`;
+- candidate Recall@100: `0.9046586214`.
+
+This exceeds the measured VnCoreNLP BM25 run by `0.021309` absolute F2 (about
+5.61% relative) and `0.027207` absolute Recall@100. It does **not** yet isolate
+the effect of chunking: the required controlled comparison is the same E5 model
+and retrieval configuration with `article_truncate`. Inspect the fixed-window
+`config.yaml`, `run_info.json`, split IDs, and chunk statistics before treating
+the run as fully verified.
+
+The matching article-truncation control was subsequently reported from Kaggle
+on 2026-09-29 with Precision `0.1917808219`, Recall `0.4853500761`, F2
+`0.3715880880`, and candidate Recall@1/5/10/20/50/100 of `0.3006088280`,
+`0.5803109372`, `0.6703033268`, `0.7755164166`, `0.8481843879`, and
+`0.8798488802`. Assuming the saved configs and split IDs confirm the stated
+controlled setup, fixed 512/64 token windows improve F2 by `0.029628` absolute
+(about 7.97% relative) and Recall@100 by `0.024810` over article truncation.
+
+| E5 representation | Precision | Recall | F2 | R@1 | R@5 | R@10 | R@20 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Article truncate | 0.191781 | 0.485350 | 0.371588 | 0.300609 | 0.580311 | 0.670303 | 0.775516 | 0.848184 | 0.879849 |
+| Token window 512/64 | **0.207002** | **0.524163** | **0.401217** | **0.325342** | **0.605806** | **0.698407** | **0.796467** | **0.874766** | **0.904659** |
+
+The improvement is present at every recorded cutoff and in both final precision
+and recall. Article-truncated E5 is below the measured VnCoreNLP BM25 F2
+(`0.371588` versus `0.379908`), whereas fixed-window E5 exceeds it. This supports
+using fixed-window E5, not truncated E5, as the dense component entering later
+hybrid experiments. It does not yet show that recursive or legal-structure
+boundaries outperform fixed windows. A paired per-query analysis and artifact
+verification remain required before a statistical claim.

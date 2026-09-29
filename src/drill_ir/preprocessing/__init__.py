@@ -12,6 +12,8 @@ from .chunking import (
     ArticleChunker,
     ArticleTruncationChunker,
     Chunk,
+    RecursiveTokenChunker,
+    RecursiveTokenChunkerConfig,
     TokenWindowChunker,
     TokenWindowChunkerConfig,
 )
@@ -26,6 +28,8 @@ __all__ = [
     "ArticleChunker",
     "ArticleTruncationChunker",
     "Chunk",
+    "RecursiveTokenChunker",
+    "RecursiveTokenChunkerConfig",
     "TokenWindowChunker",
     "TokenWindowChunkerConfig",
 ]

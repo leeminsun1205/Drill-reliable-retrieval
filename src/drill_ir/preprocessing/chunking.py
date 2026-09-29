@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import asdict, dataclass
 import json
+import re
 from typing import Any, Protocol, Sequence
 
 from drill_ir.data.models import Article
@@ -85,10 +86,27 @@ class TokenWindowChunker:
     @property
     def cache_key(self) -> str:
         return json.dumps(
-            {"method": "token_window", "version": 1, **asdict(self.config)},
+            {"method": self.method, "version": 1, **self._cache_parameters()},
             sort_keys=True,
             separators=(",", ":"),
         )
+
+    @property
+    def method(self) -> str:
+        return "token_window"
+
+    def _cache_parameters(self) -> dict[str, Any]:
+        return asdict(self.config)
+
+    def _choose_token_end(
+        self,
+        text: str,
+        offsets: Sequence[tuple[int, int]],
+        token_start: int,
+        candidate_end: int,
+    ) -> int:
+        del text, offsets
+        return candidate_end
 
     def _load_tokenizer(self) -> Any:
         if self._tokenizer is not None:
@@ -148,6 +166,12 @@ class TokenWindowChunker:
             token_start = 0
             while token_start < len(token_ids):
                 token_end = min(token_start + content_budget, len(token_ids))
+                token_end = self._choose_token_end(
+                    article.text,
+                    offsets,
+                    token_start,
+                    token_end,
+                )
                 while True:
                     window_offsets = [
                         (int(start), int(end))
@@ -173,11 +197,11 @@ class TokenWindowChunker:
                         raise ValueError("Cannot create a non-empty chunk within max_tokens")
                 chunks.append(
                     Chunk(
-                        chunk_id=f"{article.aid}:token_window:{index}",
+                        chunk_id=f"{article.aid}:{self.method}:{index}",
                         aid=article.aid,
                         law_id=article.law_id,
                         chunk_index=index,
-                        chunk_type="token_window",
+                        chunk_type=self.method,
                         text=text,
                         char_start=char_start,
                         char_end=char_end,
@@ -195,7 +219,7 @@ class TokenWindowChunker:
                     raise ValueError("Chunking made no forward progress")
                 token_start = next_start
         self.last_stats = {
-            "method": "token_window",
+            "method": self.method,
             "articles": len(articles),
             "chunks": len(chunks),
             "content_token_budget": content_budget,
@@ -204,4 +228,86 @@ class TokenWindowChunker:
             "overlap_tokens": self.config.overlap_tokens,
             "max_chunks_per_article": max(per_aid.values(), default=0),
         }
+        return chunks
+
+
+@dataclass(frozen=True, slots=True)
+class RecursiveTokenChunkerConfig(TokenWindowChunkerConfig):
+    minimum_fill_ratio: float = 0.5
+
+
+class RecursiveTokenChunker(TokenWindowChunker):
+    """Prefer paragraph, line, sentence, then whitespace window boundaries."""
+
+    _SEPARATORS: tuple[tuple[str, re.Pattern[str]], ...] = (
+        ("paragraph", re.compile(r"\n[ \t]*\n+")),
+        ("line", re.compile(r"\n+")),
+        ("sentence", re.compile(r"[.!?…][\"'”’\)\]]*\s+")),
+        ("whitespace", re.compile(r"\s+")),
+    )
+
+    def __init__(
+        self,
+        config: RecursiveTokenChunkerConfig,
+        *,
+        tokenizer: Any = None,
+    ) -> None:
+        if not 0 < config.minimum_fill_ratio <= 1:
+            raise ValueError("chunking.minimum_fill_ratio must be in (0, 1]")
+        super().__init__(config, tokenizer=tokenizer)
+        self.config = config
+        self._boundary_counts: Counter[str] = Counter()
+
+    @property
+    def method(self) -> str:
+        return "recursive_token"
+
+    def _choose_token_end(
+        self,
+        text: str,
+        offsets: Sequence[tuple[int, int]],
+        token_start: int,
+        candidate_end: int,
+    ) -> int:
+        if candidate_end >= len(offsets):
+            self._boundary_counts["article_end"] += 1
+            return candidate_end
+        usable = [
+            (index, int(start), int(end))
+            for index, (start, end) in enumerate(
+                offsets[token_start:candidate_end], start=token_start
+            )
+            if int(end) > int(start)
+        ]
+        if not usable:
+            self._boundary_counts["hard_token"] += 1
+            return candidate_end
+        char_start = usable[0][1]
+        char_end = usable[-1][2]
+        minimum_tokens = max(
+            1,
+            int((candidate_end - token_start) * self.config.minimum_fill_ratio),
+        )
+        minimum_end = token_start + minimum_tokens
+        candidate_text = text[char_start:char_end]
+        for name, pattern in self._SEPARATORS:
+            for match in reversed(list(pattern.finditer(candidate_text))):
+                boundary = char_start + match.end()
+                selected_end = token_start
+                for index, _, token_char_end in usable:
+                    if token_char_end <= boundary:
+                        selected_end = index + 1
+                    else:
+                        break
+                if minimum_end <= selected_end <= candidate_end:
+                    self._boundary_counts[name] += 1
+                    return selected_end
+        self._boundary_counts["hard_token"] += 1
+        return candidate_end
+
+    def chunk_articles(self, articles: Sequence[Article]) -> list[Chunk]:
+        self._boundary_counts.clear()
+        chunks = super().chunk_articles(articles)
+        self.last_stats["minimum_fill_ratio"] = self.config.minimum_fill_ratio
+        self.last_stats["boundary_counts"] = dict(sorted(self._boundary_counts.items()))
         return chunks

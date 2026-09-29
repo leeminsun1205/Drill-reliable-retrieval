@@ -3,6 +3,8 @@ import unittest
 from drill_ir.data import Article
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
+    RecursiveTokenChunker,
+    RecursiveTokenChunkerConfig,
     TokenWindowChunker,
     TokenWindowChunkerConfig,
 )
@@ -104,6 +106,36 @@ class ChunkingTest(unittest.TestCase):
         chunks = chunker.chunk_articles([Article(1, "law", "aa bb cc")])
         self.assertEqual([chunk.text for chunk in chunks], ["aa", "bb", "cc"])
         self.assertTrue(all(chunk.token_count <= 5 for chunk in chunks))
+
+    def test_recursive_mode_prefers_paragraph_boundary(self) -> None:
+        article = Article(1, "law", "aa bb\n\ncc dd ee ff")
+        chunker = RecursiveTokenChunker(
+            RecursiveTokenChunkerConfig(
+                model_name="fake",
+                max_tokens=7,
+                overlap_tokens=1,
+                document_prefix="passage ",
+                minimum_fill_ratio=0.5,
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        self.assertEqual(chunks[0].text, "aa bb")
+        self.assertEqual(chunks[0].chunk_type, "recursive_token")
+        self.assertGreaterEqual(chunker.last_stats["boundary_counts"]["paragraph"], 1)
+        self.assertTrue(all(chunk.token_count <= 7 for chunk in chunks))
+        for chunk in chunks:
+            self.assertEqual(article.text[chunk.char_start : chunk.char_end], chunk.text)
+
+    def test_recursive_mode_rejects_invalid_minimum_fill(self) -> None:
+        with self.assertRaisesRegex(ValueError, "minimum_fill_ratio"):
+            RecursiveTokenChunker(
+                RecursiveTokenChunkerConfig(
+                    model_name="fake",
+                    minimum_fill_ratio=0.0,
+                ),
+                tokenizer=FakeFastTokenizer(),
+            )
 
 
 if __name__ == "__main__":

@@ -18,6 +18,8 @@ retrieval:
       method: article_truncate
       max_tokens: 512
       overlap_tokens: 64
+      # Recursive mode refuses an early boundary below this fraction of budget.
+      minimum_fill_ratio: 0.5
       aggregation: max
     encoder:
       backend: sentence_transformers

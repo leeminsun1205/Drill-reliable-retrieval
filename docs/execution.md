@@ -69,6 +69,20 @@ Run the fixed tokenizer-window treatment with:
 Both commands accept explicit Kaggle input paths when the files are not copied
 under repository-local `data/`.
 
+After the fixed-window control is measured, run the recursive-separator baseline
+with all other settings unchanged:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/dense.yaml \
+  --experiment-name dense_e5_recursive_token_512_64_seed42 \
+  --set retrieval.dense.chunking.method=recursive_token \
+  --set retrieval.dense.chunking.max_tokens=512 \
+  --set retrieval.dense.chunking.overlap_tokens=64 \
+  --set retrieval.dense.chunking.minimum_fill_ratio=0.5 \
+  --output-root /kaggle/working/results
+```
+
 Use CLI flags for model trials instead of duplicating configuration files. For
 example, BGE-M3 on T4x2 can reuse the dense base config while clearing the E5
 prefixes:
