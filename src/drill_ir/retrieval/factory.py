@@ -12,6 +12,7 @@ from .dense import (
     SentenceTransformerEncoder,
     SentenceTransformerEncoderConfig,
 )
+from drill_ir.preprocessing import build_token_processor
 
 
 def _dense_device(runtime: dict[str, Any]) -> str | list[str]:
@@ -38,7 +39,9 @@ def build_retriever(
     if method == "bm25":
         params = retrieval_config.get("bm25", {})
         return BM25Retriever(
-            k1=float(params.get("k1", 1.2)), b=float(params.get("b", 0.75))
+            k1=float(params.get("k1", 1.2)),
+            b=float(params.get("b", 0.75)),
+            text_processor=build_token_processor(params.get("preprocessing")),
         )
     if method != "dense":
         raise ValueError(f"No retriever factory registered for method={method!r}")

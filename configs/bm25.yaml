@@ -14,6 +14,23 @@ retrieval:
   bm25:
     k1: 1.2
     b: 0.75
+    preprocessing:
+      normalization:
+        unicode_form: NFKC       # null, NFC, or NFKC
+        lowercase: true
+        normalize_whitespace: true
+        strip_control_characters: true
+        strip_accents: false     # keep Vietnamese diacritics by default
+      tokenizer:
+        backend: regex_words     # regex_words, whitespace, character_ngram
+        word_segmenter: none     # none, underthesea, pyvi, vncorenlp
+        vncorenlp_jar_path: null # required only for word_segmenter=vncorenlp
+        min_token_length: 1
+        keep_numbers: true       # legal article numbers are often informative
+        stopwords: []            # removal is opt-in and must be documented
+        stopwords_path: null
+        character_ngram_min: 3
+        character_ngram_max: 5
 
 evaluation:
   # Candidate-stage diagnostics; these do not change the official final metrics.

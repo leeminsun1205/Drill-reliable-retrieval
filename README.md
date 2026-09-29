@@ -41,6 +41,19 @@ python -m pip install -e '.[dense]'
 drill-run --config configs/dense.yaml
 ```
 
+Optional Vietnamese word segmenters for BM25 are installed with:
+
+```bash
+python -m pip install -e '.[vietnamese]'
+drill-run --config configs/bm25.yaml \
+  --set retrieval.bm25.preprocessing.tokenizer.word_segmenter=underthesea
+```
+
+PyVi is selected with `pyvi`. VnCoreNLP also requires
+`retrieval.bm25.preprocessing.tokenizer.vncorenlp_jar_path` to point to its
+local JAR. The default remains the dependency-light regex tokenizer used by the
+recorded baseline.
+
 The scripts in `scripts/` provide equivalent commands for environments where an
 editable install is not desired.
 

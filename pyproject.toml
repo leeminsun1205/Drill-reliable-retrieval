@@ -26,6 +26,11 @@ dense = [
     "torch>=2.1",
     "transformers>=4.41",
 ]
+vietnamese = [
+    "underthesea>=6.8",
+    "pyvi>=0.1.1",
+    "vncorenlp>=1.0.3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

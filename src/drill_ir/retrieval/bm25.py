@@ -3,25 +3,29 @@
 from collections import Counter, defaultdict
 import heapq
 import math
-import re
-import unicodedata
 from typing import Sequence
 
 from drill_ir.data.models import Article, Query, RetrievalResult
-
-TOKEN_PATTERN = re.compile(r"\w+", flags=re.UNICODE)
-
+from drill_ir.preprocessing import TokenProcessor, build_token_processor
 
 def tokenize(text: str) -> list[str]:
-    return TOKEN_PATTERN.findall(unicodedata.normalize("NFKC", text).lower())
+    """Backward-compatible default tokenizer used by the original baseline."""
+    return build_token_processor()(text)
 
 
 class BM25Retriever:
-    def __init__(self, *, k1: float = 1.2, b: float = 0.75) -> None:
+    def __init__(
+        self,
+        *,
+        k1: float = 1.2,
+        b: float = 0.75,
+        text_processor: TokenProcessor | None = None,
+    ) -> None:
         if k1 <= 0 or not 0 <= b <= 1:
             raise ValueError("BM25 requires k1 > 0 and 0 <= b <= 1")
         self.k1 = k1
         self.b = b
+        self.text_processor = text_processor or build_token_processor()
         self._aids: list[int] = []
         self._doc_lengths: list[int] = []
         self._postings: dict[str, list[tuple[int, int]]] = {}
@@ -33,7 +37,7 @@ class BM25Retriever:
         self._aids = []
         self._doc_lengths = []
         for position, article in enumerate(articles):
-            counts = Counter(tokenize(article.text))
+            counts = Counter(self.text_processor(article.text))
             self._aids.append(article.aid)
             self._doc_lengths.append(sum(counts.values()))
             for term, frequency in counts.items():
@@ -57,7 +61,7 @@ class BM25Retriever:
         results: list[RetrievalResult] = []
         for query in queries:
             scores: defaultdict[int, float] = defaultdict(float)
-            for term in set(tokenize(query.question)):
+            for term in set(self.text_processor(query.question)):
                 idf = self._idf.get(term)
                 if idf is None:
                     continue
@@ -85,3 +89,11 @@ class BM25Retriever:
                 )
             )
         return results
+
+    def run_metadata(self) -> dict[str, object]:
+        metadata = getattr(self.text_processor, "metadata", None)
+        return {
+            "k1": self.k1,
+            "b": self.b,
+            "preprocessing": metadata() if callable(metadata) else None,
+        }

@@ -198,6 +198,39 @@ configuration.
 Raw data, derived corpora, checkpoints, and embeddings are local artifacts and
 must not be committed unless explicitly requested and appropriately reviewed.
 
+### Text-processing stages
+
+Text processing is configured per retrieval branch rather than applied
+destructively to the raw Parquet files. The intended order before sparse
+indexing is:
+
+```text
+raw field selection -> Unicode/control/whitespace normalization
+                    -> optional Vietnamese word segmentation
+                    -> term tokenization -> optional term filtering
+```
+
+`configs/bm25.yaml` exposes each stage. The reproducible default remains NFKC,
+lowercase, whitespace/control normalization, and Unicode regex-word tokens so
+that new runs remain comparable with the recorded BM25 baseline. Vietnamese
+diacritics, numbers, and stopwords are retained: accents and provision numbers
+carry legal meaning, while an undocumented generic stopword list can remove
+useful modality or negation terms.
+
+The supported optional Vietnamese segmenters are Underthesea, PyVi, and
+VnCoreNLP. They are experimental treatments, not interchangeable
+normalization. VnCoreNLP additionally requires an explicit local JAR path. The
+segmenter name, dependency/model version, configuration, and any stopword file
+must be preserved with the resolved experiment configuration. Regex-word,
+whitespace, and character n-gram tokenization are independently selectable;
+character n-grams cannot be combined with word segmentation.
+
+Dense encoders do not reuse the BM25 term tokenizer. E5/BGE/GTE inputs should
+normally retain natural Vietnamese text and use the tokenizer shipped with the
+pinned model checkpoint. Chunk boundaries and token budgets are a separate
+preprocessing stage: the model tokenizer truncates an oversized input but does
+not automatically create multiple searchable chunks.
+
 ## Verified local snapshot
 
 The files inspected on 2026-09-28 contain:
