@@ -47,6 +47,13 @@ offsets, and retains `chunk_id -> aid`. Exact search aggregates all chunk scores
 to unique article IDs with `max` before applying article-level top-k. No
 structure-aware boundary claim is made for these fixed windows.
 
+The prefix/special-token subtraction is only the initial window estimate. Every
+candidate chunk is then tokenized again as the exact full encoder input
+`document_prefix + chunk_text` with special tokens enabled. If it exceeds
+`max_tokens`, the window is shortened until the invariant holds. Run metadata
+records `max_encoded_tokens_observed`; a 512-token treatment must therefore
+report a value no greater than 512.
+
 The chunk cache key includes the model/revision, tokenizer-window budget,
 overlap, document prefix, and chunker version. Run metadata records the content
 token budget, chunk count, maximum chunks per article, representation count,
@@ -74,6 +81,15 @@ authors, despite the architecture accepting up to 8,192. The exact query cap
 must be selected from measured training-query token lengths before the
 reranker experiment; 192 tokens is only a provisional engineering value, not a
 settled dataset fact.
+
+The measured multilingual-E5-base audit on 2026-09-29 supports retaining the
+512-token article-truncation run as a control but not as the only dense
+baseline: 17.03% of non-blank articles exceed its total input budget. Queries
+are short (maximum 58 total tokens with the E5 query prefix and special tokens),
+so document truncation is the immediate concern for this bi-encoder. The fixed
+512/64 token-window experiment should therefore precede recursive or legal-
+structure-aware treatments. Do not infer an exact chunk count from length
+percentiles; record it from the executed chunker metadata.
 
 The planned first hybrid method is weighted reciprocal rank fusion (WRRF; also
 sometimes shortened to weighted RRF), not direct addition of raw BM25 and cosine

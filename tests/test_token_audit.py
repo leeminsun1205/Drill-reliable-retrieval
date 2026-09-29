@@ -11,8 +11,9 @@ class FakeAuditTokenizer:
         add_special_tokens: bool,
         truncation: bool = False,
         return_length: bool = False,
+        verbose: bool = True,
     ):
-        del truncation
+        del truncation, verbose
         special = 2 if add_special_tokens else 0
         if isinstance(value, str):
             return {"input_ids": value.split() + ([0, 1] if special else [])}

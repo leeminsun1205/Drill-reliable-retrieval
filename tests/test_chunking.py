@@ -18,8 +18,9 @@ class FakeFastTokenizer:
         add_special_tokens: bool,
         return_offsets_mapping: bool = False,
         truncation: bool = False,
+        verbose: bool = True,
     ) -> dict[str, list]:
-        del add_special_tokens, truncation
+        del truncation, verbose
         offsets: list[tuple[int, int]] = []
         cursor = 0
         for token in text.split():
@@ -27,7 +28,8 @@ class FakeFastTokenizer:
             end = start + len(token)
             offsets.append((start, end))
             cursor = end
-        result: dict[str, list] = {"input_ids": list(range(len(offsets)))}
+        token_count = len(offsets) + (2 if add_special_tokens else 0)
+        result: dict[str, list] = {"input_ids": list(range(token_count))}
         if return_offsets_mapping:
             result["offset_mapping"] = offsets
         return result
@@ -53,7 +55,7 @@ class ChunkingTest(unittest.TestCase):
                 model_name="fake",
                 max_tokens=5,
                 overlap_tokens=1,
-                document_prefix="passage",
+                document_prefix="passage ",
             ),
             tokenizer=FakeFastTokenizer(),
         )
@@ -65,7 +67,9 @@ class ChunkingTest(unittest.TestCase):
         for chunk in chunks:
             self.assertEqual(article.text[chunk.char_start : chunk.char_end], chunk.text)
             self.assertEqual(chunk.source_spans, ((chunk.char_start, chunk.char_end),))
+            self.assertLessEqual(chunk.token_count, 5)
         self.assertEqual(chunker.last_stats["content_token_budget"], 2)
+        self.assertEqual(chunker.last_stats["max_encoded_tokens_observed"], 5)
 
     def test_overlap_must_be_smaller_than_content_budget(self) -> None:
         chunker = TokenWindowChunker(
@@ -73,12 +77,33 @@ class ChunkingTest(unittest.TestCase):
                 model_name="fake",
                 max_tokens=4,
                 overlap_tokens=1,
-                document_prefix="passage",
+                document_prefix="passage ",
             ),
             tokenizer=FakeFastTokenizer(),
         )
         with self.assertRaisesRegex(ValueError, "overlap_tokens"):
             chunker.chunk_articles([Article(1, "law", "aa bb")])
+
+    def test_full_encoder_input_is_rechecked_and_shrunk(self) -> None:
+        class BoundarySensitiveTokenizer(FakeFastTokenizer):
+            def __call__(self, text: str, **kwargs):
+                result = super().__call__(text, **kwargs)
+                if kwargs["add_special_tokens"] and text.startswith("passage "):
+                    result["input_ids"].append(999)
+                return result
+
+        chunker = TokenWindowChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=5,
+                overlap_tokens=0,
+                document_prefix="passage ",
+            ),
+            tokenizer=BoundarySensitiveTokenizer(),
+        )
+        chunks = chunker.chunk_articles([Article(1, "law", "aa bb cc")])
+        self.assertEqual([chunk.text for chunk in chunks], ["aa", "bb", "cc"])
+        self.assertTrue(all(chunk.token_count <= 5 for chunk in chunks))
 
 
 if __name__ == "__main__":

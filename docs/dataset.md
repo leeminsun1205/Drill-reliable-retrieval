@@ -287,6 +287,28 @@ and maximum 255,092. Dense encoders and cross-encoders must therefore record and
 test truncation or chunking behavior rather than relying on implicit tokenizer
 defaults.
 
+### Multilingual-E5-base token-length audit
+
+Measured on Kaggle on 2026-09-29 with the tokenizer for
+`intfloat/multilingual-e5-base` (un-pinned default revision). Lengths include the
+configured E5 prefixes and model special tokens: two document-prefix tokens plus
+two special tokens for articles, and three query-prefix tokens plus two special
+tokens for queries. The audit covered 59,628 non-blank articles and all 2,190
+training queries.
+
+| Collection | Median | P90 | P95 | P99 | Maximum | Over 512 | Over 1,024 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Articles | 213 | 695 | 983.65 | 2,263.19 | 68,385 | 10,156 (17.03%) | 2,750 (4.61%) |
+| Queries | 25 | 36 | 40 | 49.11 | 58 | 0 | 0 |
+
+Thus 49,472 articles (82.97%) fit within 512 total tokens, 7,406 (12.42%)
+fall in the 513--1,024 range, and 2,750 (4.61%) exceed 1,024. These are corpus
+coverage figures, not evidence-loss rates: a separate gold-aid audit is needed
+to determine how often answer-bearing text is truncated. The 1,024 threshold is
+diagnostic only for this E5 audit; it does not establish that
+`multilingual-e5-base` supports a 1,024-token input. BGE-M3 or another long-input
+model must be audited with its own tokenizer and revision.
+
 ## Official split and evidence-set statistics
 
 The organizer reports 2,190 labeled training queries, 312 public-test queries,

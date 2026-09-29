@@ -89,6 +89,7 @@ def _batch_lengths(
         add_special_tokens=True,
         truncation=False,
         return_length=True,
+        verbose=False,
     )
     raw_lengths = encoded.get("length")
     if raw_lengths is None:
