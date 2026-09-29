@@ -12,6 +12,13 @@ retrieval:
   top_k: 100
   output_k: 3
   dense:
+    chunking:
+      # article_truncate preserves the original one-vector-per-aid control.
+      # Override method=token_window for the fixed-window treatment.
+      method: article_truncate
+      max_tokens: 512
+      overlap_tokens: 64
+      aggregation: max
     encoder:
       backend: sentence_transformers
       model_name: intfloat/multilingual-e5-base

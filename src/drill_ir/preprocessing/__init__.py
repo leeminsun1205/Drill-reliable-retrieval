@@ -8,6 +8,13 @@ from .text import (
     TokenizingTextProcessor,
     build_token_processor,
 )
+from .chunking import (
+    ArticleChunker,
+    ArticleTruncationChunker,
+    Chunk,
+    TokenWindowChunker,
+    TokenWindowChunkerConfig,
+)
 
 __all__ = [
     "TextNormalizer",
@@ -16,4 +23,9 @@ __all__ = [
     "TokenizerConfig",
     "TokenizingTextProcessor",
     "build_token_processor",
+    "ArticleChunker",
+    "ArticleTruncationChunker",
+    "Chunk",
+    "TokenWindowChunker",
+    "TokenWindowChunkerConfig",
 ]

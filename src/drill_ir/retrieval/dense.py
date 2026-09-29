@@ -11,6 +11,7 @@ from typing import Any, Protocol, Sequence
 import numpy as np
 
 from drill_ir.data.models import Article, Query, RetrievalResult
+from drill_ir.preprocessing import ArticleChunker, ArticleTruncationChunker, Chunk
 
 
 class TextEncoder(Protocol):
@@ -190,6 +191,44 @@ class ExactVectorSearch:
                 all_scores.append(row[selected])
         return np.stack(all_indices), np.stack(all_scores)
 
+    def search_grouped(
+        self,
+        query_embeddings: np.ndarray,
+        document_embeddings: np.ndarray,
+        aids: Sequence[int],
+        *,
+        top_k: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Aggregate representation scores by aid with max before top-k."""
+        queries = np.asarray(query_embeddings, dtype=np.float32)
+        documents = np.asarray(document_embeddings, dtype=np.float32)
+        aid_array = np.asarray(aids, dtype=np.int64)
+        if queries.ndim != 2 or documents.ndim != 2:
+            raise ValueError("Dense embeddings must be two-dimensional matrices")
+        if queries.shape[1] != documents.shape[1]:
+            raise ValueError("Query and document embedding dimensions do not match")
+        if documents.shape[0] != len(aid_array):
+            raise ValueError("Document embeddings and aid mapping have different lengths")
+        if top_k <= 0:
+            raise ValueError("top_k must be positive")
+        if self.metric == "cosine":
+            queries = _l2_normalize(queries)
+            documents = _l2_normalize(documents)
+
+        unique_aids, inverse = np.unique(aid_array, return_inverse=True)
+        result_k = min(top_k, len(unique_aids))
+        all_aids: list[np.ndarray] = []
+        all_scores: list[np.ndarray] = []
+        for start in range(0, queries.shape[0], self.query_batch_size):
+            scores = queries[start : start + self.query_batch_size] @ documents.T
+            for row in scores:
+                grouped = np.full(len(unique_aids), -np.inf, dtype=np.float32)
+                np.maximum.at(grouped, inverse, row)
+                selected = np.lexsort((unique_aids, -grouped))[:result_k]
+                all_aids.append(unique_aids[selected])
+                all_scores.append(grouped[selected])
+        return np.stack(all_aids), np.stack(all_scores)
+
 
 class EmbeddingCache:
     """Validated on-disk cache for corpus embeddings and their aid mapping."""
@@ -268,11 +307,14 @@ class DenseRetriever:
         encoder: TextEncoder,
         search: ExactVectorSearch,
         cache: EmbeddingCache | None = None,
+        chunker: ArticleChunker | None = None,
     ) -> None:
         self.encoder = encoder
         self.search = search
         self.cache = cache
+        self.chunker = chunker or ArticleTruncationChunker()
         self._aids: list[int] = []
+        self._chunks: list[Chunk] = []
         self._document_embeddings: np.ndarray | None = None
         self.cache_hit = False
         self.corpus_fingerprint: str | None = None
@@ -280,26 +322,38 @@ class DenseRetriever:
     def fit(self, articles: Sequence[Article]) -> None:
         if not articles:
             raise ValueError("Cannot fit dense retrieval on an empty corpus")
-        self._aids = [article.aid for article in articles]
-        fingerprint = EmbeddingCache.corpus_fingerprint(articles)
+        self._chunks = self.chunker.chunk_articles(articles)
+        if not self._chunks:
+            raise ValueError("Chunker produced no dense representations")
+        self._aids = [chunk.aid for chunk in self._chunks]
+        representations = [
+            Article(aid=chunk.aid, law_id=chunk.law_id, text=chunk.text)
+            for chunk in self._chunks
+        ]
+        fingerprint = EmbeddingCache.corpus_fingerprint(representations)
         self.corpus_fingerprint = fingerprint
+        representation_key = json.dumps(
+            {"encoder": self.encoder.cache_key, "chunker": self.chunker.cache_key},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         embeddings = None
         if self.cache is not None:
             embeddings = self.cache.load(
                 corpus_fingerprint=fingerprint,
-                encoder_key=self.encoder.cache_key,
+                encoder_key=representation_key,
                 aids=self._aids,
             )
             self.cache_hit = embeddings is not None
         if embeddings is None:
-            embeddings = self.encoder.encode_documents([article.text for article in articles])
-            if embeddings.ndim != 2 or embeddings.shape[0] != len(articles):
+            embeddings = self.encoder.encode_documents([chunk.text for chunk in self._chunks])
+            if embeddings.ndim != 2 or embeddings.shape[0] != len(self._chunks):
                 raise ValueError("Encoder returned an invalid document embedding matrix")
             if self.cache is not None:
                 self.cache.save(
                     embeddings,
                     corpus_fingerprint=fingerprint,
-                    encoder_key=self.encoder.cache_key,
+                    encoder_key=representation_key,
                     aids=self._aids,
                 )
         self._document_embeddings = embeddings
@@ -315,6 +369,11 @@ class DenseRetriever:
             "search_backend": "exact",
             "search_metric": self.search.metric,
             "encoder_device": device,
+            "chunker_cache_key": self.chunker.cache_key,
+            "chunking": getattr(self.chunker, "last_stats", {"method": "article_truncate"}),
+            "representations": len(self._chunks),
+            "unique_aids": len(set(self._aids)),
+            "aggregation": "max",
         }
 
     def retrieve(self, queries: Sequence[Query], top_k: int) -> list[RetrievalResult]:
@@ -323,7 +382,7 @@ class DenseRetriever:
         if not queries:
             return []
         query_embeddings = self.encoder.encode_queries([query.question for query in queries])
-        indices, scores = self.search.search(
+        aids, scores = self.search.search_grouped(
             query_embeddings,
             self._document_embeddings,
             self._aids,
@@ -332,7 +391,7 @@ class DenseRetriever:
         return [
             RetrievalResult(
                 qid=query.qid,
-                aids=tuple(self._aids[index] for index in indices[row]),
+                aids=tuple(int(aid) for aid in aids[row]),
                 scores=tuple(float(score) for score in scores[row]),
             )
             for row, query in enumerate(queries)

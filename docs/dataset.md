@@ -54,6 +54,14 @@ structure-aware chunker must extract boundaries deterministically, retain
 `chunk_id -> aid`, and keep extraction separate from article-level retrieval and
 evaluation.
 
+The implemented generic chunk record preserves `chunk_id`, `aid`, `law_id`,
+chunk index/type, encoding text, raw character offsets, token count, parse
+status, structure path, and one or more source spans. Fixed tokenizer windows
+have one exact source span satisfying
+`original_text[char_start:char_end] == chunk_text`. Future composed
+representations such as Khoản lead-in plus Điểm text must use multiple
+`source_spans` rather than claiming one contiguous raw interval.
+
 ### Temporary chunk-granularity audit
 
 On 2026-09-28, a temporary full-corpus audit compared article, heuristic Khoản,

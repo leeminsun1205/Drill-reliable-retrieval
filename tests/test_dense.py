@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from drill_ir.data import Article, Query
+from drill_ir.preprocessing import Chunk
 from drill_ir.retrieval import DenseRetriever, EmbeddingCache, ExactVectorSearch
 
 
@@ -97,6 +98,34 @@ class DenseRetrieverTest(unittest.TestCase):
                 [1],
                 top_k=1,
             )
+
+    def test_chunk_scores_are_max_aggregated_to_unique_aids(self) -> None:
+        class FakeChunker:
+            cache_key = "fake-chunks-v1"
+
+            def chunk_articles(self, articles: list[Article]) -> list[Chunk]:
+                del articles
+                return [
+                    Chunk("10:0", 10, "L1", 0, "test", "weak", 0, 4, 1),
+                    Chunk("10:1", 10, "L1", 1, "test", "strong", 5, 11, 1),
+                    Chunk("20:0", 20, "L2", 0, "test", "medium", 0, 6, 1),
+                ]
+
+        vectors = {
+            "weak": [0.0, 1.0],
+            "strong": [1.0, 0.0],
+            "medium": [0.8, 0.2],
+            "query": [1.0, 0.0],
+        }
+        retriever = DenseRetriever(
+            encoder=FakeEncoder(vectors),
+            search=ExactVectorSearch(metric="cosine"),
+            chunker=FakeChunker(),
+        )
+        retriever.fit(self.articles)
+        result = retriever.retrieve([Query(1, "query", ())], top_k=2)[0]
+        self.assertEqual(result.aids, (10, 20))
+        self.assertEqual(len(result.aids), len(set(result.aids)))
 
 
 if __name__ == "__main__":

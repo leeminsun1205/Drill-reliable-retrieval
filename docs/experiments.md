@@ -38,6 +38,21 @@ article and the tokenizer truncates at `max_seq_length`. This limitation must be
 kept distinct from a later chunking treatment, which will need explicit chunk
 boundaries, overlap, chunk-to-article mapping, and score aggregation.
 
+The runner now represents that control explicitly as
+`retrieval.dense.chunking.method: article_truncate`. The first implemented
+treatment is `token_window`: it uses the exact fast tokenizer identified by the
+dense encoder config, subtracts document-prefix and model special tokens from
+the total `max_tokens` budget, creates overlapping windows with raw character
+offsets, and retains `chunk_id -> aid`. Exact search aggregates all chunk scores
+to unique article IDs with `max` before applying article-level top-k. No
+structure-aware boundary claim is made for these fixed windows.
+
+The chunk cache key includes the model/revision, tokenizer-window budget,
+overlap, document prefix, and chunker version. Run metadata records the content
+token budget, chunk count, maximum chunks per article, representation count,
+unique aid count, and aggregation method. Changing the representation therefore
+cannot silently reuse article-level embeddings.
+
 Length settings are tokenizer-token counts, not words or characters. A dense
 bi-encoder encodes query and document independently, so each side has its own
 maximum. A cross-encoder instead encodes a query-document pair; its configured

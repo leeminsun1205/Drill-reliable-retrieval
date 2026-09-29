@@ -39,6 +39,36 @@ Dense experiments require the optional model stack:
   --output-root /kaggle/working/results
 ```
 
+For user-facing Kaggle notebooks, use the repository scripts consistently. Run
+the exact-token audit before selecting a chunk budget:
+
+```python
+!python scripts/audit_token_lengths.py \
+  --model-name intfloat/multilingual-e5-base \
+  --document-prefix "passage: " \
+  --query-prefix "query: " \
+  --corpus data/legal-corpus.parquet \
+  --queries data/train.parquet \
+  --thresholds 512,1024 \
+  --output /kaggle/working/results/e5_token_lengths.json
+```
+
+The article-truncation control remains the default in `configs/dense.yaml`.
+Run the fixed tokenizer-window treatment with:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/dense.yaml \
+  --experiment-name dense_e5_token_window_512_64_seed42 \
+  --set retrieval.dense.chunking.method=token_window \
+  --set retrieval.dense.chunking.max_tokens=512 \
+  --set retrieval.dense.chunking.overlap_tokens=64 \
+  --output-root /kaggle/working/results
+```
+
+Both commands accept explicit Kaggle input paths when the files are not copied
+under repository-local `data/`.
+
 Use CLI flags for model trials instead of duplicating configuration files. For
 example, BGE-M3 on T4x2 can reuse the dense base config while clearing the E5
 prefixes:

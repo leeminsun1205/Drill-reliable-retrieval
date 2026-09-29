@@ -12,7 +12,12 @@ from .dense import (
     SentenceTransformerEncoder,
     SentenceTransformerEncoderConfig,
 )
-from drill_ir.preprocessing import build_token_processor
+from drill_ir.preprocessing import (
+    ArticleTruncationChunker,
+    TokenWindowChunker,
+    TokenWindowChunkerConfig,
+    build_token_processor,
+)
 
 
 def _dense_device(runtime: dict[str, Any]) -> str | list[str]:
@@ -61,8 +66,11 @@ def build_retriever(
     encoder_config = dense.get("encoder")
     search_config = dense.get("search")
     cache_config = dense.get("cache", {})
+    chunking_config = dense.get("chunking", {"method": "article_truncate"})
     if not isinstance(encoder_config, dict) or not isinstance(search_config, dict):
         raise ValueError("retrieval.dense requires encoder and search mappings")
+    if not isinstance(chunking_config, dict):
+        raise ValueError("retrieval.dense.chunking must be a YAML mapping")
     if encoder_config.get("backend") != "sentence_transformers":
         raise ValueError("Only dense encoder backend='sentence_transformers' is supported")
     if search_config.get("backend") != "exact":
@@ -96,4 +104,32 @@ def build_retriever(
     cache = None
     if bool(cache_config.get("enabled", True)):
         cache = EmbeddingCache(Path(str(cache_config.get("directory", "embeddings"))))
-    return DenseRetriever(encoder=encoder, search=search, cache=cache)
+    chunking_method = chunking_config.get("method", "article_truncate")
+    if chunking_config.get("aggregation", "max") != "max":
+        raise ValueError("Only dense chunk aggregation='max' is currently supported")
+    if chunking_method == "article_truncate":
+        chunker = ArticleTruncationChunker()
+    elif chunking_method == "token_window":
+        max_tokens = int(chunking_config.get("max_tokens", 512))
+        encoder_max = encoder_config.get("max_seq_length")
+        if encoder_max is not None and max_tokens > int(encoder_max):
+            raise ValueError("chunking.max_tokens cannot exceed encoder.max_seq_length")
+        chunker = TokenWindowChunker(
+            TokenWindowChunkerConfig(
+                model_name=str(encoder_config["model_name"]),
+                revision=(
+                    str(encoder_config["revision"])
+                    if encoder_config.get("revision") is not None
+                    else None
+                ),
+                max_tokens=max_tokens,
+                overlap_tokens=int(chunking_config.get("overlap_tokens", 64)),
+                document_prefix=str(encoder_config.get("document_prefix", "")),
+                trust_remote_code=bool(encoder_config.get("trust_remote_code", False)),
+            )
+        )
+    else:
+        raise ValueError(
+            "retrieval.dense.chunking.method must be 'article_truncate' or 'token_window'"
+        )
+    return DenseRetriever(encoder=encoder, search=search, cache=cache, chunker=chunker)
