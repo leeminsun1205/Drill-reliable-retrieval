@@ -1,4 +1,4 @@
-experiment_name: hybrid_bge_m3_diem_wrrf30_d08_s02_reranker_seed42
+experiment_name: hybrid_bge_m3_diem_wrrf20_d08_s02_reranker_seed42
 method: hybrid_reranker
 seed: 42
 
@@ -12,7 +12,7 @@ retrieval:
   output_k: 3
   hybrid:
     fusion: weighted_rrf
-    rrf_k: 30
+    rrf_k: 20
     sparse_weight: 0.2
     dense_weight: 0.8
     sparse_top_k: 100

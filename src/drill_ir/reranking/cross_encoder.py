@@ -193,7 +193,13 @@ class CrossEncoderReranker:
         if len(by_qid) != len(candidates):
             raise ValueError("First-stage candidates contain duplicate query IDs")
         reranked = []
-        for query in queries:
+        try:
+            from tqdm.auto import tqdm
+
+            query_iterator = tqdm(queries, desc="Reranking queries")
+        except ImportError:
+            query_iterator = queries
+        for query in query_iterator:
             candidate = by_qid.get(query.qid)
             if candidate is None:
                 raise ValueError(f"Missing first-stage candidates for qid={query.qid}")

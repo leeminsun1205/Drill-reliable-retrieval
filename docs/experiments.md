@@ -509,11 +509,19 @@ All hybrid values remain user-reported pending inspection of `config.yaml`,
 `run_info.json`, component rankings, and confirmation that the hybrid dense
 ranking matches its standalone cached run.
 
+With sparse/dense weights fixed at `0.2/0.8`, lowering `rrf_k` from 30 to 20
+produced Precision `0.2511415525`, Recall `0.6257610350`, F2 `0.4819725558`, and
+candidate Recall@1/5/10/20/50/100 of `0.4010654490`, `0.6918569254`,
+`0.7748314851`, `0.8376168732`, `0.8941128506`, and `0.9248804088`. This is an
+absolute F2 gain of `0.003831` over the reported `rrf_k=30` run and is the
+current selected first-stage configuration. The value is development-tuned and
+must remain fixed for reranker comparisons.
+
 ## Cross-encoder reranking
 
 The implemented `hybrid_reranker` pipeline freezes the hybrid first stage and
 reranks only its configured candidate pool. `configs/hybrid_reranker.yaml`
-starts from BGE-M3 Điểm 512/64 plus BM25, WRRF `rrf_k=30`, sparse/dense weights
+starts from BGE-M3 Điểm 512/64 plus BM25, WRRF `rrf_k=20`, sparse/dense weights
 `0.2/0.8`, first-stage `top_k=100`, reranker candidate pool 50, and final
 `output_k=3`. The untouched first-stage list is written to
 `first_stage_predictions.jsonl`; BM25 and dense component lists remain in

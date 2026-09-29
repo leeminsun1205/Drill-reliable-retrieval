@@ -246,7 +246,7 @@ After fixing the hybrid candidates, run the zero-shot BGE reranker over the top
   --config configs/hybrid_reranker.yaml \
   --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
   --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
-  --experiment-name hybrid_vncorenlp_bge_m3_diem_wrrf30_d08_s02_reranker50_seed42 \
+  --experiment-name hybrid_vncorenlp_bge_m3_diem_wrrf20_d08_s02_reranker50_seed42 \
   --devices 2 \
   --set retrieval.bm25.preprocessing.tokenizer.word_segmenter=vncorenlp \
   --set retrieval.bm25.preprocessing.tokenizer.vncorenlp_jar_path=/kaggle/working/VnCoreNLP/VnCoreNLP-1.2.jar \
