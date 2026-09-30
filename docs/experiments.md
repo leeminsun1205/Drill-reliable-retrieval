@@ -543,3 +543,27 @@ devices. FP16 autocast is enabled by config on CUDA only. Run metadata records
 the reranker model/revision, resolved devices, pair and document budgets,
 representation counts, structure parser statistics, aggregation, and candidate
 pool size. This is zero-shot inference, not a fine-tuned DRiLL reranker.
+
+The project owner reported the completed Kaggle run on 2026-09-30 with
+Precision `0.2549467275`, Recall `0.6392313546`, and F2 `0.4911637969` on the
+same 438-query seed-42 development split. Its candidate Recall@1/5/10/20/50/100
+was `0.4010654490`, `0.6918569254`, `0.7748314851`, `0.8376168732`,
+`0.8941128506`, and `0.9248804088`, exactly matching the frozen first stage as
+intended. Relative to that first stage, zero-shot reranking improves Precision
+by `0.003805`, Recall by `0.013470`, and F2 by `0.009191` absolute (about 1.91%
+relative). This is a real but modest gain for the additional inference cost.
+The run remains user-reported pending inspection of its saved config,
+predictions, split IDs, and run metadata.
+
+The measured development F2 must not be compared as if it were evaluated on
+the same examples as the organizer two-stage baseline's published private-test
+F2 (`0.5512` in the conference paper and `0.5515` in the extended paper).
+There are also material method differences: the organizer trained its
+cross-encoder with positives and BM25 hard negatives and selected a final
+top-two output, whereas this run uses an unfine-tuned public reranker and a
+fixed top-three output. The next low-cost analysis is therefore to evaluate
+top-1/top-2/top-3 cutoffs from the already saved reranked lists, followed by
+paired per-query first-stage-versus-reranker error analysis. A reranker trained
+with leakage-safe hard negatives is the scientifically justified next modeling
+step if the zero-shot result remains weak; changing the candidate pool cannot
+recover this run's ranking mistakes among candidates already present.

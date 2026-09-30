@@ -71,6 +71,30 @@ The public leaderboard had a different ordering: FPT IS, CUDO, and brain_rot
 were the top three, while eventual winner EDM ranked seventh. This change is a
 warning against selecting a method primarily from public-leaderboard feedback.
 
+### Final output-size policies behind reported private scores
+
+The organizer leaderboard reports Precision, Recall, and F2 but does not report
+a common final `top_k` for participant systems. Participant papers show that
+candidate depth and final output size must not be conflated: top-50 retrieval or
+top-10 reranking can still feed a thresholded, variable-size answer set.
+
+| Private result | Team/system | Published final selection policy |
+|---|---|---|
+| F2 0.7261, rank 1 | EDM | Variable-size output: a validation-selected F2 threshold over pointwise LightGBM probabilities; explicitly not fixed top-k. The threshold value and output-size distribution are not published. |
+| F2 0.6966, rank 2 | FPT IS | Variable-size pipeline: retain BGE-reranked chunks above 0.7, deduplicate to article IDs, cluster scores, then apply Qwen2.5-72B entailment filtering. The exact final count/fallback and output-size distribution are not published. |
+| F2 0.6955, rank 3 | CUDO submitted checkpoint | Variable-size output: inspect the reranked top 10, keep scores above 0.99, and fall back to top 2 only when no candidate passes. Thus `top-2` is a fallback, not the normal fixed output size. |
+| F2 0.6521, rank 5 | ViDRILL | Variable-size output: threshold 0.75 with a fallback policy. Public-test ablations select hybrid retrieval depth 30 and top-40 fallback; the paper does not unambiguously establish that this exact fallback produced the private submission. |
+| F2 0.5864, rank 9 | Engineers | Variable-size output: reranker threshold 0.85 plus a hybrid fallback; the published summary does not provide a fixed final count. |
+| F2 0.5512/0.5515 | Organizer two-stage baseline | Fixed top 2. The extended organizer ablation reports F2 0.5496, 0.5515, and 0.4615 for fixed top 1, 2, and 5 respectively. |
+
+The papers available for other leaderboard teams do not establish a sufficiently
+precise final cardinality policy, so no fixed top-k should be imputed to them.
+For this repository, fixed top-1/top-2/top-3 cutoff analysis is a necessary
+baseline, but a dev-calibrated threshold with a deterministic non-empty fallback
+is the closer comparison to the strongest participant systems. Thresholds are
+model-specific and must be retuned after reranker fine-tuning; values such as
+0.99, 0.85, and 0.75 are not transferable across uncalibrated score scales.
+
 ## Representative approaches
 
 ### EDM — rank 1
