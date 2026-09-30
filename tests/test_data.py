@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,7 +6,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from drill_ir.data import iter_articles, load_queries, validate_dataset
+from drill_ir.data import Query, iter_articles, load_queries, validate_dataset
 
 
 class DataTest(unittest.TestCase):
@@ -60,6 +61,31 @@ class DataTest(unittest.TestCase):
         loaded = load_queries(self.queries)
         self.assertEqual(loaded[0].qid, 7)
         self.assertEqual(loaded[0].relevant_aids, (10,))
+
+    def test_json_queries_accept_legacy_id_and_missing_labels(self) -> None:
+        path = Path(self.tempdir.name) / "public_test.json"
+        path.write_text(
+            json.dumps([{"id": 9, "question": "Câu hỏi test?"}]),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            load_queries(path),
+            [Query(qid=9, question="Câu hỏi test?", relevant_aids=())],
+        )
+
+    def test_json_queries_reject_duplicate_ids(self) -> None:
+        path = Path(self.tempdir.name) / "duplicate_test.json"
+        path.write_text(
+            json.dumps(
+                [
+                    {"qid": 9, "question": "Một"},
+                    {"id": 9, "question": "Hai"},
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "Duplicate query ID"):
+            load_queries(path)
 
 
 if __name__ == "__main__":

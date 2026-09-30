@@ -1,5 +1,14 @@
 # Dataset
 
+## Official test queries
+
+The post-competition public and private query files are JSON arrays. Each row
+contains `question`, an empty `relevant_laws` list, and either `id` or `qid`:
+the inspected public file uses `id`, while the inspected private file uses
+`qid`. Loaders normalize either identifier to internal `qid`; official output
+always uses `qid`. Empty labels are not evaluation gold and must not be used to
+tune the retrieval or output-selection policy.
+
 ## Raw legal corpus
 
 The current Kaggle input path is:

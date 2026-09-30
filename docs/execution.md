@@ -476,3 +476,26 @@ ordered `(aid, law_id, text)` values plus the document-encoding configuration.
 Query prefixes are deliberately excluded because queries are not stored in the
 corpus cache. Each run records cache hit/miss and embedding shape in
 `run_info.json`.
+
+## Public/private submission inference
+
+The submission runner fits the configured corpus index once, infers the public
+and private JSON query sets separately, then validates and packages each set.
+For the current Kaggle mounts, run the selected fixed configuration as follows:
+
+```python
+!python scripts/run_submission_inference.py \
+  --config configs/hybrid_reranker.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --public-test /kaggle/input/datasets/lmnhnht125/wedev-vlsp-test/public_test.json \
+  --private-test /kaggle/input/datasets/lmnhnht125/wedev-vlsp-test/private_test.json \
+  --devices 2 \
+  --output-dir /kaggle/working/submission_results
+```
+
+This creates `public_results.zip` and `private_results.zip`, each containing
+only root-level `results.json`. It also retains the full ranked JSONL files,
+first-stage rankings for reranker runs, resolved `config.yaml`, and
+`run_info.json` under the output directory. The config's `retrieval.output_k`
+controls the submitted list length; override it explicitly with `--output-k`
+only when applying a policy already selected on train/dev.

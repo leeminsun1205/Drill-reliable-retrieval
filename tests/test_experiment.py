@@ -4,12 +4,16 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+
 from drill_ir.data import Query
 from drill_ir.experiment import (
     apply_config_overrides,
     deterministic_split,
     load_config,
     package_submission,
+    run_submission_inference,
 )
 
 
@@ -65,6 +69,74 @@ class ExperimentTest(unittest.TestCase):
                 self.assertEqual(archive.namelist(), ["results.json"])
                 payload = json.loads(archive.read("results.json"))
             self.assertEqual(payload, [{"qid": 1, "relevant_laws": [10, 20]}])
+
+    def test_bm25_inference_creates_public_and_private_submissions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            corpus = root / "corpus.parquet"
+            schema = pa.schema(
+                [
+                    ("law_id", pa.string()),
+                    (
+                        "content",
+                        pa.list_(
+                            pa.struct(
+                                [("aid", pa.int64()), ("content_Article", pa.string())]
+                            )
+                        ),
+                    ),
+                ]
+            )
+            pq.write_table(
+                pa.Table.from_pylist(
+                    [
+                        {
+                            "law_id": "law-a",
+                            "content": [
+                                {"aid": 10, "content_Article": "học văn hóa xóa mù chữ"},
+                                {"aid": 20, "content_Article": "tài khoản ngoại tệ"},
+                            ],
+                        }
+                    ],
+                    schema=schema,
+                ),
+                corpus,
+            )
+            public = root / "public.json"
+            private = root / "private.json"
+            public.write_text(
+                json.dumps([{"id": 1, "question": "tài khoản ngoại tệ"}]),
+                encoding="utf-8",
+            )
+            private.write_text(
+                json.dumps([{"qid": 2, "question": "xóa mù chữ"}]),
+                encoding="utf-8",
+            )
+            config = {
+                "experiment_name": "submission-test",
+                "method": "bm25",
+                "seed": 42,
+                "data": {"corpus_path": str(corpus)},
+                "retrieval": {
+                    "top_k": 2,
+                    "output_k": 1,
+                    "bm25": {
+                        "preprocessing": {"tokenizer": {"word_segmenter": "none"}}
+                    },
+                },
+                "runtime": {"accelerator": "cpu", "devices": "auto"},
+                "output": {"root_dir": str(root)},
+            }
+            output = run_submission_inference(
+                config,
+                {"public": public, "private": private},
+                root / "submissions",
+            )
+            for name, expected_qid in (("public", 1), ("private", 2)):
+                with ZipFile(output / f"{name}_results.zip") as archive:
+                    payload = json.loads(archive.read("results.json"))
+                self.assertEqual(payload[0]["qid"], expected_qid)
+                self.assertEqual(len(payload[0]["relevant_laws"]), 1)
 
 
 if __name__ == "__main__":

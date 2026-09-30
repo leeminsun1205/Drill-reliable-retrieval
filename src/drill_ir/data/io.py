@@ -1,6 +1,7 @@
-"""Parquet readers for the DRiLL corpus and query datasets."""
+"""Readers for the DRiLL corpus and query datasets."""
 
 from collections.abc import Iterator
+import json
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -26,24 +27,48 @@ def iter_articles(path: str | Path, *, include_blank: bool = False) -> Iterator[
 
 
 def load_queries(path: str | Path) -> list[Query]:
-    """Load labeled queries, accepting either qid or legacy id."""
-    table = pq.read_table(path)
-    names = set(table.column_names)
-    id_columns = names & {"qid", "id"}
-    if not id_columns:
-        raise ValueError("Query data must contain either 'qid' or 'id'")
-    if not {"question", "relevant_laws"} <= names:
-        raise ValueError("Query data must contain 'question' and 'relevant_laws'")
+    """Load labeled or unlabeled queries from Parquet or JSON.
 
-    rows = table.to_pylist()
+    Official test JSON may use either ``qid`` or the legacy ``id`` field and
+    may omit ``relevant_laws``. Missing labels are represented by an empty
+    tuple; callers performing evaluation must continue to use labeled data.
+    """
+    path = Path(path)
+    if path.suffix.lower() == ".json":
+        with path.open(encoding="utf-8") as stream:
+            rows = json.load(stream)
+        if not isinstance(rows, list):
+            raise ValueError("Query JSON must contain a top-level array")
+    else:
+        table = pq.read_table(path)
+        names = set(table.column_names)
+        if not names & {"qid", "id"}:
+            raise ValueError("Query data must contain either 'qid' or 'id'")
+        if "question" not in names:
+            raise ValueError("Query data must contain 'question'")
+        rows = table.to_pylist()
+
     queries: list[Query] = []
+    seen: set[int] = set()
     for row in rows:
-        if "qid" in row and "id" in row and row["qid"] != row["id"]:
+        if not isinstance(row, dict):
+            raise ValueError("Every query row must be a mapping")
+        if "qid" not in row and "id" not in row:
+            raise ValueError("Query data must contain either 'qid' or 'id'")
+        if "question" not in row:
+            raise ValueError("Query data must contain 'question'")
+        if "qid" in row and "id" in row and int(row["qid"]) != int(row["id"]):
             raise ValueError(f"Conflicting qid/id values: {row['qid']} != {row['id']}")
         raw_qid = row.get("qid", row.get("id"))
+        qid = int(raw_qid)
+        if qid in seen:
+            raise ValueError(f"Duplicate query ID: {qid}")
+        seen.add(qid)
         # Gold labels are set-valued; preserve first occurrence for stable output.
-        relevant = tuple(dict.fromkeys(int(aid) for aid in (row["relevant_laws"] or ())))
+        relevant = tuple(
+            dict.fromkeys(int(aid) for aid in (row.get("relevant_laws") or ()))
+        )
         queries.append(
-            Query(qid=int(raw_qid), question=str(row["question"]), relevant_aids=relevant)
+            Query(qid=qid, question=str(row["question"]), relevant_aids=relevant)
         )
     return queries
