@@ -603,3 +603,21 @@ the original article-level hybrid list remains in
 `first_stage_predictions.jsonl`. `reranker_chunk_candidates.jsonl` records the
 selected chunk IDs, parent article IDs, types, and fusion scores. The default
 remains `article_rechunk` for backward comparability.
+
+### Hierarchical Khoản–Điểm representation
+
+`khoan_diem` is an independently selectable dense and reranker representation.
+It keeps every parsed Khoản that fits the configured token ceiling as one
+representation, even when the Khoản contains Điểm. An oversized Khoản with a
+valid Điểm sequence greedily packs consecutive complete Điểm under the same
+ceiling while repeating the Khoản lead-in. Only an individually oversized Điểm
+uses overlapping token windows after subtracting lead-in, prefix, and special-
+token cost. Ambiguous or absent Điểm structure, and lead-ins that exhaust the
+usable budget, fall back to complete-Khoản token windows. Articles without a
+safe Khoản parse retain the existing complete-article token-window fallback.
+
+The method never treats 512 as a fill target for otherwise short Khoản and does
+not merge separate Khoản. This keeps the first comparison attributable to a
+legal boundary strategy; cross-Khoản packing remains a future independent
+ablation. `configs/hybrid_reranker_khoan_diem.yaml` and the dedicated Kaggle
+notebook freeze this representation without changing the earlier Điểm suite.

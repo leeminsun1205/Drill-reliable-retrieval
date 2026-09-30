@@ -274,6 +274,14 @@ for source sequences longer than its advertised model length is expected in
 this audit: it counts raw source tokens without model inference, and the
 proposed chunker windows those sequences before encoding.
 
+The implemented `KhoanDiemChunker` full-corpus smoke test reproduced these
+branch counts and emitted 203,435 representations. Oversized individual Điểm
+required 663 windows; the 342 unaccepted oversized Khoản plus five exhausted
+lead-ins produced 347 complete-Khoản fallback groups. Every one of the 59,628
+input `aid` values retained at least one representation, the observed maximum
+encoded length was exactly 512 tokens, and the maximum was 153 representations
+for one article. These are measured preprocessing facts, not retrieval metrics.
+
 On the disjoint seed-45 sample, the 1,280 accepted articles contained 4,568
 Khoản spans. The Điểm parser classified 893 Khoản as `parsed`, 3,664 as
 `no_structure`, and 11 as `ambiguous_sequence`, producing 3,388 Điểm

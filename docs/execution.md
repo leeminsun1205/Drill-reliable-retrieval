@@ -363,6 +363,15 @@ efficiency treatment, not as a pure reranker-length ablation. The final cell
 builds `overnight_scoreboard.csv` and archives the full
 results directory as `/kaggle/working/drill_overnight_results.tar.gz`.
 
+The independent hierarchical structure suite is
+`notebooks/kaggle_khoan_diem_experiments.ipynb`. It mirrors the same controls,
+split, models, WRRF parameters, output-k sweep, reranker budgets, direct-evidence
+case, and optional token-window reranker control, but selects `khoan_diem` for
+the structure-aware dense and reranker stages. Its reranker base configuration
+is `configs/hybrid_reranker_khoan_diem.yaml`, and its final archive is
+`/kaggle/working/drill_khoan_diem_results.tar.gz`. Keep the original notebook
+results as the `diem` comparison rather than overwriting them.
+
 Less common leaves can be overridden with repeatable typed flags, for example
 `--set retrieval.dense.search.query_batch_size=32`. Explicit convenience flags
 take precedence over `--set`, and the final resolved configuration is written to

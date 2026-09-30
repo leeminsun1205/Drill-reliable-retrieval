@@ -4,6 +4,7 @@ from drill_ir.data import Article
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
     DiemChunker,
+    KhoanDiemChunker,
     KhoanChunker,
     RecursiveTokenChunker,
     RecursiveTokenChunkerConfig,
@@ -239,6 +240,70 @@ class ChunkingTest(unittest.TestCase):
         self.assertGreater(len(point_chunks), 1)
         self.assertTrue(all(chunk.text.startswith("1. Dẫn:\t\t") for chunk in point_chunks))
         self.assertTrue(all((chunk.token_count or 0) <= 7 for chunk in chunks))
+
+    def test_khoan_diem_keeps_short_clause_whole_even_with_points(self) -> None:
+        article = Article(
+            12,
+            "law",
+            "1. Dẫn:\t a) Một;\t b) Hai\n2. Khoản ngắn",
+        )
+        chunker = KhoanDiemChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=20,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        self.assertEqual([chunk.chunk_type for chunk in chunks], ["khoan_diem", "khoan_diem"])
+        self.assertEqual(chunker.last_stats["kept_whole_clauses"], 2)
+
+    def test_khoan_diem_greedily_packs_points_in_oversized_clause(self) -> None:
+        article = Article(
+            13,
+            "law",
+            "1. Dẫn:\t a) aa;\t b) bb;\t c) cc;\t d) dd\n2. Ngắn",
+        )
+        chunker = KhoanDiemChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=9,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        packs = [chunk for chunk in chunks if chunk.chunk_type == "khoan_diem_point_pack"]
+        self.assertEqual(len(packs), 2)
+        self.assertTrue(all(chunk.text.startswith("1. Dẫn:\t ") for chunk in packs))
+        self.assertTrue(all((chunk.token_count or 0) <= 9 for chunk in chunks))
+        self.assertEqual(chunker.last_stats["greedy_point_packs"], 2)
+
+    def test_khoan_diem_falls_back_when_lead_in_exhausts_budget(self) -> None:
+        article = Article(
+            14,
+            "law",
+            "1. dẫn rất dài đây:\t a) aa bb;\t b) cc dd\n2. Ngắn",
+        )
+        chunker = KhoanDiemChunker(
+            TokenWindowChunkerConfig(
+                model_name="fake",
+                max_tokens=7,
+                overlap_tokens=1,
+                document_prefix="passage ",
+            ),
+            tokenizer=FakeFastTokenizer(),
+        )
+        chunks = chunker.chunk_articles([article])
+        first_clause = [chunk for chunk in chunks if chunk.structure_path == ("khoan:1",)]
+        self.assertTrue(first_clause)
+        self.assertTrue(
+            all(chunk.chunk_type.startswith("khoan_diem_clause_fallback") for chunk in first_clause)
+        )
+        self.assertEqual(chunker.last_stats["lead_in_budget_fallbacks"], 1)
 
 
 if __name__ == "__main__":

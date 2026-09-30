@@ -430,7 +430,7 @@ class KhoanChunker:
         return chunks
 
 
-class DiemChunker:
+class _DiemChunkerBase:
     """Use Điểm text with its Khoản lead-in and conservative fallbacks."""
 
     def __init__(self, config: TokenWindowChunkerConfig, *, tokenizer: Any = None) -> None:
@@ -491,6 +491,265 @@ class DiemChunker:
                 )
             )
         return chunks
+
+
+class _KhoanDiemLogic(_DiemChunkerBase):
+    """Keep short Khoản whole; pack Điểm only when a Khoản exceeds budget."""
+
+    @property
+    def _khoan_diem_cache_key(self) -> str:
+        return json.dumps(
+            {
+                "method": "khoan_diem",
+                "version": 1,
+                "clause_parser": "conservative_line_sequence_v1",
+                "point_parser": "conservative_vietnamese_letter_sequence_v1",
+                "packing": "greedy_consecutive_points",
+                **asdict(self.config),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def _encoded_tokens(self, text: str) -> int:
+        tokenizer = self._window_chunker._load_tokenizer()
+        return len(
+            tokenizer(
+                self.config.document_prefix + text,
+                add_special_tokens=True,
+                truncation=False,
+            )["input_ids"]
+        )
+
+    def _whole_clause_chunk(
+        self,
+        article: Article,
+        *,
+        clause_start: int,
+        clause_end: int,
+        clause_number: int,
+        index: int,
+        token_count: int,
+    ) -> Chunk:
+        return Chunk(
+            chunk_id=f"{article.aid}:khoan_diem:{index}",
+            aid=article.aid,
+            law_id=article.law_id,
+            chunk_index=index,
+            chunk_type="khoan_diem",
+            text=article.text[clause_start:clause_end],
+            char_start=clause_start,
+            char_end=clause_end,
+            token_count=token_count,
+            parse_status="parsed",
+            structure_path=(f"khoan:{clause_number}",),
+            source_spans=((clause_start, clause_end),),
+        )
+
+    def _packed_point_chunk(
+        self,
+        article: Article,
+        *,
+        clause_start: int,
+        lead_in_end: int,
+        point_spans: Sequence[Any],
+        clause_number: int,
+        index: int,
+    ) -> Chunk:
+        lead_text = article.text[clause_start:lead_in_end]
+        point_text = "".join(
+            article.text[span.char_start:span.char_end] for span in point_spans
+        )
+        text = lead_text + point_text
+        token_count = self._encoded_tokens(text)
+        if token_count > self.config.max_tokens:
+            raise ValueError("Packed Điểm representation exceeds max_tokens")
+        source_spans = ((clause_start, lead_in_end),) + tuple(
+            (span.char_start, span.char_end) for span in point_spans
+        )
+        letters = tuple(span.letter for span in point_spans)
+        return Chunk(
+            chunk_id=f"{article.aid}:khoan_diem:{index}",
+            aid=article.aid,
+            law_id=article.law_id,
+            chunk_index=index,
+            chunk_type="khoan_diem_point_pack",
+            text=text,
+            char_start=clause_start,
+            char_end=point_spans[-1].char_end,
+            token_count=token_count,
+            parse_status="parsed",
+            structure_path=(
+                f"khoan:{clause_number}",
+                f"diem:{letters[0]}-{letters[-1]}",
+            ),
+            source_spans=source_spans,
+        )
+
+    def _chunk_articles_khoan_diem(self, articles: Sequence[Article]) -> list[Chunk]:
+        chunks: list[Chunk] = []
+        article_statuses: Counter[str] = Counter()
+        oversized_point_statuses: Counter[str] = Counter()
+        per_aid: Counter[int] = Counter()
+        kept_whole_clauses = 0
+        oversized_clauses = 0
+        greedy_point_packs = 0
+        oversized_single_point_windows = 0
+        clause_window_fallbacks = 0
+        lead_in_budget_fallbacks = 0
+        maximum_encoded_tokens = 0
+
+        for article in articles:
+            parsed_clauses = parse_clause_spans(article.text)
+            article_statuses[parsed_clauses.status] += 1
+            article_chunks: list[Chunk] = []
+            next_index = 0
+            if parsed_clauses.status != "parsed":
+                article_chunks = self._raw_span_chunks(
+                    article,
+                    char_start=0,
+                    char_end=len(article.text),
+                    first_index=0,
+                    chunk_type="article_fallback",
+                    parse_status=parsed_clauses.status,
+                    structure_path=(),
+                )
+            else:
+                for clause in parsed_clauses.spans:
+                    clause_text = article.text[clause.char_start:clause.char_end]
+                    clause_tokens = self._encoded_tokens(clause_text)
+                    if clause_tokens <= self.config.max_tokens:
+                        clause_chunks = [
+                            self._whole_clause_chunk(
+                                article,
+                                clause_start=clause.char_start,
+                                clause_end=clause.char_end,
+                                clause_number=clause.number,
+                                index=next_index,
+                                token_count=clause_tokens,
+                            )
+                        ]
+                        kept_whole_clauses += 1
+                    else:
+                        oversized_clauses += 1
+                        points = parse_point_spans(clause_text)
+                        oversized_point_statuses[points.status] += 1
+                        clause_chunks = []
+                        if points.status == "parsed":
+                            lead_in_end = clause.char_start + points.lead_in_end
+                            pending: list[Any] = []
+                            fallback_clause = False
+
+                            def flush_pending() -> None:
+                                nonlocal pending, greedy_point_packs
+                                if not pending:
+                                    return
+                                clause_chunks.append(
+                                    self._packed_point_chunk(
+                                        article,
+                                        clause_start=clause.char_start,
+                                        lead_in_end=lead_in_end,
+                                        point_spans=pending,
+                                        clause_number=clause.number,
+                                        index=next_index + len(clause_chunks),
+                                    )
+                                )
+                                greedy_point_packs += 1
+                                pending = []
+
+                            for point in points.spans:
+                                global_point = type(point)(
+                                    letter=point.letter,
+                                    char_start=clause.char_start + point.char_start,
+                                    char_end=clause.char_start + point.char_end,
+                                )
+                                lead_text = article.text[clause.char_start:lead_in_end]
+                                point_text = article.text[
+                                    global_point.char_start:global_point.char_end
+                                ]
+                                if self._encoded_tokens(lead_text + point_text) > self.config.max_tokens:
+                                    flush_pending()
+                                    windows = self._point_chunks(
+                                        article,
+                                        clause_start=clause.char_start,
+                                        lead_in_end=lead_in_end,
+                                        point_start=global_point.char_start,
+                                        point_end=global_point.char_end,
+                                        clause_number=clause.number,
+                                        point_letter=global_point.letter,
+                                        first_index=next_index + len(clause_chunks),
+                                    )
+                                    if windows is None:
+                                        fallback_clause = True
+                                        break
+                                    oversized_single_point_windows += len(windows)
+                                    clause_chunks.extend(windows)
+                                    continue
+                                candidate = pending + [global_point]
+                                candidate_text = lead_text + "".join(
+                                    article.text[span.char_start:span.char_end]
+                                    for span in candidate
+                                )
+                                if pending and self._encoded_tokens(candidate_text) > self.config.max_tokens:
+                                    flush_pending()
+                                pending.append(global_point)
+                            if not fallback_clause:
+                                flush_pending()
+                            else:
+                                clause_chunks = []
+                                lead_in_budget_fallbacks += 1
+
+                        if not clause_chunks:
+                            clause_chunks = self._raw_span_chunks(
+                                article,
+                                char_start=clause.char_start,
+                                char_end=clause.char_end,
+                                first_index=next_index,
+                                chunk_type="khoan_diem_clause_fallback",
+                                parse_status=f"point_{points.status}",
+                                structure_path=(f"khoan:{clause.number}",),
+                            )
+                            clause_window_fallbacks += 1
+                    article_chunks.extend(clause_chunks)
+                    next_index += len(clause_chunks)
+            chunks.extend(article_chunks)
+            per_aid[article.aid] = len(article_chunks)
+            maximum_encoded_tokens = max(
+                maximum_encoded_tokens,
+                max((chunk.token_count or 0 for chunk in article_chunks), default=0),
+            )
+
+        self.last_stats = {
+            "method": "khoan_diem",
+            "packing": "greedy_consecutive_points",
+            "articles": len(articles),
+            "chunks": len(chunks),
+            "article_parse_status_counts": dict(sorted(article_statuses.items())),
+            "kept_whole_clauses": kept_whole_clauses,
+            "oversized_clauses": oversized_clauses,
+            "oversized_point_parse_status_counts": dict(
+                sorted(oversized_point_statuses.items())
+            ),
+            "greedy_point_packs": greedy_point_packs,
+            "oversized_single_point_windows": oversized_single_point_windows,
+            "clause_window_fallbacks": clause_window_fallbacks,
+            "lead_in_budget_fallbacks": lead_in_budget_fallbacks,
+            "max_encoded_tokens_observed": maximum_encoded_tokens,
+            "overlap_tokens": self.config.overlap_tokens,
+            "max_chunks_per_article": max(per_aid.values(), default=0),
+        }
+        return chunks
+
+
+class _CombinedDiemChunker(_KhoanDiemLogic):
+    """Hierarchical Khoản–Điểm chunking with greedy whole-Điểm packing."""
+
+    @property
+    def cache_key(self) -> str:
+        return self._khoan_diem_cache_key
+
+    def chunk_articles(self, articles: Sequence[Article]) -> list[Chunk]:
+        return self._chunk_articles_khoan_diem(articles)
 
     def _point_chunks(
         self,
@@ -623,6 +882,25 @@ class DiemChunker:
             token_start = next_start
         return chunks
 
+
+class _DiemCacheOnly(_CombinedDiemChunker):
+    """Use Điểm text with its Khoản lead-in and conservative fallbacks."""
+
+    @property
+    def cache_key(self) -> str:
+        return _DiemChunkerBase.cache_key.fget(self)  # type: ignore[union-attr]
+
+
+class _OriginalDiemLogic(_CombinedDiemChunker):
+    """Keep short Khoản whole; greedily pack Điểm only for oversized Khoản."""
+
+    @property
+    def cache_key(self) -> str:
+        return self._khoan_diem_cache_key
+
+    def chunk_articles(self, articles: Sequence[Article]) -> list[Chunk]:
+        return self._chunk_articles_khoan_diem(articles)
+
     def chunk_articles(self, articles: Sequence[Article]) -> list[Chunk]:
         chunks: list[Chunk] = []
         article_statuses: Counter[str] = Counter()
@@ -704,3 +982,22 @@ class DiemChunker:
             "max_chunks_per_article": max(per_aid.values(), default=0),
         }
         return chunks
+
+
+class DiemChunker(_OriginalDiemLogic):
+    """Use Điểm text with its Khoản lead-in and conservative fallbacks."""
+
+    @property
+    def cache_key(self) -> str:
+        return _DiemChunkerBase.cache_key.fget(self)  # type: ignore[union-attr]
+
+
+class KhoanDiemChunker(_OriginalDiemLogic):
+    """Keep short Khoản whole; greedily pack Điểm only for oversized Khoản."""
+
+    @property
+    def cache_key(self) -> str:
+        return self._khoan_diem_cache_key
+
+    def chunk_articles(self, articles: Sequence[Article]) -> list[Chunk]:
+        return self._chunk_articles_khoan_diem(articles)

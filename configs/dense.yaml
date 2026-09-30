@@ -14,7 +14,7 @@ retrieval:
   dense:
     chunking:
       # article_truncate preserves the original one-vector-per-aid control.
-      # Treatments: token_window, recursive_token, khoan, then diem.
+      # Treatments: token_window, recursive_token, khoan, diem, then khoan_diem.
       method: article_truncate
       max_tokens: 512
       overlap_tokens: 64

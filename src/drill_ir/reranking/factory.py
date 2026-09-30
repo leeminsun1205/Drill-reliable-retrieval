@@ -5,6 +5,7 @@ from typing import Any
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
     DiemChunker,
+    KhoanDiemChunker,
     KhoanChunker,
     TokenWindowChunker,
     TokenWindowChunkerConfig,
@@ -42,9 +43,12 @@ def build_reranker(
         chunker = KhoanChunker(common)
     elif representation == "diem":
         chunker = DiemChunker(common)
+    elif representation == "khoan_diem":
+        chunker = KhoanDiemChunker(common)
     else:
         raise ValueError(
-            "reranking.representation must be 'article', 'token_window', 'khoan', or 'diem'"
+            "reranking.representation must be 'article', 'token_window', 'khoan', "
+            "'diem', or 'khoan_diem'"
         )
     scorer = HFCrossEncoderScorer(
         HFCrossEncoderConfig(

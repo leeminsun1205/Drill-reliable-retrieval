@@ -16,6 +16,7 @@ from .fusion import WeightedRRFRetriever
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
     DiemChunker,
+    KhoanDiemChunker,
     KhoanChunker,
     RecursiveTokenChunker,
     RecursiveTokenChunkerConfig,
@@ -132,7 +133,7 @@ def build_retriever(
         raise ValueError("Only dense chunk aggregation='max' is currently supported")
     if chunking_method == "article_truncate":
         chunker = ArticleTruncationChunker()
-    elif chunking_method in {"token_window", "recursive_token", "khoan", "diem"}:
+    elif chunking_method in {"token_window", "recursive_token", "khoan", "diem", "khoan_diem"}:
         max_tokens = int(chunking_config.get("max_tokens", 512))
         encoder_max = encoder_config.get("max_seq_length")
         if encoder_max is not None and max_tokens > int(encoder_max):
@@ -162,11 +163,13 @@ def build_retriever(
             )
         elif chunking_method == "khoan":
             chunker = KhoanChunker(TokenWindowChunkerConfig(**common_chunking))
+        elif chunking_method == "khoan_diem":
+            chunker = KhoanDiemChunker(TokenWindowChunkerConfig(**common_chunking))
         else:
             chunker = DiemChunker(TokenWindowChunkerConfig(**common_chunking))
     else:
         raise ValueError(
             "retrieval.dense.chunking.method must be 'article_truncate', "
-            "'token_window', 'recursive_token', 'khoan', or 'diem'"
+            "'token_window', 'recursive_token', 'khoan', 'diem', or 'khoan_diem'"
         )
     return DenseRetriever(encoder=encoder, search=search, cache=cache, chunker=chunker)
