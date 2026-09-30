@@ -326,6 +326,12 @@ an approximately eight-hour T4x2 verification window. It uses explicit
 `!python scripts/...` commands, validates the attached Parquet files, installs
 the dense and Vietnamese extras, and runs these cases in order:
 
+The setup intentionally retains the simple Kaggle workflow: clone, `%cd` into
+the repository, install extras with `!python -m pip`, and invoke repository
+entry points as `!python scripts/...`. The preflight reads the query Parquet
+directly instead of importing `drill_ir` into the already-running notebook
+kernel; all project code continues to execute in fresh script subprocesses.
+
 1. VnCoreNLP BM25;
 2. BGE-M3 fixed token-window 512/64 dense control;
 3. BGE-M3 Điểm 512/64 dense treatment;
