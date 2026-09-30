@@ -218,6 +218,62 @@ colon, or semicolon separator. It follows the Vietnamese legal sequence
 marks gaps, duplicates, or restarts ambiguous. This rejects incidental
 parenthetical letters and treats nested amendment lists conservatively.
 
+### Khoản–Điểm design audit
+
+A deterministic seed-46 design audit selected 60 additional `law_id` values
+after excluding all 100 laws from the seed-44 and seed-45 audits. It inspected
+all 2,448 non-blank articles belonging to those laws with the BAAI/bge-m3 fast
+tokenizer, a 512-token single-sequence ceiling, and the existing conservative
+Khoản and Điểm parsers. This is a measured design audit, not a retrieval result.
+
+The sample contained 1,966 Khoản-parsed articles and 482 article-level
+fallbacks (425 `no_structure`, 57 `ambiguous_sequence`). Across 7,426 accepted
+Khoản spans, 7,293 (98.21%) already fit within 512 tokens and therefore require
+no structural split. Only 133 Khoản exceeded the budget: 116 had a valid Điểm
+sequence, 14 had an ambiguous sequence, and 3 had no accepted Điểm structure.
+The latter 17 retain the complete Khoản through token-window fallback.
+
+For the 116 oversized, Điểm-parsed Khoản, greedy packing of consecutive whole
+Điểm produced 241 packs containing 684 non-oversized Điểm; 104 of the 116
+Khoản benefited from packing rather than emitting every Điểm separately. Pack
+sizes ranged from one to eighteen Điểm. A further 26 individual Điểm exceeded
+the remaining budget after their Khoản lead-in and require Điểm-local windows.
+No sampled lead-in exhausted the 512-token budget, but this remains a required
+fallback because it is possible by construction. Most oversized individual
+Điểm in this sample came from `38/2015/TT-BTC` and contained nested forms such
+as `a.1`, `b.1.1`, and longer administrative procedures.
+
+Inspection of all 45 ambiguous Điểm sequences in the 60-law sample found the
+already known conservative-parser cases: skipped or glued outer markers,
+restarted lists in amendment text, nested lists, and Roman-list text that can
+resemble repeated `i)` markers. No new data-loss path was found because every
+unaccepted sequence falls back to a complete Khoản window. The ignored audit
+artifacts are stored under
+`results/khoan_diem_design_audit_60laws_seed46/`.
+
+The design audit was then expanded to all 59,628 non-blank articles on
+2026-09-30. Those articles represented 2,156 non-blank `law_id` groups and
+contained 183,633 accepted Khoản spans. Exact BGE-M3 tokenization found that
+181,424 Khoản (98.80%) fit the 512-token ceiling unchanged; only 2,209 (1.20%)
+were oversized. Of the oversized Khoản, 1,867 had a valid Điểm sequence, 237
+were ambiguous, and 105 had no accepted Điểm sequence. The 342 unaccepted
+cases therefore require complete-Khoản token-window fallback.
+
+Within the 1,867 oversized parsed Khoản, greedy packing helped 1,704 cases and
+formed 3,964 packs from 12,484 non-oversized Điểm, instead of emitting one
+representation per Điểm. Pack sizes ranged from one to eighteen complete Điểm.
+A further 282 individual Điểm exceeded the remaining budget after repeating
+their Khoản lead-in and require Điểm-local windows. Five Khoản had lead-ins
+that consumed the usable budget and require complete-Khoản fallback. These five
+measured cases validate retaining the lead-in-exhaustion guard even though it
+did not occur in the 60-law sample.
+
+The full-corpus artifact is stored under
+`results/khoan_diem_design_audit_full/budget_audit.json`. The tokenizer warning
+for source sequences longer than its advertised model length is expected in
+this audit: it counts raw source tokens without model inference, and the
+proposed chunker windows those sequences before encoding.
+
 On the disjoint seed-45 sample, the 1,280 accepted articles contained 4,568
 Khoản spans. The Điểm parser classified 893 Khoản as `parsed`, 3,664 as
 `no_structure`, and 11 as `ambiguous_sequence`, producing 3,388 Điểm
