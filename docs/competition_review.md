@@ -108,6 +108,14 @@ then fused with previous signals by pointwise LightGBM and a validation-selected
 threshold. The system is especially relevant to this project's structure and
 cross-reference research question.
 
+EDM explicitly states that it did not fine-tune the large pretrained dense or
+reranker models; only the lightweight learning-to-rank modules were retrained.
+BGE-M3 embedding similarity and BGE-v2-M3 reranker scores were frozen input
+features for LambdaMART/LightGBM rather than task-fine-tuned neural retrieval
+components. Thus the winning result is evidence for feature-rich candidate
+generation and learned score fusion, not evidence that neural retriever
+fine-tuning was necessary.
+
 Source: [EDM working-notes paper](https://aclanthology.org/2025.vlsp-1.19/).
 No public GitHub repository was found in the paper or targeted searches as of
 2026-09-28.
@@ -279,6 +287,21 @@ evaluated as separate treatments.
 ## Published chunking strategies
 
 The DRiLL literature contains three relevant but distinct approaches:
+
+| System | Dense retrieval unit | Long-text policy | Reranking unit | Article aggregation |
+|---|---|---|---|---|
+| EDM (rank 1) | Both article- and clause-level representations are reported; exact clause construction is unpublished | Not published | Article candidates with article/clause-derived features and BGE reranker scores | Learned fusion through LambdaMART/LightGBM; no isolated chunking ablation |
+| FPT IS (rank 2) | Hierarchical leaves such as clauses or bullet points, enriched with their root-to-leaf path | A leaf over 4,000 tokens becomes 2,048-token windows with 1,024 overlap | Retrieved chunks | Deduplicate by `aid`, retaining the maximum chunk score before later filtering |
+| CUDO (rank 3) | Organizer article boundary enriched with reconstructed document titles/hierarchy | Not reported as intra-article splitting | Query–article pairs | Already article-level |
+| ViDRILL (rank 5) | Legal clauses capped at 450 **characters**, without overlap | Oversized clauses are split into smaller coherent segments | Separate chunks up to 2,000 **characters**, with line-break overlap | Source `aid` is retained, but the complete inference-time aggregation rule is unpublished |
+| Public top-11 implementation | Recursive windows of 400 whitespace-delimited words | 50-word overlap; separator order is blank line, line, space, then character fallback | Retrieved chunks | Preserve `aid`; full final policy depends on later pipeline stages |
+
+The units above are not directly interchangeable: the papers variously report
+characters, model tokens, or whitespace-delimited words. In particular,
+ViDRILL's 450-character retrieval chunks are much shorter than a 512-token
+window, whereas FPT IS allows structural leaves up to 4,000 tokens and only
+then applies overlapping windows. Their results therefore do not identify a
+single universally best chunk length.
 
 1. **FPT IS hierarchical chunking.** A generated article title is the root;
    articles are split into smaller units such as clauses or bullet points; tree
