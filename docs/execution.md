@@ -495,6 +495,18 @@ train-data provenance, resolved evaluation config, predictions, fixed-cutoff
 metrics, and newly tuned threshold metrics. Do not reuse a zero-shot score
 threshold with the fine-tuned checkpoint.
 
+`notebooks/kaggle_finetune_khoan_diem_dual_candidate.ipynb` is the controlled
+follow-up for the best fixed zero-shot setting: Khoản–Điểm 448/64 with a
+512/448 reranker budget. It mines one train-only dataset and fine-tunes one
+shared checkpoint, then evaluates that identical checkpoint with
+`article_rechunk` and `retrieved_chunks` candidate flows. This isolates the
+inference candidate flow from independently trained weights. Both branches
+still max-aggregate reranker chunk scores to unique article IDs; they differ in
+whether top-50 selection occurs before or after article aggregation.
+The notebook pins FlagEmbedding 1.4.2, verifies the final model config and
+weights before evaluation, retains epoch checkpoint directories, and includes
+the complete model directory in its final archive.
+
 ## Public/private submission inference
 
 The submission runner fits the configured corpus index once, infers the public

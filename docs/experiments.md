@@ -682,3 +682,42 @@ not merge separate Khoản. This keeps the first comparison attributable to a
 legal boundary strategy; cross-Khoản packing remains a future independent
 ablation. `configs/hybrid_reranker_khoan_diem.yaml` and the dedicated Kaggle
 notebook freeze this representation without changing the earlier Điểm suite.
+
+The project owner reported the completed
+`kaggle_khoan_diem_experiments.ipynb` scoreboard on 2026-10-01. These values use
+the same 438-query seed-42 development split and remain user-reported pending
+inspection of the archived configs, predictions, candidate rankings, and run
+metadata.
+
+At the first stage, hierarchical Khoản–Điểm did not improve over the strongest
+non-structural control. BGE-M3 Khoản–Điểm 512/64 obtained fixed top-2/top-3 F2
+of `0.460912`/`0.460627`, versus `0.483955`/`0.475098` for BGE-M3 token windows.
+The Khoản–Điểm hybrid reached top-3 F2 `0.474606`, below the earlier Điểm hybrid
+F2 `0.481973`. Thus this representation is not supported as a stronger
+first-stage retriever by the current development results.
+
+After reranking, however, every matched end-to-end Khoản–Điểm treatment
+outperformed its earlier Điểm counterpart:
+
+| Treatment | Điểm top-2 F2 | Khoản–Điểm top-2 F2 | Difference | Điểm threshold/fallback-2 F2 | Khoản–Điểm threshold/fallback-2 F2 | Difference |
+|---|---:|---:|---:|---:|---:|---:|
+| Pair/document 1024/768 | 0.497310 | 0.503088 | +0.005778 | 0.548075 | 0.558422 | +0.010347 |
+| Pair/document 1024/512 | 0.499778 | 0.503875 | +0.004097 | 0.549925 | 0.557295 | +0.007370 |
+| Pair/document 512/448 | 0.501409 | **0.505002** | +0.003593 | 0.549371 | 0.555900 | +0.006529 |
+| Retrieved chunks 50 | 0.500987 | 0.503875 | +0.002888 | **0.551787** | 0.557849 | +0.006062 |
+
+The best fixed Khoản–Điểm result is the efficient 512/448 treatment at F2
+`0.505002`; the best dev-tuned variable-output result is the 1024/768 treatment
+at F2 `0.558422`. The fixed improvements are small (`+0.002888` to `+0.005778`)
+but directionally consistent across all four treatments. Threshold improvements
+are larger (`+0.006062` to `+0.010347`) but retain the same optimistic bias from
+selecting and evaluating a threshold on one development split.
+
+These are end-to-end comparisons: changing from Điểm to Khoản–Điểm changes the
+dense candidates as well as the reranker representations. The table therefore
+does not isolate a reranker-only structure effect. Candidate Recall@k, paired
+per-query predictions, and the optional fixed-first-stage reranker-structure
+control must be inspected before attributing the gain specifically to richer
+reranker context. The defensible current conclusion is narrower: hierarchical
+Khoản–Điểm hurts standalone first-stage ranking in this setup, yet produces a
+small, consistent improvement in the complete reranked pipeline.
