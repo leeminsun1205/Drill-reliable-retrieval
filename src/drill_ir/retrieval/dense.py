@@ -14,6 +14,15 @@ from drill_ir.data.models import Article, Query, RetrievalResult
 from drill_ir.preprocessing import ArticleChunker, ArticleTruncationChunker, Chunk
 
 
+@dataclass(frozen=True, slots=True)
+class ChunkRetrievalResult:
+    """Ranked retrieval evidence before article-level aggregation."""
+
+    qid: int
+    chunks: tuple[Chunk, ...]
+    scores: tuple[float, ...]
+
+
 class TextEncoder(Protocol):
     """Minimal encoder contract used by dense retrieval."""
 
@@ -392,6 +401,30 @@ class DenseRetriever:
             RetrievalResult(
                 qid=query.qid,
                 aids=tuple(int(aid) for aid in aids[row]),
+                scores=tuple(float(score) for score in scores[row]),
+            )
+            for row, query in enumerate(queries)
+        ]
+
+    def retrieve_chunks(
+        self, queries: Sequence[Query], top_k: int
+    ) -> list[ChunkRetrievalResult]:
+        """Return ranked chunk evidence without aggregating duplicate article IDs."""
+        if self._document_embeddings is None:
+            raise RuntimeError("fit() must be called before retrieve_chunks()")
+        if not queries:
+            return []
+        query_embeddings = self.encoder.encode_queries([query.question for query in queries])
+        indices, scores = self.search.search(
+            query_embeddings,
+            self._document_embeddings,
+            self._aids,
+            top_k=top_k,
+        )
+        return [
+            ChunkRetrievalResult(
+                qid=query.qid,
+                chunks=tuple(self._chunks[int(index)] for index in indices[row]),
                 scores=tuple(float(score) for score in scores[row]),
             )
             for row, query in enumerate(queries)

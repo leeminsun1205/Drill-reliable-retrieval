@@ -25,6 +25,7 @@ class ExperimentTest(unittest.TestCase):
         )
         self.assertEqual(config["method"], "hybrid_reranker")
         self.assertEqual(config["reranking"]["model_name"], "BAAI/bge-reranker-v2-m3")
+        self.assertEqual(config["evaluation"]["output_k_values"], [1, 2, 3, 4, 5])
 
     def test_config_overrides_are_typed_and_do_not_mutate_source(self) -> None:
         source = {"retrieval": {"top_k": 100, "prefix": "query: "}}

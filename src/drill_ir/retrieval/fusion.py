@@ -8,6 +8,7 @@ from typing import Sequence
 from drill_ir.data.models import Article, Query, RetrievalResult
 
 from .base import Retriever
+from .dense import ChunkRetrievalResult
 
 
 class WeightedRRFRetriever:
@@ -108,6 +109,54 @@ class WeightedRRFRetriever:
 
     def component_results(self) -> dict[str, list[RetrievalResult]]:
         return self._component_results
+
+    def retrieve_chunks(
+        self,
+        queries: Sequence[Query],
+        *,
+        top_k: int,
+        dense_depth: int,
+    ) -> list[ChunkRetrievalResult]:
+        """Fuse dense chunk ranks with their parent articles' sparse ranks."""
+        if top_k <= 0 or dense_depth < top_k:
+            raise ValueError("Chunk fusion requires dense_depth >= top_k > 0")
+        retrieve_chunks = getattr(self.dense, "retrieve_chunks", None)
+        if not callable(retrieve_chunks):
+            raise TypeError("Hybrid dense retriever does not expose chunk candidates")
+        sparse_results = self._component_results.get("sparse")
+        if sparse_results is None:
+            raise RuntimeError("retrieve() must be called before retrieve_chunks()")
+        sparse_by_qid = self._by_qid(sparse_results, component="sparse")
+        dense_chunks = retrieve_chunks(queries, top_k=dense_depth)
+        fused: list[ChunkRetrievalResult] = []
+        for result in dense_chunks:
+            sparse = sparse_by_qid[result.qid]
+            sparse_ranks = {
+                aid: rank
+                for rank, (aid, score) in enumerate(
+                    zip(sparse.aids, sparse.scores), start=1
+                )
+                if self.include_zero_score_sparse or score > 0
+            }
+            ranked = []
+            for dense_rank, (chunk, raw_score) in enumerate(
+                zip(result.chunks, result.scores), start=1
+            ):
+                score = self.dense_weight / (self.rrf_k + dense_rank)
+                sparse_rank = sparse_ranks.get(chunk.aid)
+                if sparse_rank is not None:
+                    score += self.sparse_weight / (self.rrf_k + sparse_rank)
+                ranked.append((chunk, float(score), dense_rank, raw_score))
+            ranked.sort(key=lambda item: (-item[1], item[2], item[0].chunk_id))
+            selected = ranked[:top_k]
+            fused.append(
+                ChunkRetrievalResult(
+                    qid=result.qid,
+                    chunks=tuple(item[0] for item in selected),
+                    scores=tuple(item[1] for item in selected),
+                )
+            )
+        return fused
 
     def run_metadata(self) -> dict[str, object]:
         sparse_metadata = getattr(self.sparse, "run_metadata", None)

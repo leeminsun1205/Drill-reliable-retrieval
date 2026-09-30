@@ -176,7 +176,8 @@ reranking:
   candidate_pool_size: 200
   top_k: 50
 evaluation:
-  metrics: [precision, recall, f2]
+  output_k_values: [1, 2, 3, 4, 5]
+  recall_at_k: [1, 5, 10, 20, 50, 100]
 ```
 
 Record model identifiers, candidate pool size, final count, thresholds, and
@@ -265,6 +266,8 @@ A meaningful run should normally produce:
 results/<experiment_name>/
 ├── config.yaml
 ├── metrics.json
+├── metrics_by_output_k.json
+├── metrics_by_score_threshold.json  # reranker when enabled
 ├── predictions.jsonl
 └── run_info.json
 ```
@@ -544,6 +547,18 @@ the reranker model/revision, resolved devices, pair and document budgets,
 representation counts, structure parser statistics, aggregation, and candidate
 pool size. This is zero-shot inference, not a fine-tuned DRiLL reranker.
 
+Every current config evaluates fixed final cutoffs 1 through 5 from the same
+saved ranking and writes `metrics_by_output_k.json`; this does not rerun
+retrieval or reranking. Reranker configs additionally perform an exact sweep
+over their observed logits for global `score >= threshold` policies with
+empty-result-only top-1 and top-2 fallbacks. The best policy for each fallback,
+including its output-size distribution, is written to
+`metrics_by_score_threshold.json`. These thresholds are tuned diagnostics on
+the development split, are specific to the checkpoint's uncalibrated score
+scale, and must not be reported as an unbiased result on those same queries.
+The fixed `retrieval.output_k` remains the primary `metrics.json` policy for
+backward comparability.
+
 The project owner reported the completed Kaggle run on 2026-09-30 with
 Precision `0.2549467275`, Recall `0.6392313546`, and F2 `0.4911637969` on the
 same 438-query seed-42 development split. Its candidate Recall@1/5/10/20/50/100
@@ -561,9 +576,30 @@ F2 (`0.5512` in the conference paper and `0.5515` in the extended paper).
 There are also material method differences: the organizer trained its
 cross-encoder with positives and BM25 hard negatives and selected a final
 top-two output, whereas this run uses an unfine-tuned public reranker and a
-fixed top-three output. The next low-cost analysis is therefore to evaluate
-top-1/top-2/top-3 cutoffs from the already saved reranked lists, followed by
-paired per-query first-stage-versus-reranker error analysis. A reranker trained
+fixed top-three output. The implemented multi-cutoff and threshold analyses now
+provide the required low-cost output-policy comparison; paired per-query
+first-stage-versus-reranker error analysis remains pending. A reranker trained
 with leakage-safe hard negatives is the scientifically justified next modeling
 step if the zero-shot result remains weak; changing the candidate pool cannot
 recover this run's ranking mistakes among candidates already present.
+
+### Retrieved-evidence reranking
+
+The controlled `reranking.candidate_source=retrieved_chunks` treatment keeps
+chunk identity through the second stage. Dense retrieval first produces
+`retrieved_chunk_depth` ranked representations without collapsing duplicate
+`aid` values. Each chunk receives weighted RRF from its dense chunk rank plus
+the BM25 rank of its parent article when present. The best
+`candidate_pool_size` fused chunks go directly to the cross-encoder, whose
+scores are then max-aggregated by `aid`. With the default pool, this scores
+exactly 50 query–chunk pairs per query and never reopens the full candidate
+articles to score unrelated chunks.
+
+This changes the candidate unit and is therefore a treatment, not merely a
+runtime rewrite of article-level WRRF. Multiple selected chunks can belong to
+one article, so 50 chunks may yield fewer than 50 unique articles. In this mode
+Recall@K describes the unique article order induced by the selected chunks;
+the original article-level hybrid list remains in
+`first_stage_predictions.jsonl`. `reranker_chunk_candidates.jsonl` records the
+selected chunk IDs, parent article IDs, types, and fusion scores. The default
+remains `article_rechunk` for backward comparability.

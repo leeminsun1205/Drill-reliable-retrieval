@@ -10,6 +10,7 @@ import numpy as np
 
 from drill_ir.data.models import Article, Query, RetrievalResult
 from drill_ir.preprocessing import ArticleChunker, Chunk
+from drill_ir.retrieval.dense import ChunkRetrievalResult
 
 
 class PairScorer(Protocol):
@@ -163,6 +164,7 @@ class CrossEncoderReranker:
         chunker: ArticleChunker,
         candidate_pool_size: int,
         representation: str,
+        candidate_source: str = "article_rechunk",
     ) -> None:
         if candidate_pool_size <= 0:
             raise ValueError("reranking.candidate_pool_size must be positive")
@@ -170,8 +172,10 @@ class CrossEncoderReranker:
         self.chunker = chunker
         self.candidate_pool_size = candidate_pool_size
         self.representation = representation
+        self.candidate_source = candidate_source
         self._chunks_by_aid: dict[int, list[Chunk]] = {}
         self._representation_count = 0
+        self._retrieved_chunk_pairs = 0
 
     def fit(self, articles: Sequence[Article]) -> None:
         chunks = self.chunker.chunk_articles(articles)
@@ -233,15 +237,57 @@ class CrossEncoderReranker:
             )
         return reranked
 
+    def rerank_chunks(
+        self,
+        queries: Sequence[Query],
+        candidates: Sequence[ChunkRetrievalResult],
+    ) -> list[RetrievalResult]:
+        """Score retrieved evidence directly, then max-aggregate scores by aid."""
+        by_qid = {result.qid: result for result in candidates}
+        if len(by_qid) != len(candidates):
+            raise ValueError("Retrieved chunk candidates contain duplicate query IDs")
+        reranked = []
+        for query in queries:
+            candidate = by_qid.get(query.qid)
+            if candidate is None:
+                raise ValueError(f"Missing retrieved chunks for qid={query.qid}")
+            chunks = candidate.chunks[: self.candidate_pool_size]
+            pairs = [(query.question, chunk.text) for chunk in chunks]
+            pair_scores = self.scorer.score(pairs)
+            if len(pair_scores) != len(chunks):
+                raise ValueError("Reranker returned an unexpected number of pair scores")
+            aid_scores: dict[int, float] = {}
+            best_chunk_rank: dict[int, int] = {}
+            for rank, (chunk, score) in enumerate(zip(chunks, pair_scores)):
+                value = float(score)
+                if value > aid_scores.get(chunk.aid, -float("inf")):
+                    aid_scores[chunk.aid] = value
+                    best_chunk_rank[chunk.aid] = rank
+            ordered = sorted(
+                aid_scores.items(),
+                key=lambda item: (-item[1], best_chunk_rank[item[0]], item[0]),
+            )
+            reranked.append(
+                RetrievalResult(
+                    qid=query.qid,
+                    aids=tuple(aid for aid, _ in ordered),
+                    scores=tuple(score for _, score in ordered),
+                )
+            )
+            self._retrieved_chunk_pairs += len(chunks)
+        return reranked
+
     def run_metadata(self) -> dict[str, Any]:
         scorer_metadata = getattr(self.scorer, "metadata", None)
         return {
             "backend": "hf_sequence_classification",
             "representation": self.representation,
+            "candidate_source": self.candidate_source,
             "candidate_pool_size": self.candidate_pool_size,
             "aggregation": "max",
             "candidate_articles": len(self._chunks_by_aid),
             "representations": self._representation_count,
+            "retrieved_chunk_pairs": self._retrieved_chunk_pairs,
             "chunking": getattr(self.chunker, "last_stats", {}),
             "scorer": scorer_metadata() if callable(scorer_metadata) else {},
         }

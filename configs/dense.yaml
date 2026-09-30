@@ -42,6 +42,7 @@ retrieval:
       directory: embeddings
 
 evaluation:
+  output_k_values: [1, 2, 3, 4, 5]
   recall_at_k: [1, 5, 10, 20, 50, 100]
 
 runtime:

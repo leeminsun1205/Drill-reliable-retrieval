@@ -104,7 +104,43 @@ def run_main() -> None:
     config["data"]["train_path"] = str(
         resolve_train_path(config["data"].get("train_path"))
     )
-    print(run_experiment(config))
+    run_dir = run_experiment(config)
+    print(f"\nResult directory: {run_dir}")
+    metrics_path = run_dir / "metrics.json"
+    if metrics_path.exists():
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        print("\nPrimary result")
+        print("| Precision | Recall | F2 | Queries |")
+        print("|---:|---:|---:|---:|")
+        print(
+            f"| {metrics['precision']:.6f} | {metrics['recall']:.6f} | "
+            f"{metrics['f2']:.6f} | {metrics['queries']} |"
+        )
+    cutoff_path = run_dir / "metrics_by_output_k.json"
+    if cutoff_path.exists():
+        cutoff_payload = json.loads(cutoff_path.read_text(encoding="utf-8"))
+        print("\nFixed output-k comparison")
+        print("| Output k | Precision | Recall | F2 |")
+        print("|---:|---:|---:|---:|")
+        for cutoff, values in cutoff_payload["results"].items():
+            print(
+                f"| {cutoff} | {values['precision']:.6f} | "
+                f"{values['recall']:.6f} | {values['f2']:.6f} |"
+            )
+    threshold_path = run_dir / "metrics_by_score_threshold.json"
+    if threshold_path.exists():
+        threshold_payload = json.loads(threshold_path.read_text(encoding="utf-8"))
+        print("\nDev-tuned score-threshold comparison")
+        print("| Fallback k | Threshold | Mean output | Precision | Recall | F2 |")
+        print("|---:|---:|---:|---:|---:|---:|")
+        for fallback, values in threshold_payload["best_by_fallback_k"].items():
+            threshold = values["threshold"]
+            threshold_text = "fallback only" if threshold is None else f"{threshold:.6f}"
+            print(
+                f"| {fallback} | {threshold_text} | "
+                f"{values['output_size']['mean']:.3f} | {values['precision']:.6f} | "
+                f"{values['recall']:.6f} | {values['f2']:.6f} |"
+            )
 
 
 def submission_main() -> None:

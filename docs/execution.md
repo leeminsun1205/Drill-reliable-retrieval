@@ -19,6 +19,26 @@ logic belongs in `src/drill_ir/`.
 
 ## Kaggle setup
 
+For authenticated Hugging Face downloads, create a Kaggle Secret named
+`HF_TOKEN` using a read-only Hugging Face access token, then set it once near
+the top of the notebook without printing it or passing it as a CLI argument:
+
+```python
+from kaggle_secrets import UserSecretsClient
+import os
+
+hf_token = UserSecretsClient().get_secret("HF_TOKEN")
+if not hf_token:
+    raise RuntimeError("Kaggle Secret HF_TOKEN is missing or empty")
+os.environ["HF_TOKEN"] = hf_token
+```
+
+Child processes launched by later `!python scripts/...` cells inherit this
+environment variable. Authentication raises Hub download rate limits and can
+make model/tokenizer downloads faster and more reliable; it does not accelerate
+GPU encoding or reranking after the files are cached. Never place the token in
+the repository, experiment config, command arguments, or notebook output.
+
 After cloning or updating the repository, install it in editable mode from the
 repository root. This is the preferred execution path because it makes the
 `src/` package importable independently of the notebook working directory:
@@ -267,6 +287,75 @@ query–representation pair. If T4 memory is insufficient, lower only
 The result directory contains reranked `predictions.jsonl`, frozen
 `first_stage_predictions.jsonl`, component rankings, resolved config, metrics,
 split IDs, and both retriever and reranker metadata in `run_info.json`.
+The CLI also prints fixed top-1 through top-5 metrics directly below the Kaggle
+cell and saves them in `metrics_by_output_k.json`. Reranker runs additionally
+print and save the best development-tuned score thresholds with top-1 and top-2
+fallbacks in `metrics_by_score_threshold.json`; this post-processing does not
+invoke the model again.
+
+To test direct evidence reranking, keep the same models and switch only the
+candidate source. Dense supplies 100 chunk candidates, chunk-level WRRF selects
+50, the cross-encoder scores those 50 query–chunk pairs, and max aggregation to
+articles happens afterward:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/hybrid_reranker.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --experiment-name hybrid_bge_m3_diem_wrrf20_rerank_retrieved_chunks50_seed42 \
+  --devices 2 \
+  --set retrieval.bm25.preprocessing.tokenizer.word_segmenter=vncorenlp \
+  --set retrieval.bm25.preprocessing.tokenizer.vncorenlp_jar_path=/kaggle/working/VnCoreNLP/VnCoreNLP-1.2.jar \
+  --set reranking.candidate_source=retrieved_chunks \
+  --set reranking.retrieved_chunk_depth=100 \
+  --set reranking.candidate_pool_size=50 \
+  --set reranking.max_length=1024 \
+  --set reranking.batch_size=8 \
+  --output-root /kaggle/working/results
+```
+
+This reuses the dense corpus cache but performs one additional exact query-to-
+chunk search. Its Recall@K is coverage of the selected chunk pool after unique
+`aid` projection, not the standard article-level hybrid Recall@K.
+
+## Kaggle overnight verification suite
+
+`notebooks/kaggle_overnight_experiments.ipynb` is the thin Run-All launcher for
+an approximately eight-hour T4x2 verification window. It uses explicit
+`!python scripts/...` commands, validates the attached Parquet files, installs
+the dense and Vietnamese extras, and runs these cases in order:
+
+1. VnCoreNLP BM25;
+2. BGE-M3 fixed token-window 512/64 dense control;
+3. BGE-M3 Điểm 512/64 dense treatment;
+4. the selected WRRF20 hybrid first stage;
+5. Điểm reranking with pair/document budgets 1024/768;
+6. a reranker document-budget control that freezes the dense Điểm 512/64 first
+   stage and pair max 1,024 while lowering only reranker oversize fallback from
+   768 to 512;
+7. an end-to-end efficiency treatment that retains natural Điểm units, lowers
+   only their oversize token-window fallback ceiling from 512 to 448 for dense
+   retrieval, and uses reranker pair/document budgets 512/448;
+8. an optional reranker-structure control that retains the same dense Điểm
+   448/64 first stage and changes only the reranker representation to fixed
+   token windows, started only if the preceding cells finish within six hours;
+9. direct reranking of 50 retrieved/fused Điểm chunks followed by max
+   aggregation to `aid`, without reopening full candidate articles.
+
+Each cell skips a case whose `metrics_by_output_k.json` already exists, displays
+its fixed-k and threshold tables immediately, and preserves completed results if
+a later case is interrupted. Dense cache reuse makes the hybrid and reranker
+first stages inexpensive after the matching Điểm dense run. Cross-encoder pair
+scores are not checkpointed, so an interrupted reranker case itself must still
+restart. `DiemChunker.max_tokens=448` is a ceiling, not a fixed chunk size:
+Điểm plus Khoản lead-in representations at or below 448 tokens remain intact,
+and only oversized units use overlapping token-window fallback. Case 7 can
+therefore change dense candidates only for units above that ceiling, while also
+changing reranker context relative to case 5; interpret it as an end-to-end
+efficiency treatment, not as a pure reranker-length ablation. The final cell
+builds `overnight_scoreboard.csv` and archives the full
+results directory as `/kaggle/working/drill_overnight_results.tar.gz`.
 
 Less common leaves can be overridden with repeatable typed flags, for example
 `--set retrieval.dense.search.query_batch_size=32`. Explicit convenience flags

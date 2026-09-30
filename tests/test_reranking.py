@@ -5,6 +5,7 @@ import numpy as np
 from drill_ir.data import Article, Query, RetrievalResult
 from drill_ir.preprocessing import Chunk
 from drill_ir.reranking import CrossEncoderReranker
+from drill_ir.retrieval import ChunkRetrievalResult
 
 
 class FakeChunker:
@@ -100,6 +101,29 @@ class CrossEncoderRerankerTest(unittest.TestCase):
                 [Query(1, "query", ())],
                 [RetrievalResult(1, (20,), (1.0,))],
             )
+
+    def test_reranks_retrieved_chunks_then_max_aggregates_by_aid(self) -> None:
+        scorer = FakeScorer(
+            {("query", "weak"): 0.1, ("query", "strong"): 0.9, ("query", "other"): 0.5}
+        )
+        reranker = CrossEncoderReranker(
+            scorer=scorer,
+            chunker=FakeChunker(),
+            candidate_pool_size=3,
+            representation="retrieved",
+            candidate_source="retrieved_chunks",
+        )
+        chunks = (
+            Chunk("10:0", 10, "L1", 0, "diem", "weak", 0, 4, 1),
+            Chunk("20:0", 20, "L2", 0, "diem", "other", 0, 5, 1),
+            Chunk("10:1", 10, "L1", 1, "diem", "strong", 5, 11, 1),
+        )
+        result = reranker.rerank_chunks(
+            [Query(1, "query", ())],
+            [ChunkRetrievalResult(1, chunks, (3.0, 2.0, 1.0))],
+        )[0]
+        self.assertEqual(result.aids, (10, 20))
+        self.assertEqual(len(scorer.seen_pairs), 3)
 
 
 if __name__ == "__main__":

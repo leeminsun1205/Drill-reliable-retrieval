@@ -1,7 +1,8 @@
 import unittest
 
 from drill_ir.data import Article, Query, RetrievalResult
-from drill_ir.retrieval import WeightedRRFRetriever
+from drill_ir.preprocessing import Chunk
+from drill_ir.retrieval import ChunkRetrievalResult, WeightedRRFRetriever
 
 
 class FakeRetriever:
@@ -18,6 +19,18 @@ class FakeRetriever:
         return [
             RetrievalResult(result.qid, result.aids[:top_k], result.scores[:top_k])
             for result in self.results
+        ]
+
+
+class FakeChunkRetriever(FakeRetriever):
+    def __init__(self, results, chunk_results):
+        super().__init__(results)
+        self.chunk_results = chunk_results
+
+    def retrieve_chunks(self, queries, top_k):
+        return [
+            ChunkRetrievalResult(result.qid, result.chunks[:top_k], result.scores[:top_k])
+            for result in self.chunk_results
         ]
 
 
@@ -63,6 +76,26 @@ class WeightedRRFTest(unittest.TestCase):
         retriever = WeightedRRFRetriever(sparse=sparse, dense=dense)
         result = retriever.retrieve([Query(1, "q", ())], top_k=3)[0]
         self.assertEqual(result.aids, (10, 30))
+
+    def test_fuses_sparse_article_rank_into_dense_chunk_candidates(self) -> None:
+        chunks = (
+            Chunk("20:0", 20, "L", 0, "diem", "a", 0, 1, 1),
+            Chunk("10:0", 10, "L", 0, "diem", "b", 0, 1, 1),
+            Chunk("20:1", 20, "L", 1, "diem", "c", 0, 1, 1),
+        )
+        sparse = FakeRetriever([RetrievalResult(1, (10, 20), (2.0, 1.0))])
+        dense = FakeChunkRetriever(
+            [RetrievalResult(1, (20, 10), (1.0, 0.5))],
+            [ChunkRetrievalResult(1, chunks, (0.9, 0.8, 0.7))],
+        )
+        retriever = WeightedRRFRetriever(
+            sparse=sparse, dense=dense, sparse_weight=0.8, dense_weight=0.2, rrf_k=20
+        )
+        retriever.retrieve([Query(1, "q", ())], top_k=2)
+        result = retriever.retrieve_chunks(
+            [Query(1, "q", ())], top_k=2, dense_depth=3
+        )[0]
+        self.assertEqual(tuple(chunk.aid for chunk in result.chunks), (10, 20))
 
 
 if __name__ == "__main__":

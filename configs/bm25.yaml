@@ -33,6 +33,8 @@ retrieval:
         stopword_preset: none
 
 evaluation:
+  # Reuse one ranking to compare final set sizes without rerunning retrieval.
+  output_k_values: [1, 2, 3, 4, 5]
   # Candidate-stage diagnostics; these do not change the official final metrics.
   recall_at_k: [1, 5, 10, 20, 50, 100]
 

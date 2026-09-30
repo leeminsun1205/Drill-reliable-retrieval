@@ -62,6 +62,9 @@ retrieval:
 
 reranking:
   enabled: true
+  # article_rechunk: current control; retrieved_chunks: rerank fused evidence directly.
+  candidate_source: article_rechunk
+  retrieved_chunk_depth: 100
   backend: hf_sequence_classification
   model_name: BAAI/bge-reranker-v2-m3
   revision: null
@@ -78,6 +81,12 @@ reranking:
   fp16: true
 
 evaluation:
+  # All cutoffs are evaluated from the same expensive reranker pass.
+  output_k_values: [1, 2, 3, 4, 5]
+  # Dev-only policy tuning; reranker logits are model-specific.
+  threshold_sweep:
+    enabled: true
+    fallback_k_values: [1, 2]
   # These remain diagnostics for the unchanged first-stage hybrid candidates.
   recall_at_k: [1, 5, 10, 20, 50, 100]
 

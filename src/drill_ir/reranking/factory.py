@@ -6,6 +6,7 @@ from drill_ir.preprocessing import (
     ArticleTruncationChunker,
     DiemChunker,
     KhoanChunker,
+    TokenWindowChunker,
     TokenWindowChunkerConfig,
 )
 from drill_ir.retrieval.factory import _dense_device
@@ -35,12 +36,16 @@ def build_reranker(
     )
     if representation == "article":
         chunker = ArticleTruncationChunker()
+    elif representation == "token_window":
+        chunker = TokenWindowChunker(common)
     elif representation == "khoan":
         chunker = KhoanChunker(common)
     elif representation == "diem":
         chunker = DiemChunker(common)
     else:
-        raise ValueError("reranking.representation must be 'article', 'khoan', or 'diem'")
+        raise ValueError(
+            "reranking.representation must be 'article', 'token_window', 'khoan', or 'diem'"
+        )
     scorer = HFCrossEncoderScorer(
         HFCrossEncoderConfig(
             model_name=model_name,
@@ -58,4 +63,5 @@ def build_reranker(
         chunker=chunker,
         candidate_pool_size=int(config.get("candidate_pool_size", 50)),
         representation=representation,
+        candidate_source=str(config.get("candidate_source", "article_rechunk")),
     )

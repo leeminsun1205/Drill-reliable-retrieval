@@ -12,7 +12,12 @@ from typing import Any
 import yaml
 
 from drill_ir.data import iter_articles, load_queries, validate_dataset
-from drill_ir.evaluation import evaluate_predictions, macro_recall_at_k
+from drill_ir.evaluation import (
+    evaluate_fixed_cutoffs,
+    evaluate_predictions,
+    macro_recall_at_k,
+    tune_score_thresholds,
+)
 from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
 
@@ -80,6 +85,7 @@ def run_experiment(config: dict[str, Any]) -> Path:
     first_stage_ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
     ranked = first_stage_ranked
     reranker = None
+    retrieved_chunk_candidates = None
     if method == "hybrid_reranker":
         reranking_config = config.get("reranking")
         if not isinstance(reranking_config, dict):
@@ -89,20 +95,45 @@ def run_experiment(config: dict[str, Any]) -> Path:
             raise ValueError(
                 "reranking.candidate_pool_size must be between output_k and retrieval.top_k"
             )
-        candidate_aids = {
-            aid
-            for result in first_stage_ranked
-            for aid in result.aids[:candidate_pool_size]
-        }
-        candidate_articles = [article for article in articles if article.aid in candidate_aids]
         reranker = build_reranker(reranking_config, config.get("runtime", {}))
-        reranker.fit(candidate_articles)
-        ranked = reranker.rerank(dev_queries, first_stage_ranked)
+        candidate_source = str(reranking_config.get("candidate_source", "article_rechunk"))
+        if candidate_source == "article_rechunk":
+            candidate_aids = {
+                aid
+                for result in first_stage_ranked
+                for aid in result.aids[:candidate_pool_size]
+            }
+            candidate_articles = [article for article in articles if article.aid in candidate_aids]
+            reranker.fit(candidate_articles)
+            ranked = reranker.rerank(dev_queries, first_stage_ranked)
+        elif candidate_source == "retrieved_chunks":
+            dense_depth = int(reranking_config.get("retrieved_chunk_depth", candidate_pool_size))
+            retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
+            if not callable(retrieve_chunks):
+                raise TypeError("retrieved_chunks requires a retriever with chunk evidence")
+            retrieved_chunk_candidates = retrieve_chunks(
+                dev_queries,
+                top_k=candidate_pool_size,
+                dense_depth=dense_depth,
+            )
+            ranked = reranker.rerank_chunks(dev_queries, retrieved_chunk_candidates)
+        else:
+            raise ValueError(
+                "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"
+            )
     predictions = {result.qid: result.aids[:output_k] for result in ranked}
-    candidate_rankings = {result.qid: result.aids for result in first_stage_ranked}
+    final_rankings = {result.qid: result.aids for result in ranked}
+    if retrieved_chunk_candidates is None:
+        candidate_rankings = {result.qid: result.aids for result in first_stage_ranked}
+    else:
+        candidate_rankings = {
+            result.qid: tuple(dict.fromkeys(chunk.aid for chunk in result.chunks))
+            for result in retrieved_chunk_candidates
+        }
     gold = {query.qid: query.relevant_aids for query in dev_queries}
     metrics = evaluate_predictions(gold, predictions)
-    recall_cutoffs = list(config.get("evaluation", {}).get("recall_at_k", []))
+    evaluation_config = config.get("evaluation", {})
+    recall_cutoffs = list(evaluation_config.get("recall_at_k", []))
     if any(cutoff > retrieve_k for cutoff in recall_cutoffs):
         raise ValueError("evaluation.recall_at_k cutoffs cannot exceed retrieval.top_k")
     recall_at_k = (
@@ -110,6 +141,31 @@ def run_experiment(config: dict[str, Any]) -> Path:
         if recall_cutoffs
         else {}
     )
+    output_cutoffs = list(evaluation_config.get("output_k_values", [output_k]))
+    if output_k not in output_cutoffs:
+        output_cutoffs.append(output_k)
+    maximum_output_cutoff = (
+        int(config.get("reranking", {}).get("candidate_pool_size", retrieve_k))
+        if method == "hybrid_reranker"
+        else retrieve_k
+    )
+    if any(cutoff > maximum_output_cutoff for cutoff in output_cutoffs):
+        raise ValueError(
+            "evaluation.output_k_values cannot exceed the available final ranking depth"
+        )
+    fixed_cutoff_metrics = evaluate_fixed_cutoffs(gold, final_rankings, output_cutoffs)
+    threshold_metrics = None
+    threshold_config = evaluation_config.get("threshold_sweep", {})
+    if reranker is not None and bool(threshold_config.get("enabled", False)):
+        scored_rankings = {
+            result.qid: (result.aids, result.scores)
+            for result in ranked
+        }
+        threshold_metrics = tune_score_thresholds(
+            gold,
+            scored_rankings,
+            threshold_config.get("fallback_k_values", [1, 2]),
+        )
 
     run_dir = Path(config["output"]["root_dir"]) / str(config["experiment_name"])
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -121,6 +177,25 @@ def run_experiment(config: dict[str, Any]) -> Path:
             "recall_at_k": {str(k): value for k, value in recall_at_k.items()},
         }
         json.dump(metrics_payload, stream, ensure_ascii=False, indent=2)
+    with (run_dir / "metrics_by_output_k.json").open("w", encoding="utf-8") as stream:
+        json.dump(
+            {
+                "selection": "fixed_top_k",
+                "primary_output_k": output_k,
+                "results": {
+                    str(cutoff): cutoff_metrics.to_dict()
+                    for cutoff, cutoff_metrics in fixed_cutoff_metrics.items()
+                },
+            },
+            stream,
+            ensure_ascii=False,
+            indent=2,
+        )
+    if threshold_metrics is not None:
+        with (run_dir / "metrics_by_score_threshold.json").open(
+            "w", encoding="utf-8"
+        ) as stream:
+            json.dump(threshold_metrics, stream, ensure_ascii=False, indent=2)
     with (run_dir / "predictions.jsonl").open("w", encoding="utf-8") as stream:
         for result in ranked:
             record = {
@@ -138,6 +213,25 @@ def run_experiment(config: dict[str, Any]) -> Path:
                     "qid": result.qid,
                     "retrieved_aids": list(result.aids),
                     "scores": list(result.scores),
+                }
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    if retrieved_chunk_candidates is not None:
+        with (run_dir / "reranker_chunk_candidates.jsonl").open(
+            "w", encoding="utf-8"
+        ) as stream:
+            for result in retrieved_chunk_candidates:
+                record = {
+                    "qid": result.qid,
+                    "chunks": [
+                        {
+                            "chunk_id": chunk.chunk_id,
+                            "aid": chunk.aid,
+                            "chunk_index": chunk.chunk_index,
+                            "chunk_type": chunk.chunk_type,
+                            "fusion_score": score,
+                        }
+                        for chunk, score in zip(result.chunks, result.scores)
+                    ],
                 }
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
     component_results = getattr(retriever, "component_results", None)
