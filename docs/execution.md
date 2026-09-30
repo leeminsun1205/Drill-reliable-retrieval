@@ -477,6 +477,24 @@ Query prefixes are deliberately excluded because queries are not stored in the
 corpus cache. Each run records cache hit/miss and embedding shape in
 `run_info.json`.
 
+## Reranker fine-tuning on Kaggle
+
+`notebooks/kaggle_finetune_reranker_448.ipynb` is the Run-All launcher for the
+first supervised trial. It validates the 512/448 pair budget, mines five hybrid
+hard negatives per seed-42 training query, fine-tunes
+`BAAI/bge-reranker-v2-m3` for two epochs with the official FlagEmbedding
+encoder-only trainer, and evaluates the final checkpoint on the untouched
+438-query development split. Core mining logic remains in
+`src/drill_ir/reranking/training.py`; the notebook calls the thin
+`scripts/prepare_reranker_training.py` entry point.
+
+Mining writes `reranker_train_448.jsonl`, a separate audit JSONL, and metadata
+that must report 1,752 written training queries and 438 excluded development
+queries before training starts. The final archive includes the model,
+train-data provenance, resolved evaluation config, predictions, fixed-cutoff
+metrics, and newly tuned threshold metrics. Do not reuse a zero-shot score
+threshold with the fine-tuned checkpoint.
+
 ## Public/private submission inference
 
 The submission runner fits the configured corpus index once, infers the public
@@ -499,3 +517,25 @@ first-stage rankings for reranker runs, resolved `config.yaml`, and
 `run_info.json` under the output directory. The config's `retrieval.output_k`
 controls the submitted list length; override it explicitly with `--output-k`
 only when applying a policy already selected on train/dev.
+
+To additionally package the dev-selected retrieved-chunks threshold policy,
+select the matching candidate source and pass the recorded threshold explicitly:
+
+```python
+!python scripts/run_submission_inference.py \
+  --config configs/hybrid_reranker.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --public-test /kaggle/input/datasets/lmnhnht125/wedev-vlsp-test/public_test.json \
+  --private-test /kaggle/input/datasets/lmnhnht125/wedev-vlsp-test/private_test.json \
+  --devices 2 \
+  --output-k 2 \
+  --score-threshold 4.015625 \
+  --threshold-fallback-k 2 \
+  --set reranking.candidate_source=retrieved_chunks \
+  --output-dir /kaggle/working/submission_results
+```
+
+The same inference pass then produces both fixed top-2 ZIPs and additional
+`public_threshold_results.zip` / `private_threshold_results.zip`. A threshold
+must only be used with the exact model, representation, score precision, and
+candidate-source configuration on which it was selected.

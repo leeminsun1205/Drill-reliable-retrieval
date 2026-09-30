@@ -13,6 +13,7 @@ from drill_ir.experiment import (
     deterministic_split,
     load_config,
     package_submission,
+    package_threshold_submission,
     run_submission_inference,
 )
 
@@ -69,6 +70,36 @@ class ExperimentTest(unittest.TestCase):
                 self.assertEqual(archive.namelist(), ["results.json"])
                 payload = json.loads(archive.read("results.json"))
             self.assertEqual(payload, [{"qid": 1, "relevant_laws": [10, 20]}])
+
+    def test_threshold_submission_uses_empty_only_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            predictions = root / "predictions.jsonl"
+            rows = [
+                {"qid": 1, "retrieved_aids": [10, 20, 30], "scores": [5.0, 4.1, 3.0]},
+                {"qid": 2, "retrieved_aids": [40, 50, 60], "scores": [3.9, 3.0, 2.0]},
+                {"qid": 3, "retrieved_aids": [70, 80, 90], "scores": [4.2, 3.0, 2.0]},
+            ]
+            predictions.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            destination = package_threshold_submission(
+                predictions,
+                {1, 2, 3},
+                root / "threshold_results.zip",
+                score_threshold=4.0,
+                fallback_k=2,
+            )
+            with ZipFile(destination) as archive:
+                payload = json.loads(archive.read("results.json"))
+            self.assertEqual(
+                payload,
+                [
+                    {"qid": 1, "relevant_laws": [10, 20]},
+                    {"qid": 2, "relevant_laws": [40, 50]},
+                    {"qid": 3, "relevant_laws": [70]},
+                ],
+            )
 
     def test_bm25_inference_creates_public_and_private_submissions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -4,7 +4,7 @@ import numpy as np
 
 from drill_ir.data import Article, Query, RetrievalResult
 from drill_ir.preprocessing import Chunk
-from drill_ir.reranking import CrossEncoderReranker
+from drill_ir.reranking import CrossEncoderReranker, select_best_passages
 from drill_ir.retrieval import ChunkRetrievalResult
 
 
@@ -45,6 +45,15 @@ class FakeScorer:
 
 
 class CrossEncoderRerankerTest(unittest.TestCase):
+    def test_training_mining_selects_best_chunk_per_aid_with_stable_ties(self) -> None:
+        chunks = {
+            10: FakeChunker().chunk_articles([Article(10, "law", "weak|strong")]),
+            20: FakeChunker().chunk_articles([Article(20, "law", "first|second")]),
+        }
+        selected = select_best_passages((10, 20), chunks, [0.1, 0.9, 0.5, 0.5])
+        self.assertEqual(selected[10].text, "strong")
+        self.assertEqual(selected[20].text, "first")
+
     def test_max_aggregates_chunks_and_limits_candidate_pool(self) -> None:
         scorer = FakeScorer(
             {

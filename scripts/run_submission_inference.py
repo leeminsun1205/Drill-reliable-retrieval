@@ -27,6 +27,17 @@ def main() -> None:
     parser.add_argument("--devices", type=int)
     parser.add_argument("--output-k", type=int)
     parser.add_argument(
+        "--score-threshold",
+        type=float,
+        help="Also package variable-size results using score >= threshold",
+    )
+    parser.add_argument(
+        "--threshold-fallback-k",
+        type=int,
+        default=2,
+        help="Use top-k only when no score reaches --score-threshold (default: 2)",
+    )
+    parser.add_argument(
         "--set",
         action="append",
         default=[],
@@ -50,10 +61,15 @@ def main() -> None:
         config,
         {"public": args.public_test, "private": args.private_test},
         args.output_dir,
+        score_threshold=args.score_threshold,
+        threshold_fallback_k=args.threshold_fallback_k,
     )
     print(f"Artifacts: {output_dir}")
     print(f"Public submission: {output_dir / 'public_results.zip'}")
     print(f"Private submission: {output_dir / 'private_results.zip'}")
+    if args.score_threshold is not None:
+        print(f"Public threshold submission: {output_dir / 'public_threshold_results.zip'}")
+        print(f"Private threshold submission: {output_dir / 'private_threshold_results.zip'}")
 
 
 if __name__ == "__main__":

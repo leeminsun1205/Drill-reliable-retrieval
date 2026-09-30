@@ -188,6 +188,10 @@ class CrossEncoderReranker:
         self._chunks_by_aid = dict(grouped)
         self._representation_count = len(chunks)
 
+    def representations_for_aid(self, aid: int) -> tuple[Chunk, ...]:
+        """Return fitted representations for training-data inspection/mining."""
+        return tuple(self._chunks_by_aid.get(aid, ()))
+
     def rerank(
         self,
         queries: Sequence[Query],

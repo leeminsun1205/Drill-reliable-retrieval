@@ -7,6 +7,7 @@ from .cross_encoder import (
     PairScorer,
 )
 from .factory import build_reranker
+from .training import MinedPassage, prepare_reranker_training_data, select_best_passages
 
 __all__ = [
     "CrossEncoderReranker",
@@ -14,4 +15,7 @@ __all__ = [
     "HFCrossEncoderScorer",
     "PairScorer",
     "build_reranker",
+    "MinedPassage",
+    "prepare_reranker_training_data",
+    "select_best_passages",
 ]

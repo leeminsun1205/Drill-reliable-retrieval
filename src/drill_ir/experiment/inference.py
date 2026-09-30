@@ -13,7 +13,7 @@ from drill_ir.data import iter_articles, load_queries
 from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
 
-from .submission import package_submission
+from .submission import package_submission, package_threshold_submission
 
 
 def _write_rankings(path: Path, rankings: Sequence[Any]) -> None:
@@ -36,6 +36,9 @@ def run_submission_inference(
     config: dict[str, Any],
     test_paths: dict[str, str | Path],
     output_dir: str | Path,
+    *,
+    score_threshold: float | None = None,
+    threshold_fallback_k: int = 2,
 ) -> Path:
     """Fit once, infer each named test set, and create one ZIP per test set."""
     started = time.perf_counter()
@@ -124,6 +127,14 @@ def run_submission_inference(
             output_dir / f"{name}_results.zip",
             output_k=output_k,
         )
+        if score_threshold is not None:
+            package_threshold_submission(
+                predictions_path,
+                {query.qid for query in named_queries[name]},
+                output_dir / f"{name}_threshold_results.zip",
+                score_threshold=score_threshold,
+                fallback_k=threshold_fallback_k,
+            )
         if method == "hybrid_reranker":
             _write_rankings(
                 output_dir / f"{name}_first_stage_predictions.jsonl",
@@ -144,6 +155,16 @@ def run_submission_inference(
             for name, queries in named_queries.items()
         },
         "output_k": output_k,
+        "threshold_policy": (
+            {
+                "selection": "score_threshold_with_empty_only_fallback",
+                "threshold": score_threshold,
+                "threshold_operator": ">=",
+                "fallback_k": threshold_fallback_k,
+            }
+            if score_threshold is not None
+            else None
+        ),
         "retriever": (
             retriever.run_metadata() if hasattr(retriever, "run_metadata") else {}
         ),

@@ -570,6 +570,43 @@ relative). This is a real but modest gain for the additional inference cost.
 The run remains user-reported pending inspection of its saved config,
 predictions, split IDs, and run metadata.
 
+The project owner subsequently supplied the final scoreboard from
+`kaggle_overnight_experiments.ipynb` on 2026-09-30. The following compact view
+records the strongest policy for each principal reranker treatment; values are
+user-reported pending inspection of the archived run artifacts:
+
+| Treatment | Policy | Precision | Recall | F2 |
+|---|---|---:|---:|---:|
+| Retrieved chunks 50 | threshold + empty-result top-2 fallback | 0.348176 | 0.646271 | 0.551787 |
+| Điểm 512, reranker pair/document 1024/512 | threshold + empty-result top-2 fallback | 0.345146 | 0.645700 | 0.549925 |
+| Điểm fallback 448, reranker pair/document 512/448 | threshold + empty-result top-2 fallback | 0.402820 | 0.604338 | 0.549371 |
+| Điểm 512, reranker pair/document 1024/768 | threshold + empty-result top-2 fallback | 0.343677 | 0.643798 | 0.548075 |
+| Điểm fallback 448, reranker pair/document 512/448 | fixed top-2 | 0.336758 | 0.571233 | 0.501409 |
+| Retrieved chunks 50 | fixed top-2 | 0.336758 | 0.570548 | 0.500987 |
+| Điểm 512, reranker pair/document 1024/512 | fixed top-2 | 0.335616 | 0.569406 | 0.499778 |
+| Điểm 512, reranker pair/document 1024/768 | fixed top-2 | 0.333333 | 0.567047 | 0.497310 |
+
+For the retrieved-chunks treatment, the supplied best fallback-2 threshold is
+`score >= 4.015625`; it gives mean output size `3.502283`, median `2`, minimum
+`1`, and maximum `31`. Its fallback-1 threshold is `3.826171875`. For the
+448-token efficiency treatment, the supplied best fallback-2 threshold is
+`5.03515625`, while its fallback-1 threshold is `3.912109375`. These thresholds
+are configuration-specific cross-encoder logits and must not be transferred
+between the two treatments.
+
+Among fixed policies, top-2 is consistently better than top-3 for all four
+reranker treatments. The best fixed result is the 448-token efficiency
+treatment at F2 `0.501409`, only `0.000422` above direct retrieved-chunk
+reranking; this gap is too small to support a strong quality claim without
+paired analysis. Direct retrieved-chunk reranking has the best dev-tuned
+threshold result at F2 `0.551787`. That threshold and fallback were selected on
+the same development queries used to report the score, so `0.551787` is a
+policy-selection diagnostic, not an unbiased test estimate. The fixed top-2
+policy is the safer submission policy unless a threshold was frozen before
+evaluation on a separate held-out split. The optional token-window reranker
+control was absent from the supplied scoreboard and therefore has no recorded
+result here.
+
 The measured development F2 must not be compared as if it were evaluated on
 the same examples as the organizer two-stage baseline's published private-test
 F2 (`0.5512` in the conference paper and `0.5515` in the extended paper).
@@ -603,6 +640,30 @@ the original article-level hybrid list remains in
 `first_stage_predictions.jsonl`. `reranker_chunk_candidates.jsonl` records the
 selected chunk IDs, parent article IDs, types, and fusion scores. The default
 remains `article_rechunk` for backward comparability.
+
+### First reranker fine-tuning protocol
+
+The first supervised reranker trial freezes the selected Điểm 448/64 dense
+representation, WRRF `rrf_k=20`, sparse/dense weights `0.2/0.8`, top-50 hybrid
+candidate pool, and reranker pair/document budgets 512/448. The deterministic
+seed-42 split assigns 1,752 queries to training and excludes all 438 development
+queries from mining and optimization.
+
+For each train query, gold aids are positives and every gold aid is excluded
+from the negative pool. The zero-shot `BAAI/bge-reranker-v2-m3` scores all Điểm
+representations for each gold aid and top-50 non-gold candidate aid; max-score
+selection chooses one weakly supervised passage per aid. The five highest
+scoring non-gold passages become hard negatives. This matches inference-time
+max aggregation but inherits the zero-shot model's within-article passage
+selection bias; the emitted audit JSONL preserves qid, aid, chunk ID, and score
+for later inspection.
+
+The initial training treatment uses the official FlagEmbedding encoder-only
+reranker trainer, group size six (one sampled positive plus five negatives),
+learning rate `2e-5`, two epochs, FP16, gradient checkpointing, and two-GPU DDP.
+Checkpoint selection and a new threshold sweep use only the fixed development
+split. Zero-shot thresholds are invalid after fine-tuning because the logit
+scale changes.
 
 ### Hierarchical Khoản–Điểm representation
 
