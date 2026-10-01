@@ -178,6 +178,10 @@ class CrossEncoderReranker:
         self._retrieved_chunk_pairs = 0
 
     def fit(self, articles: Sequence[Article]) -> None:
+        print(
+            f"[reranker] Preparing representations for {len(articles):,} articles",
+            flush=True,
+        )
         chunks = self.chunker.chunk_articles(articles)
         grouped: defaultdict[int, list[Chunk]] = defaultdict(list)
         for chunk in chunks:
@@ -187,6 +191,10 @@ class CrossEncoderReranker:
             raise ValueError(f"Reranker produced no representation for aids: {sorted(missing)[:5]}")
         self._chunks_by_aid = dict(grouped)
         self._representation_count = len(chunks)
+        print(
+            f"[reranker] Prepared {self._representation_count:,} representations",
+            flush=True,
+        )
 
     def representations_for_aid(self, aid: int) -> tuple[Chunk, ...]:
         """Return fitted representations for training-data inspection/mining."""
@@ -251,7 +259,13 @@ class CrossEncoderReranker:
         if len(by_qid) != len(candidates):
             raise ValueError("Retrieved chunk candidates contain duplicate query IDs")
         reranked = []
-        for query in queries:
+        try:
+            from tqdm.auto import tqdm
+
+            query_iterator = tqdm(queries, desc="Reranking retrieved chunks", unit="query")
+        except ImportError:
+            query_iterator = queries
+        for query in query_iterator:
             candidate = by_qid.get(query.qid)
             if candidate is None:
                 raise ValueError(f"Missing retrieved chunks for qid={query.qid}")

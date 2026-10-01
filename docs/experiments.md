@@ -658,6 +658,14 @@ max aggregation but inherits the zero-shot model's within-article passage
 selection bias; the emitted audit JSONL preserves qid, aid, chunk ID, and score
 for later inspection.
 
+To prevent pathological appendix articles from creating unbounded query-passage
+pairs during mining, at most eight representations per aid are passed to the
+zero-shot teacher. When an aid has more than eight, a deterministic lexical
+overlap prefilter retains the eight most query-matching representations, with
+chunk order as the stable tie-break. Metadata records this cap, total scored
+pairs, and the maximum pairs for any query. This prefilter affects training-data
+mining only; evaluation still follows each configured candidate flow exactly.
+
 The initial training treatment uses the official FlagEmbedding encoder-only
 reranker trainer, group size six (one sampled positive plus five negatives),
 learning rate `2e-5`, two epochs, FP16, gradient checkpointing, and two-GPU DDP.

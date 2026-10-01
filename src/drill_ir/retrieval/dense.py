@@ -190,7 +190,14 @@ class ExactVectorSearch:
         result_k = min(top_k, documents.shape[0])
         all_indices: list[np.ndarray] = []
         all_scores: list[np.ndarray] = []
-        for start in range(0, queries.shape[0], self.query_batch_size):
+        starts = range(0, queries.shape[0], self.query_batch_size)
+        try:
+            from tqdm.auto import tqdm
+
+            starts = tqdm(starts, desc="Exact vector search", unit="batch")
+        except ImportError:
+            pass
+        for start in starts:
             scores = queries[start : start + self.query_batch_size] @ documents.T
             for row in scores:
                 # Full lexicographic ordering is the exact, deterministic
@@ -228,7 +235,14 @@ class ExactVectorSearch:
         result_k = min(top_k, len(unique_aids))
         all_aids: list[np.ndarray] = []
         all_scores: list[np.ndarray] = []
-        for start in range(0, queries.shape[0], self.query_batch_size):
+        starts = range(0, queries.shape[0], self.query_batch_size)
+        try:
+            from tqdm.auto import tqdm
+
+            starts = tqdm(starts, desc="Grouped exact search", unit="batch")
+        except ImportError:
+            pass
+        for start in starts:
             scores = queries[start : start + self.query_batch_size] @ documents.T
             for row in scores:
                 grouped = np.full(len(unique_aids), -np.inf, dtype=np.float32)
@@ -331,9 +345,15 @@ class DenseRetriever:
     def fit(self, articles: Sequence[Article]) -> None:
         if not articles:
             raise ValueError("Cannot fit dense retrieval on an empty corpus")
+        print(
+            f"[dense] Chunking {len(articles):,} articles with "
+            f"{type(self.chunker).__name__}",
+            flush=True,
+        )
         self._chunks = self.chunker.chunk_articles(articles)
         if not self._chunks:
             raise ValueError("Chunker produced no dense representations")
+        print(f"[dense] Prepared {len(self._chunks):,} representations", flush=True)
         self._aids = [chunk.aid for chunk in self._chunks]
         representations = [
             Article(aid=chunk.aid, law_id=chunk.law_id, text=chunk.text)
@@ -354,7 +374,12 @@ class DenseRetriever:
                 aids=self._aids,
             )
             self.cache_hit = embeddings is not None
+            print(
+                f"[dense] Embedding cache {'hit' if self.cache_hit else 'miss'}",
+                flush=True,
+            )
         if embeddings is None:
+            print("[dense] Encoding corpus representations", flush=True)
             embeddings = self.encoder.encode_documents([chunk.text for chunk in self._chunks])
             if embeddings.ndim != 2 or embeddings.shape[0] != len(self._chunks):
                 raise ValueError("Encoder returned an invalid document embedding matrix")
@@ -365,7 +390,9 @@ class DenseRetriever:
                     encoder_key=representation_key,
                     aids=self._aids,
                 )
+                print("[dense] Saved corpus embedding cache", flush=True)
         self._document_embeddings = embeddings
+        print(f"[dense] Index ready with shape {list(embeddings.shape)}", flush=True)
 
     def run_metadata(self) -> dict[str, Any]:
         shape = list(self._document_embeddings.shape) if self._document_embeddings is not None else None

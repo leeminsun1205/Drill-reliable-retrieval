@@ -4,7 +4,11 @@ import numpy as np
 
 from drill_ir.data import Article, Query, RetrievalResult
 from drill_ir.preprocessing import Chunk
-from drill_ir.reranking import CrossEncoderReranker, select_best_passages
+from drill_ir.reranking import (
+    CrossEncoderReranker,
+    prefilter_representations,
+    select_best_passages,
+)
 from drill_ir.retrieval import ChunkRetrievalResult
 
 
@@ -53,6 +57,13 @@ class CrossEncoderRerankerTest(unittest.TestCase):
         selected = select_best_passages((10, 20), chunks, [0.1, 0.9, 0.5, 0.5])
         self.assertEqual(selected[10].text, "strong")
         self.assertEqual(selected[20].text, "first")
+
+    def test_training_prefilter_caps_chunks_by_query_overlap(self) -> None:
+        chunks = FakeChunker().chunk_articles(
+            [Article(10, "law", "không liên quan|học văn hóa cho phạm nhân|phạm nhân")]
+        )
+        selected = prefilter_representations("phạm nhân học văn hóa", chunks, maximum=2)
+        self.assertEqual([chunk.text for chunk in selected], ["học văn hóa cho phạm nhân", "phạm nhân"])
 
     def test_max_aggregates_chunks_and_limits_candidate_pool(self) -> None:
         scorer = FakeScorer(

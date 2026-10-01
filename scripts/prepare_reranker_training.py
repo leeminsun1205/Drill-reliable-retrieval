@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--negatives-per-query", type=int, default=5)
     parser.add_argument("--negative-pool-size", type=int, default=50)
+    parser.add_argument("--max-representations-per-aid", type=int, default=8)
     parser.add_argument("--set", action="append", default=[], metavar="PATH=VALUE")
     args = parser.parse_args()
     config = apply_config_overrides(load_config(args.config), args.set)
@@ -29,6 +30,7 @@ def main() -> None:
         args.output,
         negatives_per_query=args.negatives_per_query,
         negative_pool_size=args.negative_pool_size,
+        max_representations_per_aid=args.max_representations_per_aid,
     )
     print(path)
 
