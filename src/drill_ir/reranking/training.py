@@ -82,12 +82,15 @@ def prepare_reranker_training_data(
     negatives_per_query: int = 5,
     negative_pool_size: int = 50,
     max_representations_per_aid: int = 8,
+    max_positive_representations_per_aid: int = 32,
 ) -> Path:
     """Mine one best Điểm representation per gold/candidate aid on train only."""
     if negatives_per_query <= 0 or negative_pool_size < negatives_per_query:
         raise ValueError("negative_pool_size must be >= positive negatives_per_query")
     if max_representations_per_aid <= 0:
         raise ValueError("max_representations_per_aid must be positive")
+    if max_positive_representations_per_aid <= 0:
+        raise ValueError("max_positive_representations_per_aid must be positive")
     started = time.perf_counter()
 
     def stage(message: str) -> None:
@@ -167,6 +170,10 @@ def prepare_reranker_training_data(
     skipped = []
     total_scored_pairs = 0
     maximum_pairs_per_query = 0
+    prefiltered_gold_aid_instances = 0
+    prefiltered_negative_aid_instances = 0
+    representations_before_prefilter = 0
+    representations_after_prefilter = 0
     try:
         from tqdm.auto import tqdm
 
@@ -188,14 +195,27 @@ def prepare_reranker_training_data(
                 skipped.append(query.qid)
                 continue
             scored_aids = gold_aids + candidate_aids
-            chunks_by_aid = {
-                aid: prefilter_representations(
-                    query.question,
-                    reranker.representations_for_aid(aid),
-                    maximum=max_representations_per_aid,
+            chunks_by_aid = {}
+            for aid in scored_aids:
+                original_chunks = reranker.representations_for_aid(aid)
+                maximum = (
+                    max_positive_representations_per_aid
+                    if aid in gold
+                    else max_representations_per_aid
                 )
-                for aid in scored_aids
-            }
+                retained_chunks = prefilter_representations(
+                    query.question,
+                    original_chunks,
+                    maximum=maximum,
+                )
+                chunks_by_aid[aid] = retained_chunks
+                representations_before_prefilter += len(original_chunks)
+                representations_after_prefilter += len(retained_chunks)
+                if len(original_chunks) > len(retained_chunks):
+                    if aid in gold:
+                        prefiltered_gold_aid_instances += 1
+                    else:
+                        prefiltered_negative_aid_instances += 1
             empty = [aid for aid, chunks in chunks_by_aid.items() if not chunks]
             if empty:
                 raise ValueError(f"No reranker representation for aids: {empty[:10]}")
@@ -255,7 +275,12 @@ def prepare_reranker_training_data(
         "negatives_per_query": negatives_per_query,
         "negative_pool_size": negative_pool_size,
         "max_representations_per_aid": max_representations_per_aid,
+        "max_positive_representations_per_aid": max_positive_representations_per_aid,
         "representation_prefilter": "query_lexical_overlap_v1",
+        "prefiltered_gold_aid_instances": prefiltered_gold_aid_instances,
+        "prefiltered_negative_aid_instances": prefiltered_negative_aid_instances,
+        "representations_before_prefilter": representations_before_prefilter,
+        "representations_after_prefilter": representations_after_prefilter,
         "total_scored_pairs": total_scored_pairs,
         "maximum_pairs_per_query": maximum_pairs_per_query,
         "candidate_source": "hybrid_article_ranking",

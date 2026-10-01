@@ -659,12 +659,15 @@ selection bias; the emitted audit JSONL preserves qid, aid, chunk ID, and score
 for later inspection.
 
 To prevent pathological appendix articles from creating unbounded query-passage
-pairs during mining, at most eight representations per aid are passed to the
-zero-shot teacher. When an aid has more than eight, a deterministic lexical
-overlap prefilter retains the eight most query-matching representations, with
-chunk order as the stable tie-break. Metadata records this cap, total scored
-pairs, and the maximum pairs for any query. This prefilter affects training-data
-mining only; evaluation still follows each configured candidate flow exactly.
+pairs during mining, at most eight representations per negative aid and 32 per
+gold aid are passed to the zero-shot teacher. The larger gold cap reduces the
+risk of discarding a semantically relevant positive passage; gold aids are few,
+so it adds little cost. Above either cap, a deterministic lexical-overlap
+prefilter retains the most query-matching representations, with chunk order as
+the stable tie-break. Metadata records both caps, how many gold and negative
+aid instances were filtered, representation counts before/after filtering,
+total scored pairs, and the maximum pairs for any query. This prefilter affects
+training-data mining only; evaluation follows each candidate flow exactly.
 
 The initial training treatment uses the official FlagEmbedding encoder-only
 reranker trainer, group size six (one sampled positive plus five negatives),
