@@ -36,6 +36,13 @@ Implement and verify methods in this order:
 Before dense retrieval, verify corpus flattening, article identifiers,
 ground-truth mapping, evaluation, and a reproducible BM25 result.
 
+The selected strong pipeline for subsequent controlled comparisons is hybrid
+Khoản–Điểm retrieval with 448-token chunks and 64-token overlap, weighted RRF,
+then direct reranking of the top 50 fused retrieved chunks with a 512-token
+cross-encoder pair budget. Reranker scores are max-aggregated to unique `aid`
+values. Article-first rechunking remains an ablation, not the default pipeline.
+Hold this configuration fixed when testing structure or reference components.
+
 ## Organizer baselines
 
 The official shared-task overview and its extended journal version report two
@@ -110,6 +117,15 @@ Every edge must come from explicit document content, deterministic extraction,
 or documented annotation. Keep relation extraction separate from retrieval
 behavior, and allow structure and reference components to be disabled
 independently.
+
+Title enhancement is retained as a later structure experiment, not folded into
+the current reranker-recovery run. The first treatment should prepend titles and
+hierarchy only when they can be deterministically recovered and mapped to the
+supplied `law_id`/`aid`; generated titles are a separate LLM-assisted ablation.
+Persist exact, normalized, ambiguous, missing, and manually overridden mapping
+statuses, and compare against the unchanged hybrid-plus-reranker candidates.
+The published FPT.AI crawl/mapping code is unavailable, so this work requires a
+new auditable acquisition and alignment stage before it can be evaluated.
 
 ## Error analysis
 

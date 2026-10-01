@@ -10,7 +10,10 @@ from .factory import build_reranker
 from .training import (
     MinedPassage,
     prefilter_representations,
+    prepare_direct_chunk_bce_training_data,
+    prepare_fpt_reranker_training_data,
     prepare_reranker_training_data,
+    select_fpt_semi_hard_negatives,
     select_best_passages,
 )
 
@@ -22,6 +25,9 @@ __all__ = [
     "build_reranker",
     "MinedPassage",
     "prefilter_representations",
+    "prepare_direct_chunk_bce_training_data",
+    "prepare_fpt_reranker_training_data",
     "prepare_reranker_training_data",
+    "select_fpt_semi_hard_negatives",
     "select_best_passages",
 ]

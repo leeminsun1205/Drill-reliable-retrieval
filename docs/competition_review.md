@@ -97,6 +97,61 @@ model-specific and must be retuned after reranker fine-tuning; values such as
 
 ## Representative approaches
 
+### Fine-tuned reranker evidence relevant to the current failure
+
+The published FPT.AI DRiLL system uses `bge-reranker-v2-m3`, but its supervision
+differs materially from this repository's first fine-tuning attempt. It treats
+ground-truth relevant **articles** directly as positives and removes articles
+longer than 1,024 tokens. Candidate negatives come from the top 30 reranker
+hits after excluding gold articles and overlength articles. Crucially, it then
+discards the five highest-ranked remaining hits because they are considered
+likely near-duplicates, partially relevant, or otherwise false negatives. It
+randomly samples ten negatives when more than fifteen remain, otherwise five.
+Training uses individual query/article labels with binary cross-entropy for two
+epochs, batch size 16, and learning rate `2e-5`. The paper reports a gain from
+private-test F2 `0.6555` before fine-tuning to `0.7055` after fine-tuning in its
+title-enriched and threshold-filtered system. These values are published
+private-test results and are not directly comparable with this repository's
+438-query development results.
+
+The paper does not provide a public repository or crawler/mapping implementation;
+its cited links cover the BGE models and SerpAPI only. Its title-enrichment
+pipeline searched `law_id` with SerpAPI, selected the top ThuVienPhapLuat result,
+crawled the full law, reconstructed the page hierarchy, and aligned supplied
+corpus articles to the crawled text. The authors report that 41 of 2,156 statute
+searches returned incorrect URLs and were manually corrected. Separately, about
+1,000 of nearly 60,000 article chunks could not be mapped precisely at section
+level because the live source had changed relative to the static corpus, the
+crawl was incomplete, or the page structure was an outlier. The paper says some
+issues remained unresolved; it does not claim that all roughly 1,000 mappings
+were manually repaired. A reproduction must therefore retain explicit statuses
+such as exact, normalized, ambiguous, missing, and manually overridden rather
+than silently assigning titles to uncertain matches.
+
+The public Engineers solution independently reports a five-hard-negative setup
+for `bge-reranker-v2-m3` using FlagEmbedding. Its positives are described as
+the original positive passages, while negatives are the highest-scoring
+non-positive passages from its already fine-tuned dense retriever. The public
+description does not expose enough detail to establish its loss, length policy,
+or false-negative filtering, so it supports the general recipe but not an exact
+reproduction.
+
+The shared-task overview confirms that the organizer baseline used BM25-mined
+negative articles and ground-truth positive articles at a 5:1 ratio with a
+cross-entropy objective. It also summarizes successful participant systems as
+retrieve-then-rerank pipelines, often adding threshold filtering; some teams
+used contrastive reranker training, score fusion, or LLM judging. These methods
+should be treated as separate treatments rather than silently combined.
+
+This evidence identifies two high-priority confounds in the repository's failed
+first fine-tuning run: it selected one positive **chunk** using the zero-shot
+teacher despite having only article-level labels, and it selected the five
+hardest non-gold candidates rather than avoiding the most suspicious top-ranked
+unlabelled articles. It also used FlagEmbedding's grouped reranker objective
+rather than the published FPT pointwise BCE setup. The next fine-tuning
+iteration must ablate data construction before changing several optimizer and
+representation variables at once.
+
 ### EDM — rank 1
 
 EDM used a multi-stage learning-to-rank system. Candidate retrieval combined

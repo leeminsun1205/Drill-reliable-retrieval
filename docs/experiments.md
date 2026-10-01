@@ -688,7 +688,7 @@ warning rather than evidence of a damaged checkpoint. The notebook subsequently
 loaded that checkpoint and entered the 438-query development reranking stage.
 
 This completed training run is user-reported and its development metrics are
-not yet available. Its mining variant also remains unresolved until the saved
+not yet independently verified from copied artifacts. Its mining variant also remains unresolved until the saved
 `reranker_khoan_diem_train_448_metadata.json` is inspected: absence of cap keys
 identifies the original unbounded miner, a negative cap without a distinct
 positive cap identifies the intermediate 8/8 miner, and values 8/32 identify
@@ -697,6 +697,121 @@ this note was recorded. Preserve both checkpoints and compare their fixed-k and
 newly tuned threshold metrics on the identical persisted seed-42 development
 split before selecting one; do not infer quality from runtime or successful
 checkpoint creation alone.
+
+The same earlier run subsequently completed its `article_rechunk` development
+evaluation. The project owner reported fixed top-1/2/3/4/5 F2 values of
+`0.313568`, `0.327196`, `0.330343`, `0.315058`, and `0.307827`. Its primary
+top-2 result was Precision `0.219178`, Recall `0.373174`, and F2 `0.327196` on
+438 queries. Dev-tuned threshold policies reached F2 `0.378851` at threshold
+`4.339844` with fallback 1, and F2 `0.383690` at threshold `4.117188` with
+fallback 2. These values are dramatically below the matched zero-shot
+Khoản–Điểm 512/448 article-first results (top-2 F2 `0.505002`, threshold plus
+fallback-2 F2 `0.555900`). Therefore this fine-tuned checkpoint must not replace
+the zero-shot reranker or be used for submission. Its direct-chunk result may
+still be retained as a diagnostic, but cannot rescue the failed article-first
+training treatment. Before another full fine-tuning run, inspect its mining
+metadata, audit samples, trainer loss log, and final/checkpoint-110 development
+scores to distinguish passage-label noise, optimization collapse, and
+overfitting. The still-running current-cap replication is not presumed better
+until measured.
+
+The same checkpoint also completed the `retrieved_chunks` branch before the
+Kaggle job's later archive failure. The project owner reported top-1/2/3/4/5 F2
+of `0.461639`, `0.488633`, `0.471312`, `0.442729`, and `0.416635`; top-2 had
+Precision `0.329909` and Recall `0.555441`. Dev-tuned fallback-1 reached F2
+`0.532117` at threshold `2.343750` with mean output `3.180`, while fallback-2
+reached F2 `0.547714` at threshold `3.066406` with mean output `2.635`. This is
+far stronger than the same checkpoint's article-rechunk result, supporting a
+representation-alignment diagnosis: training selected and optimized chunk-like
+Khoản–Điểm passages, and direct retrieved-chunk inference supplies the same
+kind of input, whereas article-first inference reopens many representations
+inside each candidate article. It still does not establish an improvement over
+the matched zero-shot direct-chunk control and therefore does not reverse the
+decision to reject this fine-tuned checkpoint for submission.
+
+The Kaggle run completed both evaluations before failing while archiving all of
+`/kaggle/working/khoan_diem_finetune_dual`. The partial gzip file reached about
+3.6 GB and exhausted the filesystem; papermill then could not save the executed
+notebook and the local `__notebook__.ipynb` became truncated. These are artifact
+packaging failures, not model-training or metric-computation failures. The four
+reported leaked semaphores are a non-fatal multiprocessing shutdown warning.
+Future packaging must exclude embedding caches and duplicate epoch checkpoints,
+write a small manifest/results archive separately, and package only explicitly
+selected model weights when storage capacity has been checked.
+
+Based on these comparisons, the selected main pipeline is now hybrid
+Khoản–Điểm 448/64, WRRF, dense chunk depth 100, direct reranking of the top 50
+fused chunks with pair maximum 512, and max aggregation by `aid`.
+`configs/hybrid_reranker_khoan_diem.yaml` records those defaults.
+Article-rechunk remains a candidate-flow ablation. This selects the inference
+architecture, not the failed fine-tuned weights: zero-shot remains the main
+model until an aligned checkpoint beats its matched zero-shot control.
+
+The exact user-reported zero-shot development baseline for this selected case,
+`hybrid_bge_m3_khoan_diem448_wrrf20_rerank_retrieved_chunks50_512_seed42_multik`,
+has top-1/2/3/4/5 F2 `0.474457`, `0.505002`, `0.495397`, `0.470399`, and
+`0.441725`. Dev-tuned fallback-1 reaches F2 `0.545228` at threshold `3.912109`
+with mean output `3.737`; fallback-2 reaches F2 `0.555678` at threshold
+`4.234375` with mean output `3.495`. These are the matched targets for the new
+aligned fine-tuning notebook. The threshold result is a development-selected
+diagnostic and must not be described as an unbiased test estimate.
+
+Aligned fine-tuning uses the exact fused retrieved chunks as negatives. The
+zero-shot reranker orders them; mining retains a top-30 non-gold pool, discards
+the top five suspicious hits, and samples ten semi-hard chunks deterministically.
+Because labels identify articles rather than passages, positives remain weakly
+supervised: the teacher selects the maximum-scoring same-448/64 representation
+inside each gold article and the audit preserves every selection. This is
+FPT-inspired but not an exact FPT reproduction. The full-article FPT/BCE
+notebook remains a separate published-method control.
+
+External-method review after this failure found that the strongest documented
+DRiLL hard-negative recipe is deliberately less aggressive: use gold articles
+directly as positives, consider non-gold candidates within the top 30, discard
+the top five suspicious near-positive hits, and randomly sample from the
+remainder. By contrast, the failed run used a zero-shot teacher to choose one
+positive chunk inside each gold article and then chose the five highest-scoring
+non-gold candidates as negatives. This makes positive passage-label noise and
+false-negative contamination the primary hypotheses; the 8/32 representation
+cap is secondary until the audit metadata shows otherwise. The published FPT
+system also used pointwise BCE, while this run used FlagEmbedding's grouped
+training objective, so loss family is a separate ablation rather than an
+assumed implementation detail.
+
+Before another full GPU run, follow this order: (1) evaluate the saved
+`checkpoint-110`; (2) inspect mining metadata, trainer loss, and a deterministic
+sample of positive/negative audit records; (3) implement an article-level,
+false-negative-aware mining control without structural chunk supervision; (4)
+run a small deterministic canary to verify that the checkpoint improves rather
+than collapses ranking; (5) run one full controlled training treatment; and
+only then (6) reintroduce Khoản–Điểm positive representations as an independent
+structure treatment. Do not simultaneously change mining policy, objective,
+length budget, and legal representation in the first recovery experiment.
+
+The FPT-style recovery treatment is now implemented separately rather than
+mutating the failed protocol. `configs/hybrid_reranker_fpt_article.yaml` keeps
+the selected Khoản–Điểm 448/64 hybrid first stage, but reranks top-100 article
+candidates as complete articles with a 1,024-token pair budget. Training-data
+preparation uses only the deterministic 1,752-query train side. It excludes
+gold or candidate articles above 1,024 reranker tokens, uses every eligible
+gold article directly as a positive, forms a top-30 eligible non-gold pool from
+the zero-shot article reranker, discards the top five hits, and deterministically
+samples 10 negatives when more than 15 remain or five otherwise. This is the
+published FPT.AI sampling rule; the seed and selected aids are persisted.
+
+The emitted optimization JSONL contains exactly `query`, `passage`, and binary
+`label` fields. A separate audit JSONL retains qid, positive/negative aid, and
+token lengths. `scripts/train_cross_encoder_bce.py` trains a one-logit
+SentenceTransformers `CrossEncoder` with pointwise binary cross-entropy, two
+epochs, effective two-GPU batch size 16, learning rate `2e-5`, and epoch
+checkpoints. The matched zero-shot model, epoch 1, and epoch 2 must all be
+evaluated with the same article representation, first-stage candidates, dev
+qids, and output-policy sweep. The best fine-tuned development F2 must exceed
+the matched zero-shot result before test inference is justified. This treatment
+changes supervision unit, negative policy, objective, and length budget as a
+faithful published-method reproduction; it must not be interpreted as an
+isolated single-factor ablation. A later structure experiment can reintroduce
+Khoản–Điểm reranker representations after this article-level control succeeds.
 
 ### Hierarchical Khoản–Điểm representation
 

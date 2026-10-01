@@ -31,6 +31,16 @@ content:
     ]
 ```
 
+A direct full-corpus count on 2026-10-01 found 2,157 document rows and 2,157
+unique, non-blank `law_id` values, with no duplicated `law_id`. Of these, 2,156
+documents contain at least one non-blank article. The remaining document,
+`94/2015/QH13`, has an empty `content` list and therefore contributes no article
+to retrieval. The corpus contains 59,636 raw article records / unique aids,
+59,628 of which have non-blank `content_Article`; the other eight blank articles
+are excluded by the normal loader. Thus a title-enrichment effort has 2,157 law
+identifiers to resolve if it audits every raw document, or 2,156 retrieval-active
+laws if it targets only documents with indexable articles.
+
 The normal retrieval unit is an article, not the complete document. Flatten the
 corpus deterministically to:
 

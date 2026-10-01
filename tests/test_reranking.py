@@ -1,4 +1,5 @@
 import unittest
+import random
 
 import numpy as np
 
@@ -7,6 +8,7 @@ from drill_ir.preprocessing import Chunk
 from drill_ir.reranking import (
     CrossEncoderReranker,
     prefilter_representations,
+    select_fpt_semi_hard_negatives,
     select_best_passages,
 )
 from drill_ir.retrieval import ChunkRetrievalResult
@@ -49,6 +51,38 @@ class FakeScorer:
 
 
 class CrossEncoderRerankerTest(unittest.TestCase):
+    def test_fpt_negatives_exclude_gold_overlength_and_top_five(self) -> None:
+        selected = select_fpt_semi_hard_negatives(
+            tuple(range(1, 16)),
+            (2,),
+            eligible_aids=set(range(1, 16)) - {4},
+            top_n=12,
+            skip_top=5,
+            large_pool_threshold=15,
+            large_sample_size=10,
+            small_sample_size=5,
+            rng=random.Random(42),
+        )
+        # Eligible non-gold ranking begins 1,3,5,6,7; these five are skipped.
+        self.assertEqual(len(selected), 5)
+        self.assertTrue(set(selected).issubset({8, 9, 10, 11, 12, 13, 14}))
+        self.assertNotIn(2, selected)
+        self.assertNotIn(4, selected)
+
+    def test_fpt_negatives_are_deterministic_and_use_ten_for_large_pool(self) -> None:
+        kwargs = dict(
+            ranked_aids=tuple(range(40)),
+            relevant_aids=(0,),
+            eligible_aids=set(range(40)),
+            rng=random.Random(7),
+        )
+        first = select_fpt_semi_hard_negatives(**kwargs)
+        kwargs["rng"] = random.Random(7)
+        second = select_fpt_semi_hard_negatives(**kwargs)
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 10)
+        self.assertTrue(set(first).isdisjoint({1, 2, 3, 4, 5}))
+
     def test_training_mining_selects_best_chunk_per_aid_with_stable_ties(self) -> None:
         chunks = {
             10: FakeChunker().chunk_articles([Article(10, "law", "weak|strong")]),

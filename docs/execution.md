@@ -516,13 +516,48 @@ still max-aggregate reranker chunk scores to unique article IDs; they differ in
 whether top-50 selection occurs before or after article aggregation.
 The notebook pins FlagEmbedding 1.4.2, verifies the final model config and
 weights before evaluation, retains epoch checkpoint directories, and includes
-the complete model directory in its final archive. Its final cells select the
+the complete model directory among its working artifacts. Do not archive the
+entire work directory: it may include dense embedding caches, the final model,
+duplicate epoch checkpoints, and result artifacts, and one observed Kaggle run
+created a 3.6-GB partial gzip before exhausting disk space and preventing
+papermill from saving the executed notebook. Package metrics/config/predictions
+separately, then package only the selected checkpoint if it must be downloaded.
+Its final cells select the
 candidate flow and threshold/fallback only from the development results, infer
 the official public and private JSON files with the selected fine-tuned
 checkpoint, and produce both fixed top-2 and threshold submission ZIPs. A
 separate validation cell checks the ZIP member name, payload keys, complete and
 unique query-ID coverage, non-empty predictions, and integer article IDs before
 the artifacts are archived.
+
+`notebooks/kaggle_finetune_fpt_article_bce.ipynb` is the false-negative-aware
+recovery experiment. It calls `scripts/prepare_fpt_reranker_training.py` to
+mine full-article labelled pairs using the published FPT.AI top-30, skip-first-5,
+random-semi-hard policy, then calls `scripts/train_cross_encoder_bce.py` through
+two-GPU `torchrun`. The training command uses SentenceTransformers pointwise
+BCE rather than the earlier FlagEmbedding grouped objective. The notebook
+checks the 1,752/438 split invariant, exposes deterministic audit samples before
+training, retains both epoch checkpoints, and compares matched zero-shot,
+epoch-1, and epoch-2 development results. It intentionally does not load the
+public or private test JSON: test inference remains a separate action after a
+fine-tuned checkpoint actually beats its matched zero-shot control.
+
+This reproduction is expected to be substantially slower than the earlier
+grouped run. A typical query contributes one or more positive pairs plus five
+or ten negative pairs, while the effective batch remains 16 and the sequence
+budget increases to 1,024. Do not estimate its completion time from the old
+110-steps-per-epoch run. Preserve the mining JSONL/metadata and both epoch
+checkpoints so an interrupted evaluation does not require retraining.
+
+`notebooks/kaggle_finetune_main_retrieved_chunks_bce.ipynb` is aligned with the
+selected main pipeline. It calls `scripts/prepare_direct_chunk_bce_training.py`,
+trains pointwise BCE at pair length 512, and compares matched zero-shot,
+epoch-1, and epoch-2 checkpoints on the same direct top-50 retrieved chunks.
+Negative chunks exactly match the inference candidate unit; positive chunks
+are weakly selected from gold articles and must be inspected through the audit
+JSONL. Its final archive contains only results, metadata, and audit records—not
+embedding caches or duplicate model checkpoints. Use this notebook for the
+main fine-tuning decision and retain the article FPT notebook as a control.
 
 ## Public/private submission inference
 
