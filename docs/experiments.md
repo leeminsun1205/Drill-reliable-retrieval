@@ -571,7 +571,7 @@ The run remains user-reported pending inspection of its saved config,
 predictions, split IDs, and run metadata.
 
 The project owner subsequently supplied the final scoreboard from
-`kaggle_overnight_experiments.ipynb` on 2026-09-30. The following compact view
+`notebooks/archive/kaggle_overnight_experiments.ipynb` on 2026-09-30. The following compact view
 records the strongest policy for each principal reranker treatment; values are
 user-reported pending inspection of the archived run artifacts:
 

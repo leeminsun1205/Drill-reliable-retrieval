@@ -321,7 +321,7 @@ chunk search. Its Recall@K is coverage of the selected chunk pool after unique
 
 ## Kaggle overnight verification suite
 
-`notebooks/kaggle_overnight_experiments.ipynb` is the thin Run-All launcher for
+`notebooks/archive/kaggle_overnight_experiments.ipynb` is the archived thin Run-All launcher for
 an approximately eight-hour T4x2 verification window. It uses explicit
 `!python scripts/...` commands, validates the attached Parquet files, installs
 the dense and Vietnamese extras, and runs these cases in order:
@@ -490,7 +490,7 @@ passages, one two-GPU DDP optimizer step, checkpoint reload, and finite-logit
 inference validation. Even level 2 remains a plumbing test rather than a
 retrieval or quality experiment.
 
-`notebooks/kaggle_finetune_reranker_448.ipynb` is the Run-All launcher for the
+`notebooks/archive/kaggle_finetune_reranker_448.ipynb` is the archived Run-All launcher for the
 first supervised trial. It validates the 512/448 pair budget, mines five hybrid
 hard negatives per seed-42 training query, fine-tunes
 `BAAI/bge-reranker-v2-m3` for two epochs with the official FlagEmbedding
@@ -506,7 +506,7 @@ train-data provenance, resolved evaluation config, predictions, fixed-cutoff
 metrics, and newly tuned threshold metrics. Do not reuse a zero-shot score
 threshold with the fine-tuned checkpoint.
 
-`notebooks/kaggle_finetune_khoan_diem_dual_candidate.ipynb` is the controlled
+`notebooks/archive/kaggle_finetune_khoan_diem_dual_candidate.ipynb` is the archived controlled
 follow-up for the best fixed zero-shot setting: Khoản–Điểm 448/64 with a
 512/448 reranker budget. It mines one train-only dataset and fine-tunes one
 shared checkpoint, then evaluates that identical checkpoint with
