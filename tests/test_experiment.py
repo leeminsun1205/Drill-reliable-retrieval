@@ -1,13 +1,16 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from zipfile import ZipFile
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from drill_ir.data import Query
+from drill_ir.data import Article, Query, RetrievalResult
+from drill_ir.preprocessing import Chunk
+from drill_ir.retrieval import ChunkRetrievalResult
 from drill_ir.experiment import (
     apply_config_overrides,
     deterministic_split,
@@ -19,6 +22,80 @@ from drill_ir.experiment import (
 
 
 class ExperimentTest(unittest.TestCase):
+    def test_direct_chunk_submission_keeps_sparse_state_aligned_per_split(self) -> None:
+        class StatefulRetriever:
+            def __init__(self):
+                self.active_qids = ()
+                self.calls = []
+
+            def fit(self, articles):
+                pass
+
+            def retrieve(self, queries, top_k):
+                self.active_qids = tuple(query.qid for query in queries)
+                self.calls.append(("retrieve", self.active_qids))
+                return [RetrievalResult(query.qid, (10,), (1.0,)) for query in queries]
+
+            def retrieve_chunks(self, queries, *, top_k, dense_depth):
+                qids = tuple(query.qid for query in queries)
+                self.calls.append(("chunks", qids))
+                if qids != self.active_qids:
+                    raise KeyError(qids[0])
+                chunk = Chunk("10:0", 10, "law", 0, "fake", "text", 0, 4, 1)
+                return [ChunkRetrievalResult(query.qid, (chunk,), (1.0,)) for query in queries]
+
+            def run_metadata(self):
+                return {}
+
+        class FakeReranker:
+            def rerank_chunks(self, queries, candidates):
+                return [RetrievalResult(query.qid, (10,), (2.0,)) for query in queries]
+
+            def run_metadata(self):
+                return {}
+
+        retriever = StatefulRetriever()
+        query_sets = {
+            "public.json": [Query(8631, "public", ())],
+            "private.json": [Query(9001, "private", ())],
+        }
+        config = {
+            "method": "hybrid_reranker",
+            "seed": 42,
+            "data": {"corpus_path": "corpus"},
+            "retrieval": {"top_k": 100, "output_k": 1},
+            "reranking": {
+                "candidate_source": "retrieved_chunks",
+                "candidate_pool_size": 50,
+                "retrieved_chunk_depth": 100,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "drill_ir.experiment.inference.load_queries",
+            side_effect=lambda path: query_sets[Path(path).name],
+        ), patch(
+            "drill_ir.experiment.inference.iter_articles",
+            return_value=iter([Article(10, "law", "text")]),
+        ), patch(
+            "drill_ir.experiment.inference.build_retriever", return_value=retriever
+        ), patch(
+            "drill_ir.experiment.inference.build_reranker", return_value=FakeReranker()
+        ):
+            run_submission_inference(
+                config,
+                {"public": "public.json", "private": "private.json"},
+                Path(directory) / "output",
+            )
+        self.assertEqual(
+            retriever.calls,
+            [
+                ("retrieve", (8631,)),
+                ("chunks", (8631,)),
+                ("retrieve", (9001,)),
+                ("chunks", (9001,)),
+            ],
+        )
+
     def test_hybrid_config_is_supported(self) -> None:
         config = load_config(Path(__file__).parents[1] / "configs" / "hybrid.yaml")
         self.assertEqual(config["method"], "hybrid")
@@ -31,6 +108,17 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(config["method"], "hybrid_reranker")
         self.assertEqual(config["reranking"]["model_name"], "BAAI/bge-reranker-v2-m3")
         self.assertEqual(config["evaluation"]["output_k_values"], [1, 2, 3, 4, 5])
+
+    def test_selected_main_config_is_direct_chunk_448_64_512(self) -> None:
+        config = load_config(
+            Path(__file__).parents[1] / "configs" / "hybrid_reranker_khoan_diem.yaml"
+        )
+        self.assertEqual(config["retrieval"]["dense"]["chunking"]["max_tokens"], 448)
+        self.assertEqual(config["retrieval"]["dense"]["chunking"]["overlap_tokens"], 64)
+        self.assertEqual(config["reranking"]["candidate_source"], "retrieved_chunks")
+        self.assertEqual(config["reranking"]["retrieved_chunk_depth"], 100)
+        self.assertEqual(config["reranking"]["candidate_pool_size"], 50)
+        self.assertEqual(config["reranking"]["max_length"], 512)
 
     def test_config_overrides_are_typed_and_do_not_mutate_source(self) -> None:
         source = {"retrieval": {"top_k": 100, "prefix": "query: "}}
@@ -178,6 +266,45 @@ class ExperimentTest(unittest.TestCase):
                 )
             run_info = json.loads((output / "run_info.json").read_text())
             self.assertEqual(run_info["threshold_sweep"]["thresholds"], [0.0, 0.5])
+            manifest = json.loads((output / "submission_manifest.json").read_text())
+            self.assertEqual(len(manifest), 6)
+            self.assertEqual(
+                {item["file"] for item in manifest},
+                {
+                    "public_results.zip",
+                    "private_results.zip",
+                    "public_threshold_0_fallback2_results.zip",
+                    "private_threshold_0_fallback2_results.zip",
+                    "public_threshold_0p5_fallback2_results.zip",
+                    "private_threshold_0p5_fallback2_results.zip",
+                },
+            )
+
+    def test_submission_threshold_arguments_fail_before_expensive_work(self) -> None:
+        minimal = {"method": "bm25"}
+        with self.assertRaisesRegex(ValueError, "either score_threshold"):
+            run_submission_inference(
+                minimal,
+                {"public": "unused"},
+                "unused",
+                score_threshold=1.0,
+                score_thresholds=[1.0],
+            )
+        with self.assertRaisesRegex(ValueError, "finite"):
+            run_submission_inference(
+                minimal,
+                {"public": "unused"},
+                "unused",
+                score_thresholds=[float("nan")],
+            )
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            run_submission_inference(
+                minimal,
+                {"public": "unused"},
+                "unused",
+                score_thresholds=[1.0],
+                threshold_fallback_k=0,
+            )
 
 
 if __name__ == "__main__":

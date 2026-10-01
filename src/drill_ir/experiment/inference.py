@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 import platform
 import time
@@ -55,6 +56,17 @@ def run_submission_inference(
         if score_threshold is not None
         else list(dict.fromkeys(map(float, score_thresholds or ())))
     )
+    if any(not math.isfinite(value) for value in threshold_values):
+        raise ValueError("Every score threshold must be finite")
+    if (
+        isinstance(threshold_fallback_k, bool)
+        or not isinstance(threshold_fallback_k, int)
+        or threshold_fallback_k <= 0
+    ):
+        raise ValueError("threshold_fallback_k must be a positive integer")
+    threshold_slugs = [_threshold_slug(value) for value in threshold_values]
+    if len(set(threshold_slugs)) != len(threshold_slugs):
+        raise ValueError("Score thresholds collide after filename formatting")
     if not test_paths:
         raise ValueError("At least one test set is required")
     method = str(config["method"])
@@ -78,14 +90,27 @@ def run_submission_inference(
     if not 0 < output_k <= retrieve_k:
         raise ValueError("retrieval.output_k must be positive and cannot exceed retrieval.top_k")
 
-    first_stage = {
-        name: retriever.retrieve(queries, top_k=retrieve_k)
-        for name, queries in named_queries.items()
-    }
+    reranking_config = config.get("reranking") if method == "hybrid_reranker" else None
+    candidate_source = (
+        str(reranking_config.get("candidate_source", "article_rechunk"))
+        if isinstance(reranking_config, dict)
+        else None
+    )
+    # WeightedRRFRetriever.retrieve_chunks() intentionally consumes the sparse
+    # component ranking from its immediately preceding retrieve() call. For the
+    # direct-chunk flow, process each named split sequentially below so public
+    # chunks can never be fused against private sparse qids (or vice versa).
+    first_stage = (
+        {}
+        if candidate_source == "retrieved_chunks"
+        else {
+            name: retriever.retrieve(queries, top_k=retrieve_k)
+            for name, queries in named_queries.items()
+        }
+    )
     final_rankings = first_stage
     reranker = None
     if method == "hybrid_reranker":
-        reranking_config = config.get("reranking")
         if not isinstance(reranking_config, dict):
             raise ValueError("hybrid_reranker requires a reranking mapping")
         candidate_pool_size = int(reranking_config.get("candidate_pool_size", 50))
@@ -94,9 +119,6 @@ def run_submission_inference(
                 "reranking.candidate_pool_size must be between output_k and retrieval.top_k"
             )
         reranker = build_reranker(reranking_config, config.get("runtime", {}))
-        candidate_source = str(
-            reranking_config.get("candidate_source", "article_rechunk")
-        )
         if candidate_source == "article_rechunk":
             candidate_aids = {
                 aid
@@ -116,12 +138,22 @@ def run_submission_inference(
             dense_depth = int(
                 reranking_config.get("retrieved_chunk_depth", candidate_pool_size)
             )
-            final_rankings = {}
+            chunk_candidates = {}
             for name, queries in named_queries.items():
-                chunks = retrieve_chunks(
+                # Keep this call adjacent to retrieve_chunks(): the hybrid
+                # retriever stores sparse component ranks for the latest query
+                # batch as state used by chunk-level WRRF fusion.
+                first_stage[name] = retriever.retrieve(queries, top_k=retrieve_k)
+                chunk_candidates[name] = retrieve_chunks(
                     queries, top_k=candidate_pool_size, dense_depth=dense_depth
                 )
-                final_rankings[name] = reranker.rerank_chunks(queries, chunks)
+            # Complete dense/sparse candidate generation for every split before
+            # the cross-encoder lazily loads onto GPU. This avoids returning to
+            # dense inference after the larger reranker has occupied GPU memory.
+            final_rankings = {
+                name: reranker.rerank_chunks(named_queries[name], chunk_candidates[name])
+                for name in named_queries
+            }
         else:
             raise ValueError(
                 "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"
@@ -131,6 +163,7 @@ def run_submission_inference(
     output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / "config.yaml").open("w", encoding="utf-8") as stream:
         yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
+    submission_manifest: list[dict[str, Any]] = []
     for name, rankings in final_rankings.items():
         predictions_path = output_dir / f"{name}_predictions.jsonl"
         _write_rankings(predictions_path, rankings)
@@ -140,6 +173,14 @@ def run_submission_inference(
             output_dir / f"{name}_results.zip",
             output_k=output_k,
         )
+        submission_manifest.append(
+            {
+                "test_set": name,
+                "policy": "fixed_top_k",
+                "output_k": output_k,
+                "file": f"{name}_results.zip",
+            }
+        )
         if score_threshold is not None:
             package_threshold_submission(
                 predictions_path,
@@ -148,15 +189,36 @@ def run_submission_inference(
                 score_threshold=score_threshold,
                 fallback_k=threshold_fallback_k,
             )
+            submission_manifest.append(
+                {
+                    "test_set": name,
+                    "policy": "score_threshold_with_empty_only_fallback",
+                    "threshold": score_threshold,
+                    "fallback_k": threshold_fallback_k,
+                    "file": f"{name}_threshold_results.zip",
+                }
+            )
         elif threshold_values:
-            for threshold in threshold_values:
+            for threshold, slug in zip(threshold_values, threshold_slugs):
+                filename = (
+                    f"{name}_threshold_{slug}_fallback{threshold_fallback_k}_results.zip"
+                )
                 package_threshold_submission(
                     predictions_path,
                     {query.qid for query in named_queries[name]},
                     output_dir
-                    / f"{name}_threshold_{_threshold_slug(threshold)}_fallback{threshold_fallback_k}_results.zip",
+                    / filename,
                     score_threshold=threshold,
                     fallback_k=threshold_fallback_k,
+                )
+                submission_manifest.append(
+                    {
+                        "test_set": name,
+                        "policy": "score_threshold_with_empty_only_fallback",
+                        "threshold": threshold,
+                        "fallback_k": threshold_fallback_k,
+                        "file": filename,
+                    }
                 )
         if method == "hybrid_reranker":
             _write_rankings(
@@ -206,5 +268,9 @@ def run_submission_inference(
     }
     (output_dir / "run_info.json").write_text(
         json.dumps(run_info, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (output_dir / "submission_manifest.json").write_text(
+        json.dumps(submission_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     return output_dir

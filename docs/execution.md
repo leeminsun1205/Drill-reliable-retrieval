@@ -611,3 +611,12 @@ reranker pass. It is mutually exclusive with the backward-compatible singular
 example `private_threshold_4p234375_fallback2_results.zip`. Sweeping test
 submissions is leaderboard probing, not development tuning; report the frozen
 development threshold `4.234375` separately from neighboring sensitivity runs.
+
+For `retrieved_chunks`, the runner processes candidate generation atomically per
+test split: `retrieve(public)` immediately precedes `retrieve_chunks(public)`,
+then the same sequence is applied to private. This ordering is required because
+WRRF chunk fusion consumes sparse component ranks from the matching retrieval
+batch. All public/private chunk candidates are completed before the
+cross-encoder loads, after which both sets are reranked and every threshold ZIP
+is derived from the persisted rankings. A regression test with disjoint public
+and private qids protects this ordering.

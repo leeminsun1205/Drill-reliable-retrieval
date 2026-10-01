@@ -2,6 +2,7 @@
 """Infer the public/private DRiLL test sets and create two submission ZIPs."""
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -82,8 +83,10 @@ def main() -> None:
         print(f"Private threshold submission: {output_dir / 'private_threshold_results.zip'}")
     elif args.score_thresholds:
         print("Threshold sweep submissions:")
-        for path in sorted(output_dir.glob("*_threshold_*_results.zip")):
-            print(path)
+        manifest = json.loads((output_dir / "submission_manifest.json").read_text())
+        for artifact in manifest:
+            if artifact["policy"] == "score_threshold_with_empty_only_fallback":
+                print(output_dir / artifact["file"])
 
 
 if __name__ == "__main__":

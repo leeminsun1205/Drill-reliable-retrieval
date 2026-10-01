@@ -128,8 +128,20 @@ class WeightedRRFRetriever:
             raise RuntimeError("retrieve() must be called before retrieve_chunks()")
         sparse_by_qid = self._by_qid(sparse_results, component="sparse")
         dense_chunks = retrieve_chunks(queries, top_k=dense_depth)
+        expected_qids = {query.qid for query in queries}
+        if set(sparse_by_qid) != expected_qids:
+            raise ValueError(
+                "Chunk fusion sparse state does not match the requested query batch; "
+                "call retrieve() immediately before retrieve_chunks() for the same queries"
+            )
+        dense_chunk_by_qid = {result.qid: result for result in dense_chunks}
+        if len(dense_chunk_by_qid) != len(dense_chunks):
+            raise ValueError("Dense chunk retriever returned duplicate query IDs")
+        if set(dense_chunk_by_qid) != expected_qids:
+            raise ValueError("Dense chunk retriever must return every query exactly once")
         fused: list[ChunkRetrievalResult] = []
-        for result in dense_chunks:
+        for query in queries:
+            result = dense_chunk_by_qid[query.qid]
             sparse = sparse_by_qid[result.qid]
             sparse_ranks = {
                 aid: rank
