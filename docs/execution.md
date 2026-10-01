@@ -485,6 +485,10 @@ one positive, five negatives, one GPU, and one optimizer step. Passing verifies
 the FlagEmbedding/CUDA/tokenization/backpropagation/model-save path only; it
 does not exercise retrieval, hard-negative mining, two-GPU DDP, or provide a
 scientific metric.
+The notebook also contains a level-2 check with two query groups, near-budget
+passages, one two-GPU DDP optimizer step, checkpoint reload, and finite-logit
+inference validation. Even level 2 remains a plumbing test rather than a
+retrieval or quality experiment.
 
 `notebooks/kaggle_finetune_reranker_448.ipynb` is the Run-All launcher for the
 first supervised trial. It validates the 512/448 pair budget, mines five hybrid
