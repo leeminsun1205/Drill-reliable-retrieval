@@ -16,6 +16,11 @@ from drill_ir.retrieval import build_retriever
 from .submission import package_submission, package_threshold_submission
 
 
+def _threshold_slug(value: float) -> str:
+    """Return a stable filename-safe decimal without losing supplied precision."""
+    return format(value, ".12g").replace("-", "m").replace(".", "p")
+
+
 def _write_rankings(path: Path, rankings: Sequence[Any]) -> None:
     with path.open("w", encoding="utf-8") as stream:
         for result in rankings:
@@ -38,10 +43,18 @@ def run_submission_inference(
     output_dir: str | Path,
     *,
     score_threshold: float | None = None,
+    score_thresholds: Sequence[float] | None = None,
     threshold_fallback_k: int = 2,
 ) -> Path:
     """Fit once, infer each named test set, and create one ZIP per test set."""
     started = time.perf_counter()
+    if score_threshold is not None and score_thresholds is not None:
+        raise ValueError("Use either score_threshold or score_thresholds, not both")
+    threshold_values = (
+        [float(score_threshold)]
+        if score_threshold is not None
+        else list(dict.fromkeys(map(float, score_thresholds or ())))
+    )
     if not test_paths:
         raise ValueError("At least one test set is required")
     method = str(config["method"])
@@ -135,6 +148,16 @@ def run_submission_inference(
                 score_threshold=score_threshold,
                 fallback_k=threshold_fallback_k,
             )
+        elif threshold_values:
+            for threshold in threshold_values:
+                package_threshold_submission(
+                    predictions_path,
+                    {query.qid for query in named_queries[name]},
+                    output_dir
+                    / f"{name}_threshold_{_threshold_slug(threshold)}_fallback{threshold_fallback_k}_results.zip",
+                    score_threshold=threshold,
+                    fallback_k=threshold_fallback_k,
+                )
         if method == "hybrid_reranker":
             _write_rankings(
                 output_dir / f"{name}_first_stage_predictions.jsonl",
@@ -163,6 +186,17 @@ def run_submission_inference(
                 "fallback_k": threshold_fallback_k,
             }
             if score_threshold is not None
+            else None
+        ),
+        "threshold_sweep": (
+            {
+                "selection": "score_threshold_with_empty_only_fallback",
+                "thresholds": threshold_values,
+                "threshold_operator": ">=",
+                "fallback_k": threshold_fallback_k,
+                "note": "All ZIPs reuse one inference ranking pass",
+            }
+            if score_threshold is None and threshold_values
             else None
         ),
         "retriever": (

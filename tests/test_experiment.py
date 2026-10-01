@@ -162,12 +162,22 @@ class ExperimentTest(unittest.TestCase):
                 config,
                 {"public": public, "private": private},
                 root / "submissions",
+                score_thresholds=[0.0, 0.5],
+                threshold_fallback_k=2,
             )
             for name, expected_qid in (("public", 1), ("private", 2)):
                 with ZipFile(output / f"{name}_results.zip") as archive:
                     payload = json.loads(archive.read("results.json"))
                 self.assertEqual(payload[0]["qid"], expected_qid)
                 self.assertEqual(len(payload[0]["relevant_laws"]), 1)
+                self.assertTrue(
+                    (output / f"{name}_threshold_0_fallback2_results.zip").is_file()
+                )
+                self.assertTrue(
+                    (output / f"{name}_threshold_0p5_fallback2_results.zip").is_file()
+                )
+            run_info = json.loads((output / "run_info.json").read_text())
+            self.assertEqual(run_info["threshold_sweep"]["thresholds"], [0.0, 0.5])
 
 
 if __name__ == "__main__":

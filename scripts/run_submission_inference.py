@@ -32,6 +32,15 @@ def main() -> None:
         help="Also package variable-size results using score >= threshold",
     )
     parser.add_argument(
+        "--score-thresholds",
+        type=float,
+        nargs="+",
+        help=(
+            "Package one variable-size submission per threshold from the same "
+            "inference pass; mutually exclusive with --score-threshold"
+        ),
+    )
+    parser.add_argument(
         "--threshold-fallback-k",
         type=int,
         default=2,
@@ -62,6 +71,7 @@ def main() -> None:
         {"public": args.public_test, "private": args.private_test},
         args.output_dir,
         score_threshold=args.score_threshold,
+        score_thresholds=args.score_thresholds,
         threshold_fallback_k=args.threshold_fallback_k,
     )
     print(f"Artifacts: {output_dir}")
@@ -70,6 +80,10 @@ def main() -> None:
     if args.score_threshold is not None:
         print(f"Public threshold submission: {output_dir / 'public_threshold_results.zip'}")
         print(f"Private threshold submission: {output_dir / 'private_threshold_results.zip'}")
+    elif args.score_thresholds:
+        print("Threshold sweep submissions:")
+        for path in sorted(output_dir.glob("*_threshold_*_results.zip")):
+            print(path)
 
 
 if __name__ == "__main__":

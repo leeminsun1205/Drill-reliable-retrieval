@@ -603,3 +603,11 @@ The same inference pass then produces both fixed top-2 ZIPs and additional
 `public_threshold_results.zip` / `private_threshold_results.zip`. A threshold
 must only be used with the exact model, representation, score precision, and
 candidate-source configuration on which it was selected.
+
+For post-competition sensitivity analysis, `--score-thresholds` accepts several
+values and creates one ZIP per threshold while reusing the same retrieval and
+reranker pass. It is mutually exclusive with the backward-compatible singular
+`--score-threshold`. Output names encode both threshold and fallback, for
+example `private_threshold_4p234375_fallback2_results.zip`. Sweeping test
+submissions is leaderboard probing, not development tuning; report the frozen
+development threshold `4.234375` separately from neighboring sensitivity runs.
