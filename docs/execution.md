@@ -516,7 +516,13 @@ still max-aggregate reranker chunk scores to unique article IDs; they differ in
 whether top-50 selection occurs before or after article aggregation.
 The notebook pins FlagEmbedding 1.4.2, verifies the final model config and
 weights before evaluation, retains epoch checkpoint directories, and includes
-the complete model directory in its final archive.
+the complete model directory in its final archive. Its final cells select the
+candidate flow and threshold/fallback only from the development results, infer
+the official public and private JSON files with the selected fine-tuned
+checkpoint, and produce both fixed top-2 and threshold submission ZIPs. A
+separate validation cell checks the ZIP member name, payload keys, complete and
+unique query-ID coverage, non-empty predictions, and integer article IDs before
+the artifacts are archived.
 
 ## Public/private submission inference
 

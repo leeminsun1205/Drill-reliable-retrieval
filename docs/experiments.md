@@ -676,6 +676,28 @@ Checkpoint selection and a new threshold sweep use only the fixed development
 split. Zero-shot thresholds are invalid after fine-tuning because the logit
 scale changes.
 
+On 2026-10-01, the project owner reported that an earlier Kaggle execution of
+the Khoản–Điểm dual-candidate notebook completed both training epochs and saved
+the final model plus `checkpoint-110` and `checkpoint-220` under
+`/kaggle/working/khoan_diem_finetune_dual/bge_reranker_v2_m3_khoan_diem_448`.
+The final-model message appeared after approximately 22,071 seconds (about 6.1
+hours). A PyTorch warning that `destroy_process_group()` was not called occurred
+after distributed training; because the final model and both epoch checkpoints
+were already present, this is currently treated as a non-fatal DDP cleanup
+warning rather than evidence of a damaged checkpoint. The notebook subsequently
+loaded that checkpoint and entered the 438-query development reranking stage.
+
+This completed training run is user-reported and its development metrics are
+not yet available. Its mining variant also remains unresolved until the saved
+`reranker_khoan_diem_train_448_metadata.json` is inspected: absence of cap keys
+identifies the original unbounded miner, a negative cap without a distinct
+positive cap identifies the intermediate 8/8 miner, and values 8/32 identify
+the current miner. A second run using the current code was still executing when
+this note was recorded. Preserve both checkpoints and compare their fixed-k and
+newly tuned threshold metrics on the identical persisted seed-42 development
+split before selecting one; do not infer quality from runtime or successful
+checkpoint creation alone.
+
 ### Hierarchical Khoản–Điểm representation
 
 `khoan_diem` is an independently selectable dense and reranker representation.
@@ -732,3 +754,12 @@ control must be inspected before attributing the gain specifically to richer
 reranker context. The defensible current conclusion is narrower: hierarchical
 Khoản–Điểm hurts standalone first-stage ranking in this setup, yet produces a
 small, consistent improvement in the complete reranked pipeline.
+
+One additional controlled efficiency treatment combines dense Khoản–Điểm
+448/64 and pair max 512 from the best fixed article-first case with direct
+top-50 retrieved-chunk reranking. It keeps WRRF20, weights, dense chunk depth
+100, checkpoint, split, and final policies fixed. The comparison changes only
+whether top-50 selection occurs after article aggregation or at the fused chunk
+level. Its result is pending execution; report both quality and the exact
+`retrieved_chunk_pairs`/unique-aid coverage rather than assuming that 50 chunks
+represent 50 articles.
