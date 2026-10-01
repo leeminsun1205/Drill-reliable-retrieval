@@ -479,6 +479,13 @@ corpus cache. Each run records cache hit/miss and embedding shape in
 
 ## Reranker fine-tuning on Kaggle
 
+Before committing GPU hours to the full corpus, run
+`notebooks/kaggle_smoke_finetune_reranker.ipynb`. It uses one synthetic query,
+one positive, five negatives, one GPU, and one optimizer step. Passing verifies
+the FlagEmbedding/CUDA/tokenization/backpropagation/model-save path only; it
+does not exercise retrieval, hard-negative mining, two-GPU DDP, or provide a
+scientific metric.
+
 `notebooks/kaggle_finetune_reranker_448.ipynb` is the Run-All launcher for the
 first supervised trial. It validates the 512/448 pair budget, mines five hybrid
 hard negatives per seed-42 training query, fine-tunes
