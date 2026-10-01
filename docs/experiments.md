@@ -729,6 +729,16 @@ inside each candidate article. It still does not establish an improvement over
 the matched zero-shot direct-chunk control and therefore does not reverse the
 decision to reject this fine-tuned checkpoint for submission.
 
+A later user-reported execution of the repaired Khoản–Điểm notebook produced a
+stronger direct retrieved-chunk result on the same 438-query development split:
+top-1/2/3/4/5 F2 `0.456765`, `0.511099`, `0.486778`, `0.457327`, and `0.432133`.
+Its threshold policies reached F2 `0.560273` at threshold `3.744141` with
+fallback 1 and F2 `0.574508` at threshold `3.722656` with fallback 2. The latter
+exceeds the matched zero-shot direct-chunk development F2 `0.555678` by
+`0.018830`. These values are user-reported development measurements, not an
+unbiased test estimate. Preserve the exact mining metadata and checkpoint
+identity before attributing the gain to a particular training treatment.
+
 The Kaggle run completed both evaluations before failing while archiving all of
 `/kaggle/working/khoan_diem_finetune_dual`. The partial gzip file reached about
 3.6 GB and exhausted the filesystem; papermill then could not save the executed
@@ -738,6 +748,13 @@ reported leaked semaphores are a non-fatal multiprocessing shutdown warning.
 Future packaging must exclude embedding caches and duplicate epoch checkpoints,
 write a small manifest/results archive separately, and package only explicitly
 selected model weights when storage capacity has been checked.
+
+The archived dual-candidate notebook now implements that policy: its final ZIP
+contains metrics, predictions, mining metadata/audit, scoreboard, and submission
+ZIPs only. It excludes model directories, FlagEmbedding data cache, optimization
+JSONL, and dense embedding caches. The former whole-WORK `tar` command was the
+direct cause of the terminal disk failure because it wrote a second compressed
+copy while all large source artifacts were still present.
 
 Based on these comparisons, the selected main pipeline is now hybrid
 Khoản–Điểm 448/64, WRRF, dense chunk depth 100, direct reranking of the top 50
@@ -801,10 +818,10 @@ published FPT.AI sampling rule; the seed and selected aids are persisted.
 
 The emitted optimization JSONL contains exactly `query`, `passage`, and binary
 `label` fields. A separate audit JSONL retains qid, positive/negative aid, and
-token lengths. `scripts/train_cross_encoder_bce.py` trains a one-logit
-SentenceTransformers `CrossEncoder` with pointwise binary cross-entropy, two
-epochs, effective two-GPU batch size 16, learning rate `2e-5`, and epoch
-checkpoints. The matched zero-shot model, epoch 1, and epoch 2 must all be
+token lengths. `scripts/train_cross_encoder_bce.py` trains the one-logit Hugging
+Face sequence classifier with pointwise binary cross-entropy, two epochs,
+effective two-GPU batch size 16, learning rate `2e-5`, and epoch checkpoints.
+The matched zero-shot model, epoch 1, and epoch 2 must all be
 evaluated with the same article representation, first-stage candidates, dev
 qids, and output-policy sweep. The best fine-tuned development F2 must exceed
 the matched zero-shot result before test inference is justified. This treatment
@@ -812,6 +829,32 @@ changes supervision unit, negative policy, objective, and length budget as a
 faithful published-method reproduction; it must not be interpreted as an
 isolated single-factor ablation. A later structure experiment can reintroduce
 Khoản–Điểm reranker representations after this article-level control succeeds.
+
+The first reported execution of the aligned direct-chunk BCE treatment failed
+before its first optimizer step on 2026-10-01. With the installed
+SentenceTransformers/Transformers versions, `CrossEncoderTrainer` replaced the
+loss object's CrossEncoder reference with `DistributedDataParallel`; then
+`BinaryCrossEntropyLoss` called the CrossEncoder-only `preprocess` method on
+that wrapper and raised `AttributeError`. The completed train-only mining JSONL
+is unaffected. Training now uses a small explicit PyTorch DDP loop with the
+same tokenizer, one-logit model, unweighted pointwise BCE, data, sequence
+budget, effective batch size, optimizer settings, seed, and linear warmup.
+This is an execution-engine repair, but it may still cause numerical differences
+from the former Trainer and is recorded in `training_provenance.json`. Both
+active BCE notebooks require a two-rank, one-optimizer-step smoke test before
+starting the full run. The smoke test writes provenance but deliberately does
+not duplicate multi-gigabyte model weights. The trainer also destroys the
+process group on exit and expresses the warmup ratio as an explicit number of
+scheduler steps.
+
+For the replacement BCE trainer, the root final model is hard-linked from the
+last epoch checkpoint on filesystems that support hard links, with symbolic
+links as the fallback. Thus the normal Kaggle path stores two physical model
+snapshots (epoch 1 and epoch 2), not three; the root remains a loadable Hugging
+Face model.
+Before optimization, the trainer estimates both checkpoint sizes from parameter
+storage and requires an additional 2 GiB free-space reserve. Artifact ZIPs
+exclude all model snapshots and embedding caches.
 
 ### Hierarchical Khoản–Điểm representation
 

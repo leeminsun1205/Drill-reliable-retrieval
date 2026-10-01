@@ -522,6 +522,8 @@ duplicate epoch checkpoints, and result artifacts, and one observed Kaggle run
 created a 3.6-GB partial gzip before exhausting disk space and preventing
 papermill from saving the executed notebook. Package metrics/config/predictions
 separately, then package only the selected checkpoint if it must be downloaded.
+The archived notebook's final cell now creates only
+`drill_finetuned_khoan_diem_dual_metrics.zip`; it does not tar `WORK`.
 Its final cells select the
 candidate flow and threshold/fallback only from the development results, infer
 the official public and private JSON files with the selected fine-tuned
@@ -534,8 +536,12 @@ the artifacts are archived.
 recovery experiment. It calls `scripts/prepare_fpt_reranker_training.py` to
 mine full-article labelled pairs using the published FPT.AI top-30, skip-first-5,
 random-semi-hard policy, then calls `scripts/train_cross_encoder_bce.py` through
-two-GPU `torchrun`. The training command uses SentenceTransformers pointwise
-BCE rather than the earlier FlagEmbedding grouped objective. The notebook
+two-GPU `torchrun`. The training command uses an explicit PyTorch DDP loop with
+the Hugging Face one-logit reranker and pointwise BCE rather than the earlier
+FlagEmbedding grouped objective. The notebook first runs that exact path for
+one optimizer step on both GPUs; the full run starts only after the smoke model
+update and provenance are completed. Smoke weights are deliberately not saved
+to avoid consuming several gigabytes before the real run. The notebook
 checks the 1,752/438 split invariant, exposes deterministic audit samples before
 training, retains both epoch checkpoints, and compares matched zero-shot,
 epoch-1, and epoch-2 development results. It intentionally does not load the
@@ -549,6 +555,15 @@ budget increases to 1,024. Do not estimate its completion time from the old
 110-steps-per-epoch run. Preserve the mining JSONL/metadata and both epoch
 checkpoints so an interrupted evaluation does not require retraining.
 
+The BCE trainer saves epoch 1 and epoch 2 normally, then exposes epoch 2 at the
+final model root through hard links when supported. This keeps the convenient
+final-model path without a third physical copy of the multi-gigabyte weights.
+Before the full run, it also refuses to start unless estimated space for both
+epoch snapshots plus a 2 GiB reserve is available.
+The FPT notebook's final ZIP contains only metrics, predictions, scoreboard,
+provenance, and mining metadata/audit; it excludes checkpoints, model caches,
+dense embeddings, and the large optimization JSONL.
+
 `notebooks/kaggle_finetune_main_retrieved_chunks_bce.ipynb` is aligned with the
 selected main pipeline. It calls `scripts/prepare_direct_chunk_bce_training.py`,
 trains pointwise BCE at pair length 512, and compares matched zero-shot,
@@ -558,6 +573,15 @@ are weakly selected from gold articles and must be inspected through the audit
 JSONL. Its final archive contains only results, metadata, and audit records—not
 embedding caches or duplicate model checkpoints. Use this notebook for the
 main fine-tuning decision and retain the article FPT notebook as a control.
+
+If an older aligned run failed with
+`DistributedDataParallel object has no attribute preprocess`, pull the repaired
+training script and rerun the training cell in the same Kaggle session. Do not
+rerun mining when the validated `direct_chunks_bce_train.jsonl`, audit JSONL,
+and metadata still exist: the exception happened at optimizer step zero. An
+empty or partial model directory is not treated as completion because the
+notebook requires final config, weights, provenance, and two valid epoch
+checkpoint directories.
 
 ## Public/private submission inference
 
