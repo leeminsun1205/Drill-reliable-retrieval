@@ -574,6 +574,17 @@ JSONL. Its final archive contains only results, metadata, and audit records—no
 embedding caches or duplicate model checkpoints. Use this notebook for the
 main fine-tuning decision and retain the article FPT notebook as a control.
 
+`notebooks/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` is the
+controlled longer-training follow-up. It preserves the same seed, mined-pair
+protocol, pointwise-BCE objective, effective batch size, learning rate, and
+inference pipeline, but trains for four epochs. Because the trainer retains the
+last two physical snapshots, this notebook labels and evaluates them as epoch 3
+and epoch 4, alongside the same zero-shot control. Its work directory, result
+case names, scoreboard, and small metrics archive are separate from the
+two-epoch run. Do not compare intermediate checkpoints as a single learning
+curve across the two notebooks because their linear schedules have different
+total step counts.
+
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired
 training script and rerun the training cell in the same Kaggle session. Do not
