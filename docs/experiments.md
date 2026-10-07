@@ -226,6 +226,44 @@ the reranker ranking, unchanged first-stage ranking, sparse/dense component
 rankings, and fused chunk candidates for every test split so training and test
 feature schemas remain identical.
 
+### Epoch-3 LightGBM fusion result
+
+The project owner reported the completed five-fold query-grouped OOF run on
+2026-10-07. It used the unchanged epoch-3 direct-chunk candidate artifacts and
+the thirteen documented reranker, first-stage, sparse, dense, chunk, and query-
+length features. The strongest preselected policy was threshold `0.1020920005`
+with empty-only top-2 fallback:
+
+| System | Policy | Precision | Recall | F2 |
+|---|---|---:|---:|---:|
+| Epoch 3 | threshold + fallback 2 | 0.487123 | 0.648288 | 0.608053 |
+| LightGBM OOF | threshold + fallback 2 | 0.484078 | 0.683295 | **0.631332** |
+| Epoch 3 | fixed top 2 | 0.365297 | 0.614992 | 0.541029 |
+| LightGBM OOF | fixed top 2 | 0.375571 | 0.629833 | **0.554723** |
+
+The OOF threshold treatment improves F2 by `0.023279` absolute while increasing
+recall by `0.035007` and reducing precision by `0.003045`. Its mean output size
+is `2.137` articles (median 2, minimum 1, maximum 7). The fixed-top-2 gain of
+`0.013694` shows that the learned ordering improves independently of threshold
+selection. These are development model-selection measurements; the pooled OOF
+threshold remains selected on the same 438 queries.
+
+The owner then reported Codabench scores of private F2 `0.5882` for the frozen
+OOF threshold policy, private F2 `0.5397` for fixed top 2, and public F2 `0.6160`
+for the frozen threshold policy. Relative to the previously reported frozen
+epoch-3 private score `0.5589`, LightGBM improves private F2 by `0.0293`
+absolute. These leaderboard values are user-reported pending inspection of the
+saved LightGBM provenance, predictions, ZIP payloads, and finished submission
+records. They are single frozen-policy evaluations, not permission to retune
+the threshold on private results.
+
+Mean split-count importance ranked reranker score and margin first, followed by
+sparse reciprocal rank, dense score, sparse score, and chunk fusion score. This
+supports complementary retrieval signals but is not a causal attribution;
+split-count importance is biased by feature scale/cardinality and should be
+supplemented by ablation or permutation importance before making a feature-
+specific claim.
+
 Record model identifiers, candidate pool size, final count, thresholds, and
 normalization or fusion parameters whenever applicable.
 

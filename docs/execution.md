@@ -276,6 +276,17 @@ candidate depths, epoch-3 checkpoint, and output policy fixed.
 terms. Do not reuse a LightGBM model or threshold across feedback treatments;
 feedback changes sparse/dense ranks and the downstream feature distribution.
 
+`notebooks/kaggle_rm3_rocchio_ablation.ipynb` performs the full staged screen.
+It evaluates conservative, default, and aggressive profiles for RM3 and
+Rocchio; trains a fresh five-fold query-grouped OOF LightGBM for every changed
+feature distribution; combines only the best RM3-only and Rocchio-only profiles;
+and selects separate best treatments with and without LightGBM. Only those two
+dev-selected treatments are subsequently inferred on public/private. The
+notebook creates fixed-top-2 and frozen-threshold submissions for both selected
+systems and archives its scoreboard, selection manifest, feedback audits, OOF
+metrics, provenance, and ZIP files. The prior no-feedback LightGBM artifact is
+read from `/kaggle/input/datasets/lmnhnht125/drill-epoch3-lighgbm/lightgbm`.
+
 ## Hybrid plus cross-encoder reranking
 
 After fixing the hybrid candidates, run the zero-shot BGE reranker over the top
