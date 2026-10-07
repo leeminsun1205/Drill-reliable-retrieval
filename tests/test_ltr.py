@@ -71,6 +71,29 @@ class LtrFeatureTest(unittest.TestCase):
             )
             self.assertEqual(examples["features"][1, sparse_rr_index], 0.0)
 
+    def test_builds_prefixed_submission_features_without_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def write(name: str, row: dict) -> None:
+                (root / name).write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+            write("public_predictions.jsonl", {"qid": 7, "retrieved_aids": [10], "scores": [3.0]})
+            write("public_first_stage_predictions.jsonl", {"qid": 7, "retrieved_aids": [10], "scores": [0.4]})
+            write(
+                "public_component_rankings.jsonl",
+                {"qid": 7, "components": {"sparse": {"retrieved_aids": [10], "scores": [2.0]}, "dense": {"retrieved_aids": [10], "scores": [0.8]}}},
+            )
+            write(
+                "public_reranker_chunk_candidates.jsonl",
+                {"qid": 7, "chunks": [{"aid": 10, "fusion_score": 0.3}]},
+            )
+            examples = build_ltr_examples(
+                root, [Query(7, "test query", ())], prefix="public_"
+            )
+            self.assertEqual(examples["features"].shape, (1, 13))
+            self.assertEqual(examples["labels"].tolist(), [0])
+
 
 if __name__ == "__main__":
     unittest.main()

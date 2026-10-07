@@ -30,6 +30,21 @@ FEATURE_NAMES = (
     "query_whitespace_tokens",
 )
 
+LIGHTGBM_PARAMETERS = {
+    "objective": "binary",
+    "n_estimators": 200,
+    "learning_rate": 0.03,
+    "num_leaves": 15,
+    "max_depth": 4,
+    "min_child_samples": 20,
+    "subsample": 1.0,
+    "colsample_bytree": 1.0,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "n_jobs": -1,
+    "verbosity": -1,
+}
+
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     with path.open(encoding="utf-8") as stream:
@@ -50,14 +65,16 @@ def _rank_features(record: dict[str, Any]) -> dict[int, tuple[float, float]]:
 def build_ltr_examples(
     result_dir: str | Path,
     queries: Sequence[Query],
+    *,
+    prefix: str = "",
 ) -> dict[str, Any]:
     """Build one feature row per reranked candidate from saved run artifacts."""
     result_dir = Path(result_dir)
     required = {
-        "predictions": result_dir / "predictions.jsonl",
-        "first_stage": result_dir / "first_stage_predictions.jsonl",
-        "components": result_dir / "component_rankings.jsonl",
-        "chunks": result_dir / "reranker_chunk_candidates.jsonl",
+        "predictions": result_dir / f"{prefix}predictions.jsonl",
+        "first_stage": result_dir / f"{prefix}first_stage_predictions.jsonl",
+        "components": result_dir / f"{prefix}component_rankings.jsonl",
+        "chunks": result_dir / f"{prefix}reranker_chunk_candidates.jsonl",
     }
     missing = [str(path) for path in required.values() if not path.is_file()]
     if missing:
@@ -192,21 +209,7 @@ def evaluate_oof_lightgbm(
         training = ~validation
         if len(set(labels[training])) != 2:
             raise ValueError(f"Fold {fold} training rows do not contain both labels")
-        model = LGBMClassifier(
-            objective="binary",
-            n_estimators=200,
-            learning_rate=0.03,
-            num_leaves=15,
-            max_depth=4,
-            min_child_samples=20,
-            subsample=1.0,
-            colsample_bytree=1.0,
-            reg_alpha=0.1,
-            reg_lambda=1.0,
-            random_state=seed + fold,
-            n_jobs=-1,
-            verbosity=-1,
-        )
+        model = LGBMClassifier(**LIGHTGBM_PARAMETERS, random_state=seed + fold)
         model.fit(features[training], labels[training])
         probabilities[validation] = model.predict_proba(features[validation])[:, 1]
         importance += model.feature_importances_
@@ -237,6 +240,7 @@ def evaluate_oof_lightgbm(
             "model": "LightGBM pointwise binary classifier",
             "prediction": f"{folds}-fold out-of-fold by qid",
             "seed": seed,
+            "parameters": {**LIGHTGBM_PARAMETERS, "random_state": "seed + fold"},
             "note": (
                 "Threshold selection on the pooled OOF predictions remains a "
                 "development diagnostic, not an unbiased test estimate."
@@ -253,3 +257,44 @@ def evaluate_oof_lightgbm(
         "threshold": thresholds,
         "rankings": rankings,
     }
+
+
+def fit_lightgbm_and_rank(
+    training_examples: dict[str, Any],
+    inference_examples: dict[str, Any],
+    *,
+    seed: int = 42,
+) -> tuple[dict[int, tuple[list[int], list[float]]], Any]:
+    """Fit all labeled development rows and rank an unlabeled candidate set."""
+    try:
+        from lightgbm import LGBMClassifier
+    except ImportError as error:
+        raise RuntimeError("Install the project 'ltr' extra to use LightGBM") from error
+
+    if tuple(training_examples["feature_names"]) != tuple(
+        inference_examples["feature_names"]
+    ):
+        raise ValueError("Training and inference feature schemas do not match")
+    labels = training_examples["labels"]
+    if set(labels.tolist()) != {0, 1}:
+        raise ValueError("Final LightGBM training requires both binary labels")
+    model = LGBMClassifier(**LIGHTGBM_PARAMETERS, random_state=seed)
+    model.fit(training_examples["features"], labels)
+    probabilities = model.predict_proba(inference_examples["features"])[:, 1]
+    row_qids = inference_examples["qids"]
+    aids = inference_examples["aids"]
+    original_ranks = inference_examples["original_ranks"]
+    rankings: dict[int, tuple[list[int], list[float]]] = {}
+    for qid in sorted({int(value) for value in row_qids}):
+        indices = np.flatnonzero(row_qids == qid)
+        ordered = sorted(
+            indices,
+            key=lambda index: (
+                -probabilities[index], original_ranks[index], aids[index]
+            ),
+        )
+        rankings[qid] = (
+            [int(aids[index]) for index in ordered],
+            [float(probabilities[index]) for index in ordered],
+        )
+    return rankings, model

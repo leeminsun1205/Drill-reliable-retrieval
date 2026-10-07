@@ -194,9 +194,18 @@ saved reranker, first-stage, sparse, dense, and chunk-candidate artifacts and
 uses query-grouped five-fold out-of-fold pointwise LightGBM predictions. This
 avoids fitting a candidate's score with its own label. The pooled OOF threshold
 is still selected and reported on development data, so it remains a diagnostic,
-not an unbiased test estimate. This script does not yet train a final model or
-run submission inference; implement that only if the OOF treatment beats the
-unchanged epoch-3 control by a meaningful margin.
+not an unbiased test estimate.
+
+`scripts/run_lightgbm_fusion.py` extends that diagnostic into a submission
+handoff. It first reports the same query-grouped OOF result, then fits one final
+pointwise classifier on all labeled development candidate rows and applies it
+to saved public/private epoch-3 candidate artifacts. It packages fixed top-2
+and the OOF-selected threshold with empty-only top-2 fallback. The final fit is
+appropriate for generating test predictions after selecting the treatment, but
+does not make the pooled OOF threshold unbiased. Submission inference must save
+the reranker ranking, unchanged first-stage ranking, sparse/dense component
+rankings, and fused chunk candidates for every test split so training and test
+feature schemas remain identical.
 
 Record model identifiers, candidate pool size, final count, thresholds, and
 normalization or fusion parameters whenever applicable.

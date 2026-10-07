@@ -585,6 +585,17 @@ two-epoch run. Do not compare intermediate checkpoints as a single learning
 curve across the two notebooks because their linear schedules have different
 total step counts.
 
+`notebooks/kaggle_epoch3_lightgbm_submission.ipynb` consumes the selected
+epoch-3 checkpoint from Kaggle Models and the archived epoch-3 development run.
+It reproduces the fixed strong pipeline for public/private queries, persists
+the reranker, first-stage, sparse, dense, and fused-chunk inputs, evaluates
+pointwise LightGBM with five query-grouped out-of-fold splits, fits the final
+classifier on all labeled development candidates, and packages both fixed
+top-2 and OOF-threshold/fallback-2 submissions. The notebook expects the model
+at `/kaggle/input/models/lmnhnht125/drill-reranker-bce-epoch3/pytorch/default/1/checkpoint-epoch3`
+and the prior metrics archive under
+`/kaggle/input/datasets/lmnhnht125/drill-epoch3-4-experiment-artifacts`.
+
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired
 training script and rerun the training cell in the same Kaggle session. Do not

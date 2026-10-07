@@ -108,6 +108,8 @@ def run_submission_inference(
             for name, queries in named_queries.items()
         }
     )
+    chunk_candidates: dict[str, Any] = {}
+    named_components: dict[str, dict[str, Any]] = {}
     final_rankings = first_stage
     reranker = None
     if method == "hybrid_reranker":
@@ -138,12 +140,17 @@ def run_submission_inference(
             dense_depth = int(
                 reranking_config.get("retrieved_chunk_depth", candidate_pool_size)
             )
-            chunk_candidates = {}
             for name, queries in named_queries.items():
                 # Keep this call adjacent to retrieve_chunks(): the hybrid
                 # retriever stores sparse component ranks for the latest query
                 # batch as state used by chunk-level WRRF fusion.
                 first_stage[name] = retriever.retrieve(queries, top_k=retrieve_k)
+                component_results = getattr(retriever, "component_results", None)
+                if callable(component_results):
+                    named_components[name] = {
+                        component: list(values)
+                        for component, values in component_results().items()
+                    }
                 chunk_candidates[name] = retrieve_chunks(
                     queries, top_k=candidate_pool_size, dense_depth=dense_depth
                 )
@@ -225,6 +232,54 @@ def run_submission_inference(
                 output_dir / f"{name}_first_stage_predictions.jsonl",
                 first_stage[name],
             )
+            if candidate_source == "retrieved_chunks":
+                with (output_dir / f"{name}_reranker_chunk_candidates.jsonl").open(
+                    "w", encoding="utf-8"
+                ) as stream:
+                    for result in chunk_candidates[name]:
+                        stream.write(
+                            json.dumps(
+                                {
+                                    "qid": result.qid,
+                                    "chunks": [
+                                        {
+                                            "chunk_id": chunk.chunk_id,
+                                            "aid": chunk.aid,
+                                            "chunk_index": chunk.chunk_index,
+                                            "chunk_type": chunk.chunk_type,
+                                            "fusion_score": score,
+                                        }
+                                        for chunk, score in zip(
+                                            result.chunks, result.scores
+                                        )
+                                    ],
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+
+        components = named_components.get(name)
+        if components is None:
+            component_results = getattr(retriever, "component_results", None)
+            components = component_results() if callable(component_results) else None
+        if components is not None:
+            indexed = {
+                component: {result.qid: result for result in values}
+                for component, values in components.items()
+            }
+            with (output_dir / f"{name}_component_rankings.jsonl").open(
+                "w", encoding="utf-8"
+            ) as stream:
+                for query in named_queries[name]:
+                    record: dict[str, Any] = {"qid": query.qid, "components": {}}
+                    for component, by_qid in indexed.items():
+                        result = by_qid[query.qid]
+                        record["components"][component] = {
+                            "retrieved_aids": list(result.aids),
+                            "scores": list(result.scores),
+                        }
+                    stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     run_info = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
