@@ -256,6 +256,26 @@ Each hybrid artifact includes fused `predictions.jsonl` and the untouched BM25
 and dense lists in `component_rankings.jsonl`. Tune weights or `rrf_k` only
 after preserving the equal-weight run as the fixed starting point.
 
+Pseudo-relevance feedback is disabled by default. Against the selected main
+pipeline, the unchanged config is the no-feedback control. Enable RM3 with:
+
+```python
+  --set retrieval.bm25.feedback.enabled=true
+```
+
+Enable dense Rocchio with:
+
+```python
+  --set retrieval.dense.feedback.enabled=true
+```
+
+Provide both overrides for the combined treatment and use a distinct
+`--experiment-name` for all four states. Keep VnCoreNLP, WRRF20, weights,
+candidate depths, epoch-3 checkpoint, and output policy fixed.
+`retrieval_feedback.json` records pseudo-relevant article IDs and RM3 expansion
+terms. Do not reuse a LightGBM model or threshold across feedback treatments;
+feedback changes sparse/dense ranks and the downstream feature distribution.
+
 ## Hybrid plus cross-encoder reranking
 
 After fixing the hybrid candidates, run the zero-shot BGE reranker over the top

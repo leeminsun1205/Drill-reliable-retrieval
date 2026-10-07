@@ -12,6 +12,15 @@ retrieval:
   top_k: 100
   output_k: 3
   dense:
+    feedback:
+      enabled: false
+      method: rocchio
+      feedback_documents: 5
+      alpha: 1.0
+      beta: 0.25
+      gamma: 0.0
+      negative_documents: 0
+      candidate_depth: 20
     chunking:
       # article_truncate preserves the original one-vector-per-aid control.
       # Treatments: token_window, recursive_token, khoan, diem, then khoan_diem.

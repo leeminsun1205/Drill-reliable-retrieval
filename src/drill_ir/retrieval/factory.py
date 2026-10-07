@@ -67,6 +67,14 @@ def build_retriever(
         )
     if method == "bm25":
         params = retrieval_config.get("bm25", {})
+        feedback = params.get("feedback", {})
+        if not isinstance(feedback, dict):
+            raise ValueError("retrieval.bm25.feedback must be a YAML mapping")
+        feedback_method = str(feedback.get("method", "none"))
+        if feedback_method not in {"none", "rm3"}:
+            raise ValueError("BM25 feedback.method must be 'none' or 'rm3'")
+        if bool(feedback.get("enabled", False)) and feedback_method != "rm3":
+            raise ValueError("Enabled BM25 feedback requires method='rm3'")
         return BM25Retriever(
             k1=float(params.get("k1", 1.2)),
             b=float(params.get("b", 0.75)),
@@ -82,6 +90,13 @@ def build_retriever(
             max_document_frequency_ratio=float(
                 params.get("max_document_frequency_ratio", 1.0)
             ),
+            rm3_enabled=bool(feedback.get("enabled", False)),
+            rm3_feedback_documents=int(feedback.get("feedback_documents", 5)),
+            rm3_feedback_terms=int(feedback.get("feedback_terms", 10)),
+            rm3_original_query_weight=float(
+                feedback.get("original_query_weight", 0.7)
+            ),
+            rm3_dirichlet_mu=float(feedback.get("dirichlet_mu", 1000.0)),
         )
     if method != "dense":
         raise ValueError(f"No retriever factory registered for method={method!r}")
@@ -93,10 +108,18 @@ def build_retriever(
     search_config = dense.get("search")
     cache_config = dense.get("cache", {})
     chunking_config = dense.get("chunking", {"method": "article_truncate"})
+    feedback_config = dense.get("feedback", {})
     if not isinstance(encoder_config, dict) or not isinstance(search_config, dict):
         raise ValueError("retrieval.dense requires encoder and search mappings")
     if not isinstance(chunking_config, dict):
         raise ValueError("retrieval.dense.chunking must be a YAML mapping")
+    if not isinstance(feedback_config, dict):
+        raise ValueError("retrieval.dense.feedback must be a YAML mapping")
+    feedback_method = str(feedback_config.get("method", "none"))
+    if feedback_method not in {"none", "rocchio"}:
+        raise ValueError("Dense feedback.method must be 'none' or 'rocchio'")
+    if bool(feedback_config.get("enabled", False)) and feedback_method != "rocchio":
+        raise ValueError("Enabled dense feedback requires method='rocchio'")
     if encoder_config.get("backend") != "sentence_transformers":
         raise ValueError("Only dense encoder backend='sentence_transformers' is supported")
     if search_config.get("backend") != "exact":
@@ -174,4 +197,20 @@ def build_retriever(
             "retrieval.dense.chunking.method must be 'article_truncate', "
             "'token_window', 'recursive_token', 'khoan', 'diem', or 'khoan_diem'"
         )
-    return DenseRetriever(encoder=encoder, search=search, cache=cache, chunker=chunker)
+    return DenseRetriever(
+        encoder=encoder,
+        search=search,
+        cache=cache,
+        chunker=chunker,
+        rocchio_enabled=bool(feedback_config.get("enabled", False)),
+        rocchio_feedback_documents=int(
+            feedback_config.get("feedback_documents", 5)
+        ),
+        rocchio_alpha=float(feedback_config.get("alpha", 1.0)),
+        rocchio_beta=float(feedback_config.get("beta", 0.25)),
+        rocchio_gamma=float(feedback_config.get("gamma", 0.0)),
+        rocchio_negative_documents=int(
+            feedback_config.get("negative_documents", 0)
+        ),
+        rocchio_candidate_depth=int(feedback_config.get("candidate_depth", 20)),
+    )

@@ -116,6 +116,34 @@ class BM25Test(unittest.TestCase):
         result = retriever.retrieve([Query(1, "beta", ())], top_k=1)[0]
         self.assertEqual(result.aids[0], 20)
 
+    def test_rm3_expands_from_positive_first_pass_documents(self) -> None:
+        articles = [
+            Article(10, "law-a", "alpha bridge bridge"),
+            Article(20, "law-b", "bridge bridge bridge"),
+            Article(30, "law-c", "gamma"),
+        ]
+        retriever = BM25Retriever(
+            rm3_enabled=True,
+            rm3_feedback_documents=1,
+            rm3_feedback_terms=3,
+            rm3_original_query_weight=0.5,
+            rm3_dirichlet_mu=10.0,
+        )
+        retriever.fit(articles)
+        retriever.retrieve([Query(1, "alpha", ())], top_k=3)
+        feedback = retriever.feedback_records()
+        self.assertEqual(feedback[0]["feedback_aids"], [10])
+        self.assertIn(
+            "bridge", {item["term"] for item in feedback[0]["expanded_terms"]}
+        )
+        self.assertEqual(retriever.run_metadata()["feedback"]["method"], "rm3")
+
+    def test_rm3_rejects_invalid_parameters(self) -> None:
+        with self.assertRaisesRegex(ValueError, "original_query_weight"):
+            BM25Retriever(rm3_original_query_weight=1.1)
+        with self.assertRaisesRegex(ValueError, "dirichlet_mu"):
+            BM25Retriever(rm3_dirichlet_mu=0)
+
 
 if __name__ == "__main__":
     unittest.main()

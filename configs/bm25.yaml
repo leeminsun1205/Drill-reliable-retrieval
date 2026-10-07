@@ -18,6 +18,13 @@ retrieval:
     min_document_frequency: 1
     max_document_frequency: null
     max_document_frequency_ratio: 1.0
+    feedback:
+      enabled: false
+      method: rm3
+      feedback_documents: 5
+      feedback_terms: 10
+      original_query_weight: 0.7
+      dirichlet_mu: 1000.0
     preprocessing:
       normalization:
         unicode_form: NFKC       # null, NFC, or NFKC

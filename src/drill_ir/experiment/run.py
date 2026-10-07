@@ -251,6 +251,13 @@ def run_experiment(config: dict[str, Any]) -> Path:
                         "scores": list(result.scores),
                     }
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    feedback_records = getattr(retriever, "feedback_records", None)
+    if callable(feedback_records):
+        feedback = feedback_records()
+        if feedback:
+            (run_dir / "retrieval_feedback.json").write_text(
+                json.dumps(feedback, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
     (run_dir / "split_dev_qids.json").write_text(
         json.dumps([query.qid for query in dev_queries], indent=2), encoding="utf-8"
     )

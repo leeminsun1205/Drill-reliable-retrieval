@@ -331,7 +331,26 @@ class DenseRetriever:
         search: ExactVectorSearch,
         cache: EmbeddingCache | None = None,
         chunker: ArticleChunker | None = None,
+        rocchio_enabled: bool = False,
+        rocchio_feedback_documents: int = 5,
+        rocchio_alpha: float = 1.0,
+        rocchio_beta: float = 0.25,
+        rocchio_gamma: float = 0.0,
+        rocchio_negative_documents: int = 0,
+        rocchio_candidate_depth: int = 20,
     ) -> None:
+        if rocchio_feedback_documents <= 0 or rocchio_candidate_depth <= 0:
+            raise ValueError("Rocchio feedback documents and candidate depth must be positive")
+        if rocchio_alpha < 0 or rocchio_beta < 0 or rocchio_gamma < 0:
+            raise ValueError("Rocchio alpha, beta, and gamma must be non-negative")
+        if rocchio_alpha == 0 and rocchio_beta == 0:
+            raise ValueError("Rocchio requires alpha or beta to be positive")
+        if rocchio_negative_documents < 0:
+            raise ValueError("Rocchio negative_documents cannot be negative")
+        if rocchio_negative_documents and rocchio_gamma == 0:
+            raise ValueError("Rocchio negative_documents requires gamma > 0")
+        if rocchio_gamma > 0 and rocchio_negative_documents == 0:
+            raise ValueError("Rocchio gamma > 0 requires negative_documents")
         self.encoder = encoder
         self.search = search
         self.cache = cache
@@ -341,10 +360,23 @@ class DenseRetriever:
         self._document_embeddings: np.ndarray | None = None
         self.cache_hit = False
         self.corpus_fingerprint: str | None = None
+        self.rocchio_enabled = rocchio_enabled
+        self.rocchio_feedback_documents = rocchio_feedback_documents
+        self.rocchio_alpha = rocchio_alpha
+        self.rocchio_beta = rocchio_beta
+        self.rocchio_gamma = rocchio_gamma
+        self.rocchio_negative_documents = rocchio_negative_documents
+        self.rocchio_candidate_depth = rocchio_candidate_depth
+        self._last_feedback: list[dict[str, object]] = []
+        self._cached_query_key: tuple[tuple[int, str], ...] | None = None
+        self._cached_query_embeddings: np.ndarray | None = None
 
     def fit(self, articles: Sequence[Article]) -> None:
         if not articles:
             raise ValueError("Cannot fit dense retrieval on an empty corpus")
+        self._cached_query_key = None
+        self._cached_query_embeddings = None
+        self._last_feedback = []
         print(
             f"[dense] Chunking {len(articles):,} articles with "
             f"{type(self.chunker).__name__}",
@@ -410,14 +442,100 @@ class DenseRetriever:
             "representations": len(self._chunks),
             "unique_aids": len(set(self._aids)),
             "aggregation": "max",
+            "feedback": {
+                "enabled": self.rocchio_enabled,
+                "method": "rocchio" if self.rocchio_enabled else "none",
+                "feedback_documents": self.rocchio_feedback_documents,
+                "alpha": self.rocchio_alpha,
+                "beta": self.rocchio_beta,
+                "gamma": self.rocchio_gamma,
+                "negative_documents": self.rocchio_negative_documents,
+                "candidate_depth": self.rocchio_candidate_depth,
+                "unique_aids": True,
+            },
         }
+
+    def _feedback_embeddings(self, queries: Sequence[Query]) -> np.ndarray:
+        if self._document_embeddings is None:
+            raise RuntimeError("fit() must be called before retrieval")
+        key = tuple((query.qid, query.question) for query in queries)
+        if key == self._cached_query_key and self._cached_query_embeddings is not None:
+            return self._cached_query_embeddings
+        original = self.encoder.encode_queries([query.question for query in queries])
+        if not self.rocchio_enabled:
+            adapted = original
+            self._last_feedback = []
+        else:
+            rocchio_queries = (
+                _l2_normalize(original) if self.search.metric == "cosine" else original
+            )
+            depth = max(
+                self.rocchio_candidate_depth,
+                self.rocchio_feedback_documents + self.rocchio_negative_documents,
+            )
+            indices, _ = self.search.search(
+                original, self._document_embeddings, self._aids, top_k=depth
+            )
+            adapted_rows = []
+            records = []
+            for row, query in enumerate(queries):
+                positive_indices: list[int] = []
+                seen_aids: set[int] = set()
+                for index in indices[row]:
+                    position = int(index)
+                    aid = self._aids[position]
+                    if aid in seen_aids:
+                        continue
+                    seen_aids.add(aid)
+                    positive_indices.append(position)
+                    if len(positive_indices) == self.rocchio_feedback_documents:
+                        break
+                negative_indices: list[int] = []
+                if self.rocchio_negative_documents:
+                    negative_seen: set[int] = set()
+                    for index in reversed(indices[row]):
+                        position = int(index)
+                        aid = self._aids[position]
+                        if aid in seen_aids or aid in negative_seen:
+                            continue
+                        negative_seen.add(aid)
+                        negative_indices.append(position)
+                        if len(negative_indices) == self.rocchio_negative_documents:
+                            break
+                positive_vectors = _l2_normalize(
+                    self._document_embeddings[positive_indices]
+                )
+                vector = self.rocchio_alpha * rocchio_queries[row] + self.rocchio_beta * positive_vectors.mean(axis=0)
+                if negative_indices:
+                    negative_vectors = _l2_normalize(
+                        self._document_embeddings[negative_indices]
+                    )
+                    vector = vector - self.rocchio_gamma * negative_vectors.mean(axis=0)
+                if not np.any(vector):
+                    raise ValueError(f"Rocchio produced a zero vector for qid={query.qid}")
+                adapted_rows.append(vector)
+                records.append(
+                    {
+                        "qid": query.qid,
+                        "feedback_aids": [self._aids[index] for index in positive_indices],
+                        "negative_aids": [self._aids[index] for index in negative_indices],
+                    }
+                )
+            adapted = np.asarray(adapted_rows, dtype=np.float32)
+            self._last_feedback = records
+        self._cached_query_key = key
+        self._cached_query_embeddings = np.asarray(adapted, dtype=np.float32)
+        return self._cached_query_embeddings
+
+    def feedback_records(self) -> list[dict[str, object]]:
+        return list(self._last_feedback)
 
     def retrieve(self, queries: Sequence[Query], top_k: int) -> list[RetrievalResult]:
         if self._document_embeddings is None:
             raise RuntimeError("fit() must be called before retrieve()")
         if not queries:
             return []
-        query_embeddings = self.encoder.encode_queries([query.question for query in queries])
+        query_embeddings = self._feedback_embeddings(queries)
         aids, scores = self.search.search_grouped(
             query_embeddings,
             self._document_embeddings,
@@ -441,7 +559,7 @@ class DenseRetriever:
             raise RuntimeError("fit() must be called before retrieve_chunks()")
         if not queries:
             return []
-        query_embeddings = self.encoder.encode_queries([query.question for query in queries])
+        query_embeddings = self._feedback_embeddings(queries)
         indices, scores = self.search.search(
             query_embeddings,
             self._document_embeddings,

@@ -127,6 +127,43 @@ class DenseRetrieverTest(unittest.TestCase):
         self.assertEqual(result.aids, (10, 20))
         self.assertEqual(len(result.aids), len(set(result.aids)))
 
+    def test_rocchio_reuses_adapted_query_and_records_unique_feedback_aids(self) -> None:
+        articles = [
+            Article(10, "L1", "diagonal"),
+            Article(20, "L2", "vertical"),
+        ]
+        vectors = {
+            "diagonal": [1.0, 1.0],
+            "vertical": [0.0, 1.0],
+            "query": [1.0, 0.0],
+        }
+        encoder = FakeEncoder(vectors)
+        retriever = DenseRetriever(
+            encoder=encoder,
+            search=ExactVectorSearch(metric="cosine"),
+            rocchio_enabled=True,
+            rocchio_feedback_documents=1,
+            rocchio_alpha=1.0,
+            rocchio_beta=1.0,
+            rocchio_candidate_depth=2,
+        )
+        retriever.fit(articles)
+        query = Query(1, "query", ())
+        result = retriever.retrieve([query], top_k=2)[0]
+        retriever.retrieve_chunks([query], top_k=2)
+        self.assertEqual(encoder.query_calls, 1)
+        self.assertGreater(result.scores[1], 0.0)
+        self.assertEqual(retriever.feedback_records()[0]["feedback_aids"], [10])
+        self.assertEqual(retriever.run_metadata()["feedback"]["method"], "rocchio")
+
+    def test_rocchio_rejects_inconsistent_negative_configuration(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires gamma"):
+            DenseRetriever(
+                encoder=FakeEncoder(self.vectors),
+                search=ExactVectorSearch(),
+                rocchio_negative_documents=1,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

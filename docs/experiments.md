@@ -157,6 +157,25 @@ output policy. Because BM25 IDF already suppresses ubiquitous terms, pruning is
 an empirical treatment rather than an assumed improvement. Inspect candidate
 Recall@100 as well as final F2 before selecting a treatment.
 
+RM3 and dense Rocchio are implemented as independently disabled pseudo-
+relevance-feedback treatments. RM3 uses the configured BM25 token processor,
+an initial BM25 pass, a Dirichlet-smoothed relevance model over the top feedback
+articles, and explicit interpolation with the original query model. It scores
+the second pass with weighted query terms; it does not approximate weights by
+repeating strings. Rocchio performs an initial dense chunk search, selects
+feedback representations from distinct `aid` values, combines their normalized
+centroid with the original query vector, and searches again. Negative feedback
+is disabled by default because low-ranked first-pass candidates are not known
+non-relevant examples.
+
+The two components are orthogonal: RM3 changes only the sparse branch, Rocchio
+changes only the dense branch, and enabling both changes both inputs before the
+unchanged WRRF and reranker. Every feedback run writes the selected feedback
+article IDs; RM3 additionally writes expanded terms and weights. Compare
+`none`, `RM3`, `Rocchio`, and `RM3 + Rocchio` with identical candidate budgets,
+WRRF, epoch-3 reranker, and output policy. These are generic expansion controls
+for the later explicit-reference treatment, not legal-reference methods.
+
 ## Configuration
 
 Meaningful experiments should use explicit YAML configuration. For example:

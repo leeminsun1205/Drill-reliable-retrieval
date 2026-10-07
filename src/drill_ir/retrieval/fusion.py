@@ -110,6 +110,16 @@ class WeightedRRFRetriever:
     def component_results(self) -> dict[str, list[RetrievalResult]]:
         return self._component_results
 
+    def feedback_records(self) -> dict[str, list[dict[str, object]]]:
+        records: dict[str, list[dict[str, object]]] = {}
+        for name, retriever in (("sparse", self.sparse), ("dense", self.dense)):
+            getter = getattr(retriever, "feedback_records", None)
+            if callable(getter):
+                values = getter()
+                if values:
+                    records[name] = values
+        return records
+
     def retrieve_chunks(
         self,
         queries: Sequence[Query],

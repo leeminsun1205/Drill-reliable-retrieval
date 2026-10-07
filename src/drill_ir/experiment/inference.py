@@ -110,6 +110,7 @@ def run_submission_inference(
     )
     chunk_candidates: dict[str, Any] = {}
     named_components: dict[str, dict[str, Any]] = {}
+    named_feedback: dict[str, Any] = {}
     final_rankings = first_stage
     reranker = None
     if method == "hybrid_reranker":
@@ -151,6 +152,9 @@ def run_submission_inference(
                         component: list(values)
                         for component, values in component_results().items()
                     }
+                feedback_records = getattr(retriever, "feedback_records", None)
+                if callable(feedback_records):
+                    named_feedback[name] = feedback_records()
                 chunk_candidates[name] = retrieve_chunks(
                     queries, top_k=candidate_pool_size, dense_depth=dense_depth
                 )
@@ -280,6 +284,11 @@ def run_submission_inference(
                             "scores": list(result.scores),
                         }
                     stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if named_feedback.get(name):
+            (output_dir / f"{name}_retrieval_feedback.json").write_text(
+                json.dumps(named_feedback[name], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
     run_info = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
