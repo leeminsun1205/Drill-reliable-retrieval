@@ -19,6 +19,9 @@ retrieval:
     dense_top_k: 100
     include_zero_score_sparse: false
   bm25:
+    # Set variant=bm25_plus for the isolated sparse-scoring ablation.
+    variant: bm25
+    delta: 1.0
     k1: 1.2
     b: 0.75
     min_document_frequency: 1

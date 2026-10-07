@@ -1,4 +1,5 @@
 import unittest
+import math
 
 from drill_ir.data import Article, Query
 from drill_ir.retrieval import BM25Retriever, tokenize
@@ -20,6 +21,42 @@ class BM25Test(unittest.TestCase):
         result = retriever.retrieve([query], top_k=2)[0]
         self.assertEqual(result.aids[0], 10)
         self.assertEqual(len(result.aids), 2)
+
+    def test_bm25_plus_adds_delta_only_to_matching_documents(self) -> None:
+        articles = [
+            Article(10, "law-a", "alpha alpha"),
+            Article(20, "law-b", "alpha beta beta beta"),
+            Article(30, "law-c", "gamma"),
+        ]
+        query = Query(1, "alpha", ())
+        bm25 = BM25Retriever(variant="bm25", delta=0.75)
+        bm25_plus = BM25Retriever(variant="bm25_plus", delta=0.75)
+        bm25.fit(articles)
+        bm25_plus.fit(articles)
+        base = bm25.retrieve([query], top_k=3)[0]
+        plus = bm25_plus.retrieve([query], top_k=3)[0]
+        base_scores = dict(zip(base.aids, base.scores))
+        plus_scores = dict(zip(plus.aids, plus.scores))
+        idf = math.log(1.0 + (3 - 2 + 0.5) / (2 + 0.5))
+        for aid in (10, 20):
+            self.assertAlmostEqual(
+                plus_scores[aid] - base_scores[aid], 0.75 * idf
+            )
+        self.assertEqual(base_scores[30], 0.0)
+        self.assertEqual(plus_scores[30], 0.0)
+
+    def test_bm25_plus_configuration_is_reported(self) -> None:
+        retriever = BM25Retriever(variant="bm25_plus", delta=0.5)
+        retriever.fit([Article(10, "law", "alpha")])
+        metadata = retriever.run_metadata()
+        self.assertEqual(metadata["variant"], "bm25_plus")
+        self.assertEqual(metadata["delta"], 0.5)
+
+    def test_rejects_unknown_bm25_variant_and_negative_delta(self) -> None:
+        with self.assertRaisesRegex(ValueError, "variant"):
+            BM25Retriever(variant="unknown")
+        with self.assertRaisesRegex(ValueError, "delta"):
+            BM25Retriever(variant="bm25_plus", delta=-0.1)
 
     def test_vncorenlp_requires_model_path(self) -> None:
         processor = build_token_processor(

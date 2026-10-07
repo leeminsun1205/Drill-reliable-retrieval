@@ -30,6 +30,9 @@ vietnamese = [
     "pyvi>=0.1.1",
     "vncorenlp>=1.0.3",
 ]
+ltr = [
+    "lightgbm>=4.5,<5",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

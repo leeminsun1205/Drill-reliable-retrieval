@@ -70,6 +70,8 @@ def build_retriever(
         return BM25Retriever(
             k1=float(params.get("k1", 1.2)),
             b=float(params.get("b", 0.75)),
+            variant=str(params.get("variant", "bm25")),
+            delta=float(params.get("delta", 1.0)),
             text_processor=build_token_processor(params.get("preprocessing")),
             min_document_frequency=int(params.get("min_document_frequency", 1)),
             max_document_frequency=(

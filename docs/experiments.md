@@ -180,6 +180,24 @@ evaluation:
   recall_at_k: [1, 5, 10, 20, 50, 100]
 ```
 
+BM25+ is available as an isolated sparse-scoring ablation through
+`retrieval.bm25.variant=bm25_plus` and `retrieval.bm25.delta`. It adds the
+configured lower-bound delta only for query terms present in a document; the
+default remains standard BM25. Hold tokenization, `k1`, `b`, dense retrieval,
+WRRF, reranker checkpoint, candidate budgets, and final policy fixed when
+comparing the variants. BM25+ changes sparse ranks and therefore may change the fused
+direct-chunk candidate set; report candidate Recall@k as well as final F2.
+
+The optional `scripts/evaluate_lightgbm_fusion.py` performs a low-cost first
+test of learned feature fusion from an existing development run. It consumes
+saved reranker, first-stage, sparse, dense, and chunk-candidate artifacts and
+uses query-grouped five-fold out-of-fold pointwise LightGBM predictions. This
+avoids fitting a candidate's score with its own label. The pooled OOF threshold
+is still selected and reported on development data, so it remains a diagnostic,
+not an unbiased test estimate. This script does not yet train a final model or
+run submission inference; implement that only if the OOF treatment beats the
+unchanged epoch-3 control by a meaningful margin.
+
 Record model identifiers, candidate pool size, final count, thresholds, and
 normalization or fusion parameters whenever applicable.
 
@@ -772,6 +790,79 @@ with mean output `3.737`; fallback-2 reaches F2 `0.555678` at threshold
 `4.234375` with mean output `3.495`. These are the matched targets for the new
 aligned fine-tuning notebook. The threshold result is a development-selected
 diagnostic and must not be described as an unbiased test estimate.
+
+### Aligned direct-chunk BCE: two-epoch result and handoff
+
+On 2026-10-02, the project owner reported completion of the aligned
+direct-retrieved-chunk pointwise-BCE run from
+`notebooks/kaggle_finetune_main_retrieved_chunks_bce.ipynb`. The selected
+epoch-2 snapshot was `checkpoint-2484`. It used the unchanged Khoản–Điểm
+448/64 hybrid first stage, direct reranking of 50 fused chunks at pair length
+512, and max aggregation by `aid`. The matched 438-query development results
+were:
+
+| Model | Policy | Threshold | Precision | Recall | F2 |
+|---|---|---:|---:|---:|---:|
+| Zero-shot | threshold + fallback 2 | 4.234375 | 0.358609 | 0.644178 | 0.555678 |
+| Epoch 1 | threshold + fallback 2 | -0.178589 | 0.467833 | 0.632686 | 0.591033 |
+| Epoch 2 | threshold + fallback 2 | 1.576172 | 0.449348 | 0.650381 | **0.596965** |
+
+Epoch 2 therefore improved over its matched zero-shot development control by
+`0.041287` F2 absolute (about `7.43%` relative) and is the selected two-epoch
+checkpoint. Its frozen development policy is score `>= 1.576171875` with an
+empty-result top-2 fallback. This satisfies the predeclared requirement that an
+aligned fine-tuned checkpoint beat the matched zero-shot control before test
+inference.
+
+The owner also reported private-leaderboard sensitivity submissions for epoch
+2. These are post-hoc leaderboard probes, not unbiased test estimates:
+
+| Threshold | Private F2 |
+|---:|---:|
+| 1.0 | 0.5385 |
+| 1.25 | 0.5415 |
+| 1.4 | 0.5405 |
+| 1.5 | 0.5391 |
+| 1.65 | 0.5394 |
+| 1.75 | 0.5381 |
+| 2.0 | 0.5407 |
+| 2.5 | 0.5417 |
+| 3.0 | **0.5422** |
+
+A prior zero-shot private submission at threshold `4.1` with fallback 2 scored
+`0.5316`; a prior zero-shot public submission at threshold `4.0` scored
+`0.5319`. Comparing the private values gives an observed gain of `0.0106` F2
+for the leaderboard-selected epoch-2 threshold 3.0, but this is not a clean
+model-only estimate because the threshold was selected after observing private
+scores. The private epoch-2 sweep spans only `0.0041` F2 and is non-monotonic,
+so it does not establish a sharply optimal transferable threshold. For research
+reporting, retain `1.576171875` as the development-selected primary policy and
+label threshold 3.0 as private-leaderboard-tuned sensitivity analysis.
+
+The subsequent four-epoch run from
+`notebooks/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` retained
+and evaluated epochs 3 and 4. The project owner reported the following matched
+development results on 2026-10-03:
+
+| Model | Policy | Threshold | Precision | Recall | F2 |
+|---|---|---:|---:|---:|---:|
+| Epoch 3 | threshold + fallback 2 | 5.199219 | 0.487123 | 0.648288 | **0.608053** |
+| Epoch 4 | threshold + fallback 2 | 5.582031 | 0.475216 | 0.650951 | 0.606122 |
+
+Epoch 3 is selected by development F2. Epoch 4 is not uniformly worse—it
+improves fixed top-2 from `0.541029` to `0.559523`—so the result supports a
+threshold-policy plateau after epoch 3 rather than a broad claim of neural
+overfitting. Because the four-epoch run has a different total linear-scheduler
+horizon, its intermediate checkpoints are not a single directly comparable
+learning curve with the earlier two-epoch run.
+
+The frozen epoch-3 development policy, score `>= 5.19921875` with fallback 2,
+subsequently scored private F2 `0.5589`. Neighboring finished private probes
+scored `0.5579` at threshold `5.1` and `0.5552` at `5.3`, so the preselected
+threshold transferred near the observed local optimum. A public submission at
+the frozen threshold displayed F2 `0.5811` while still marked `Running`; do not
+record that public value as final until Codabench reports `Finished`. All
+leaderboard values remain user-reported pending artifact verification.
 
 Aligned fine-tuning uses the exact fused retrieved chunks as negatives. The
 zero-shot reranker orders them; mining retains a top-30 non-gold pool, discards
