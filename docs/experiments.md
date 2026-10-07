@@ -20,6 +20,57 @@ Fusion must be explicit. Reciprocal Rank Fusion is suitable for rank-based
 fusion. Direct weighted fusion of BM25 scores and cosine similarities requires a
 documented normalization strategy.
 
+For controlled multi-dense experiments, the factory accepts a base
+`retrieval.dense` mapping, named partial overrides under
+`retrieval.dense_profiles`, and a non-empty
+`retrieval.hybrid.dense_components` list. Each selected component declares a
+unique `name`, `profile`, `weight`, and optional `top_k`. WRRF combines the
+sparse rank and every dense rank; saved component names are `sparse` and
+`dense:<name>`. Exact duplicate chunks, identified by parent `aid` and text, add
+their dense rank contributions before direct-chunk reranking. Non-identical
+chunks remain distinct evidence. Omitting `dense_components` preserves the
+original one-sparse/one-dense behavior and artifact schema.
+
+Example selection after independent screening:
+
+```yaml
+retrieval:
+  hybrid:
+    fusion: weighted_rrf
+    rrf_k: 20
+    sparse_weight: 0.2
+    sparse_top_k: 100
+    dense_components:
+      - {name: bge_m3, profile: bge_m3, weight: 0.4, top_k: 100}
+      - {name: e5_large, profile: e5_large, weight: 0.4, top_k: 100}
+  dense:
+    chunking:
+      method: khoan_diem
+      max_tokens: 448
+      overlap_tokens: 64
+      tokenizer_model_name: BAAI/bge-m3
+      tokenizer_document_prefix: ""
+    encoder:
+      backend: sentence_transformers
+      max_seq_length: 512
+  dense_profiles:
+    bge_m3:
+      encoder: {model_name: BAAI/bge-m3, query_prefix: "", document_prefix: ""}
+      cache: {directory: embeddings/bge_m3}
+    e5_large:
+      encoder:
+        model_name: intfloat/multilingual-e5-large
+        query_prefix: "query: "
+        document_prefix: "passage: "
+      cache: {directory: embeddings/e5_large}
+```
+
+Weights in this example are illustrative, not measured. Model-specific query
+instructions and pooling must follow the verified model card rather than being
+silently guessed. The current thirteen-feature LightGBM path expects one
+component named `dense`; a multi-dense run requires new per-model or explicitly
+rank-normalized features and fresh OOF training.
+
 The dense baseline is decomposed into encoder, cache, and search components in
 `configs/dense.yaml`. It uses `intfloat/multilingual-e5-base`, explicit E5 query
 and passage prefixes, a recorded maximum sequence length, and exact cosine

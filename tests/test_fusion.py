@@ -1,8 +1,14 @@
 import unittest
+from unittest.mock import patch
 
 from drill_ir.data import Article, Query, RetrievalResult
 from drill_ir.preprocessing import Chunk
-from drill_ir.retrieval import ChunkRetrievalResult, WeightedRRFRetriever
+from drill_ir.retrieval import (
+    ChunkRetrievalResult,
+    MultiDenseWeightedRRFRetriever,
+    WeightedRRFRetriever,
+    build_retriever,
+)
 
 
 class FakeRetriever:
@@ -96,6 +102,72 @@ class WeightedRRFTest(unittest.TestCase):
             [Query(1, "q", ())], top_k=2, dense_depth=3
         )[0]
         self.assertEqual(tuple(chunk.aid for chunk in result.chunks), (10, 20))
+
+    def test_multi_dense_fuses_articles_and_exact_matching_chunks(self) -> None:
+        shared = Chunk("20:a", 20, "L", 0, "diem", "shared", 0, 6, 1)
+        other = Chunk("30:a", 30, "L", 0, "diem", "other", 0, 5, 1)
+        sparse = FakeRetriever([RetrievalResult(1, (10,), (2.0,))])
+        dense_a = FakeChunkRetriever(
+            [RetrievalResult(1, (20, 30), (0.9, 0.8))],
+            [ChunkRetrievalResult(1, (shared, other), (0.9, 0.8))],
+        )
+        dense_b = FakeChunkRetriever(
+            [RetrievalResult(1, (20, 10), (0.7, 0.6))],
+            [ChunkRetrievalResult(1, (shared,), (0.7,))],
+        )
+        retriever = MultiDenseWeightedRRFRetriever(
+            sparse=sparse,
+            dense_retrievers={"a": dense_a, "b": dense_b},
+            sparse_weight=0.2,
+            dense_weights={"a": 0.4, "b": 0.4},
+            rrf_k=20,
+            sparse_top_k=2,
+            dense_top_k={"a": 2, "b": 2},
+        )
+        result = retriever.retrieve([Query(1, "q", ())], top_k=3)[0]
+        self.assertEqual(result.aids[0], 20)
+        self.assertEqual(set(retriever.component_results()), {"sparse", "dense:a", "dense:b"})
+        chunks = retriever.retrieve_chunks(
+            [Query(1, "q", ())], top_k=1, dense_depth=2
+        )[0]
+        self.assertEqual(chunks.chunks, (shared,))
+
+    def test_factory_builds_named_dense_profiles_without_mutating_base(self) -> None:
+        base_dense = {
+            "encoder": {
+                "backend": "sentence_transformers",
+                "model_name": "base",
+                "max_seq_length": 512,
+            },
+            "search": {"backend": "exact", "metric": "cosine"},
+            "chunking": {"method": "article_truncate", "aggregation": "max"},
+            "cache": {"enabled": False},
+        }
+        config = {
+            "hybrid": {
+                "fusion": "weighted_rrf",
+                "sparse_weight": 0.2,
+                "dense_components": [
+                    {"name": "first", "profile": "a", "weight": 0.4},
+                    {"name": "second", "profile": "b", "weight": 0.4},
+                ],
+            },
+            "bm25": {},
+            "dense": base_dense,
+            "dense_profiles": {
+                "a": {"encoder": {"model_name": "model-a"}},
+                "b": {"encoder": {"model_name": "model-b"}},
+            },
+        }
+        with patch("drill_ir.retrieval.factory.SentenceTransformerEncoder") as encoder:
+            retriever = build_retriever("hybrid", config, {"accelerator": "cpu"})
+        self.assertIsInstance(retriever, MultiDenseWeightedRRFRetriever)
+        self.assertEqual(set(retriever.dense_retrievers), {"first", "second"})
+        self.assertEqual(
+            [call.args[0].model_name for call in encoder.call_args_list],
+            ["model-a", "model-b"],
+        )
+        self.assertEqual(base_dense["encoder"]["model_name"], "base")
 
 
 if __name__ == "__main__":

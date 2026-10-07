@@ -1,5 +1,6 @@
 """Build retrieval components from explicit experiment configuration."""
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ from .dense import (
     SentenceTransformerEncoder,
     SentenceTransformerEncoderConfig,
 )
-from .fusion import WeightedRRFRetriever
+from .fusion import MultiDenseWeightedRRFRetriever, WeightedRRFRetriever
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
     DiemChunker,
@@ -40,6 +41,17 @@ def _dense_device(runtime: dict[str, Any]) -> str | list[str]:
     return [f"cuda:{index}" for index in range(devices)] if devices > 1 else "cuda:0"
 
 
+def _merged_mapping(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge a dense profile without mutating the experiment config."""
+    merged = deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merged_mapping(merged[key], value)
+        else:
+            merged[key] = deepcopy(value)
+    return merged
+
+
 def build_retriever(
     method: str,
     retrieval_config: dict[str, Any],
@@ -53,6 +65,47 @@ def build_retriever(
             raise ValueError("retrieval.hybrid must be a YAML mapping")
         if hybrid.get("fusion", "weighted_rrf") != "weighted_rrf":
             raise ValueError("Only hybrid fusion='weighted_rrf' is currently supported")
+        dense_components = hybrid.get("dense_components")
+        if dense_components is not None:
+            if not isinstance(dense_components, list) or not dense_components:
+                raise ValueError("retrieval.hybrid.dense_components must be a non-empty list")
+            base_dense = retrieval_config.get("dense")
+            profiles = retrieval_config.get("dense_profiles", {})
+            if not isinstance(base_dense, dict) or not isinstance(profiles, dict):
+                raise ValueError("Multi-dense retrieval requires dense and dense_profiles mappings")
+            dense_retrievers: dict[str, Retriever] = {}
+            dense_weights: dict[str, float] = {}
+            dense_depths: dict[str, int] = {}
+            for component in dense_components:
+                if not isinstance(component, dict):
+                    raise ValueError("Each dense component must be a YAML mapping")
+                name = str(component.get("name", "")).strip()
+                profile_name = str(component.get("profile", name)).strip()
+                if not name or name in dense_retrievers:
+                    raise ValueError("Dense component names must be non-empty and unique")
+                profile = profiles.get(profile_name)
+                if not isinstance(profile, dict):
+                    raise ValueError(f"Unknown dense profile {profile_name!r}")
+                component_config = _merged_mapping(base_dense, profile)
+                dense_retrievers[name] = build_retriever(
+                    "dense", {**retrieval_config, "dense": component_config}, runtime
+                )
+                dense_weights[name] = float(component.get("weight", 1.0))
+                dense_depths[name] = int(
+                    component.get("top_k", hybrid.get("dense_top_k", 100))
+                )
+            return MultiDenseWeightedRRFRetriever(
+                sparse=build_retriever("bm25", retrieval_config, runtime),
+                dense_retrievers=dense_retrievers,
+                sparse_weight=float(hybrid.get("sparse_weight", 1.0)),
+                dense_weights=dense_weights,
+                rrf_k=int(hybrid.get("rrf_k", 60)),
+                sparse_top_k=int(hybrid.get("sparse_top_k", 100)),
+                dense_top_k=dense_depths,
+                include_zero_score_sparse=bool(
+                    hybrid.get("include_zero_score_sparse", False)
+                ),
+            )
         return WeightedRRFRetriever(
             sparse=build_retriever("bm25", retrieval_config, runtime),
             dense=build_retriever("dense", retrieval_config, runtime),
@@ -164,16 +217,35 @@ def build_retriever(
         if encoder_max is not None and max_tokens > int(encoder_max):
             raise ValueError("chunking.max_tokens cannot exceed encoder.max_seq_length")
         common_chunking = {
-            "model_name": str(encoder_config["model_name"]),
+            "model_name": str(
+                chunking_config.get("tokenizer_model_name", encoder_config["model_name"])
+            ),
             "revision": (
-                str(encoder_config["revision"])
-                if encoder_config.get("revision") is not None
+                str(
+                    chunking_config.get(
+                        "tokenizer_revision", encoder_config.get("revision")
+                    )
+                )
+                if chunking_config.get(
+                    "tokenizer_revision", encoder_config.get("revision")
+                )
+                is not None
                 else None
             ),
             "max_tokens": max_tokens,
             "overlap_tokens": int(chunking_config.get("overlap_tokens", 64)),
-            "document_prefix": str(encoder_config.get("document_prefix", "")),
-            "trust_remote_code": bool(encoder_config.get("trust_remote_code", False)),
+            "document_prefix": str(
+                chunking_config.get(
+                    "tokenizer_document_prefix",
+                    encoder_config.get("document_prefix", ""),
+                )
+            ),
+            "trust_remote_code": bool(
+                chunking_config.get(
+                    "tokenizer_trust_remote_code",
+                    encoder_config.get("trust_remote_code", False),
+                )
+            ),
         }
         if chunking_method == "token_window":
             chunker = TokenWindowChunker(TokenWindowChunkerConfig(**common_chunking))

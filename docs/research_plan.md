@@ -107,6 +107,51 @@ Hybrid + Reranker + Structure + Cross-reference
 
 Do not claim that a component helps unless its contribution can be isolated.
 
+## Dense-model benchmark and ensemble staging
+
+Dense-model diversity is a planned baseline-strengthening treatment before the
+structure/reference claims are finalized. It must not become an uncontrolled
+model-and-chunking search. The first screening round fixes the existing DRiLL
+split, Khoản–Điểm representation, chunk/candidate budgets, exact search, cosine
+metric, and a 512-token encoder limit. Set
+`retrieval.dense.chunking.tokenizer_model_name` to the selected baseline
+tokenizer when the comparison must reuse identical chunk boundaries; otherwise
+record that model-specific tokenizers changed both the chunks and embeddings.
+
+The candidate registry below was supplied from an external model survey on
+2026-10-07. Model identifiers are recorded for future reproducible screening;
+model-card scores and claimed context lengths are not results measured by this
+repository and must be verified before execution.
+
+| Role | Model identifier |
+|---|---|
+| multilingual baseline | `intfloat/multilingual-e5-large` |
+| multilingual instruction baseline | `intfloat/multilingual-e5-large-instruct` |
+| current baseline | `BAAI/bge-m3` |
+| modern multilingual control | `Qwen/Qwen3-Embedding-0.6B` |
+| Vietnamese general | `contextboxai/halong_embedding` |
+| Vietnamese general, long-context candidate | `AITeamVN/Vietnamese_Embedding_v2` |
+| Vietnamese legal, lightweight | `truro7/vn-law-embedding` |
+| Vietnamese legal E5 adaptation | `mainguyen9/vietlegal-e5` |
+| Vietnamese legal instruction model | `mainguyen9/vietlegal-harrier-0.6b` |
+| experimental Vietnamese legal candidate | `dxtech-asia/deepx-embedding-v1` |
+
+Screen every model independently before ensembling. Report dense-only Recall@k
+and final reranked macro-F2, runtime, peak memory, embedding dimension, resolved
+revision, prefix/instruction, pooling behavior, and whether custom remote code
+was required. The primary comparison uses full embedding dimensions; Matryoshka
+dimension reduction and context lengths above 512 are later ablations.
+
+After screening, an ensemble may combine only a small set of complementary
+models. Configuration supports named `retrieval.dense_profiles` selected by
+`retrieval.hybrid.dense_components`, with an explicit WRRF weight and depth for
+each component. Single-dense configurations remain unchanged. Multi-dense runs
+persist rankings as `dense:<name>` and fuse exact matching chunks before direct
+reranking. The existing thirteen-feature LightGBM treatment expects a single
+component named `dense`; it must not be applied to a multi-dense run until
+per-model or explicitly rank-normalized dense features are implemented and the
+LightGBM model is retrained OOF.
+
 ## Structure and references
 
 Structure-aware and cross-reference-aware retrieval are hypotheses, not assumed

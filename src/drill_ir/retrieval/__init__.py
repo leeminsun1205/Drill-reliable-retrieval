@@ -12,7 +12,7 @@ from .dense import (
     TextEncoder,
 )
 from .factory import build_retriever
-from .fusion import WeightedRRFRetriever
+from .fusion import MultiDenseWeightedRRFRetriever, WeightedRRFRetriever
 
 __all__ = [
     "ChunkRetrievalResult",
@@ -25,6 +25,7 @@ __all__ = [
     "SentenceTransformerEncoderConfig",
     "TextEncoder",
     "WeightedRRFRetriever",
+    "MultiDenseWeightedRRFRetriever",
     "build_retriever",
     "tokenize",
 ]
