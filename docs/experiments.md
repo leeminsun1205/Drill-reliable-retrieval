@@ -227,6 +227,16 @@ article IDs; RM3 additionally writes expanded terms and weights. Compare
 WRRF, epoch-3 reranker, and output policy. These are generic expansion controls
 for the later explicit-reference treatment, not legal-reference methods.
 
+The first owner-run Kaggle screen on 2026-10-08 found that conservative RM3
+produced the same selected epoch-3 threshold/fallback-2 development F2 as the
+no-feedback baseline (`0.608053`). The next larger RM3 profile reached reranker
+weight loading only at `43212` seconds, approximately the Kaggle 12-hour limit;
+the supplied log contained no OOM traceback. Consequently, the active notebook
+screens six Rocchio settings and defers larger RM3 treatments until postings
+scoring is bounded or optimized. This runtime observation does not establish
+that RM3 is ineffective; it establishes that the present larger-profile
+implementation is not suitable for the shared Kaggle runtime budget.
+
 ## Configuration
 
 Meaningful experiments should use explicit YAML configuration. For example:

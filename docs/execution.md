@@ -276,16 +276,26 @@ candidate depths, epoch-3 checkpoint, and output policy fixed.
 terms. Do not reuse a LightGBM model or threshold across feedback treatments;
 feedback changes sparse/dense ranks and the downstream feature distribution.
 
-`notebooks/kaggle_rm3_rocchio_ablation.ipynb` performs the full staged screen.
-It evaluates conservative, default, and aggressive profiles for RM3 and
-Rocchio; trains a fresh five-fold query-grouped OOF LightGBM for every changed
-feature distribution; combines only the best RM3-only and Rocchio-only profiles;
-and selects separate best treatments with and without LightGBM. Only those two
-dev-selected treatments are subsequently inferred on public/private. The
-notebook creates fixed-top-2 and frozen-threshold submissions for both selected
-systems and archives its scoreboard, selection manifest, feedback audits, OOF
-metrics, provenance, and ZIP files. The prior no-feedback LightGBM artifact is
-read from `/kaggle/input/datasets/lmnhnht125/drill-epoch3-lighgbm/lightgbm`.
+`notebooks/kaggle_rm3_rocchio_ablation.ipynb` now performs a Rocchio-only staged
+screen. It evaluates a controlled 2-by-3 grid: 3 or 5 positive feedback aids and
+beta 0.10, 0.25, or 0.50, with alpha 1, gamma 0, no negative feedback, and
+first-pass depth 20. It trains a fresh five-fold query-grouped OOF LightGBM for
+every changed feature distribution and selects separate best treatments with
+and without LightGBM. Only those two dev-selected treatments are subsequently
+inferred on public/private. The notebook creates fixed-top-2 and frozen-
+threshold submissions and archives its scoreboard, selection manifest,
+feedback audits, OOF metrics, provenance, and ZIP files. Completed cases are
+skipped on rerun. The prior no-feedback LightGBM artifact is read from
+`/kaggle/input/datasets/lmnhnht125/drill-epoch3-lighgbm/lightgbm`.
+
+RM3 was removed from this Kaggle screen after the owner-reported 2026-10-08 log
+showed the conservative profile reproduce the selected epoch-3 threshold/
+fallback-2 F2 `0.608053`, while the following larger profile did not begin
+loading the reranker until `43212` seconds, approximately the 12-hour Kaggle
+limit. The log did not contain an OOM exception; this is recorded as an observed
+runtime failure, not proof of memory exhaustion. Larger RM3 profiles require a
+separate efficiency treatment, such as feedback-term document-frequency caps or
+optimized postings scoring, before being restored to the end-to-end notebook.
 
 ## Hybrid plus cross-encoder reranking
 
