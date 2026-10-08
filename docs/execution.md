@@ -276,17 +276,14 @@ candidate depths, epoch-3 checkpoint, and output policy fixed.
 terms. Do not reuse a LightGBM model or threshold across feedback treatments;
 feedback changes sparse/dense ranks and the downstream feature distribution.
 
-`notebooks/kaggle_rm3_rocchio_ablation.ipynb` now performs a Rocchio-only staged
-screen. It evaluates a controlled 2-by-3 grid: 3 or 5 positive feedback aids and
-beta 0.10, 0.25, or 0.50, with alpha 1, gamma 0, no negative feedback, and
-first-pass depth 20. It trains a fresh five-fold query-grouped OOF LightGBM for
-every changed feature distribution and selects separate best treatments with
-and without LightGBM. Only those two dev-selected treatments are subsequently
-inferred on public/private. The notebook creates fixed-top-2 and frozen-
-threshold submissions and archives its scoreboard, selection manifest,
-feedback audits, OOF metrics, provenance, and ZIP files. Completed cases are
-skipped on rerun. The prior no-feedback LightGBM artifact is read from
-`/kaggle/input/datasets/lmnhnht125/drill-epoch3-lighgbm/lightgbm`.
+`notebooks/kaggle_rm3_rocchio_ablation.ipynb` is retained as a deferred
+Rocchio-only screen, not an active recommended run. It defines a controlled
+2-by-3 grid: 3 or 5 positive feedback aids and beta 0.10, 0.25, or 0.50, with
+alpha 1, gamma 0, no negative feedback, and first-pass depth 20. If profiling
+later makes the treatment viable, it can train a fresh five-fold query-grouped
+OOF LightGBM per feature distribution and select public/private submissions.
+Do not launch this full notebook under the current Kaggle budget: the owner
+reported on 2026-10-09 that the Rocchio screen stalled before a usable result.
 
 RM3 was removed from this Kaggle screen after the owner-reported 2026-10-08 log
 showed the conservative profile reproduce the selected epoch-3 threshold/
@@ -296,6 +293,39 @@ limit. The log did not contain an OOM exception; this is recorded as an observed
 runtime failure, not proof of memory exhaustion. Larger RM3 profiles require a
 separate efficiency treatment, such as feedback-term document-frequency caps or
 optimized postings scoring, before being restored to the end-to-end notebook.
+Rocchio likewise requires a retrieval-only timing profile before its six-case
+screen is restored. Until then both feedback mechanisms remain disabled and the
+selected baseline is epoch-3 reranking plus the existing OOF LightGBM threshold
+policy.
+
+### Multi-dense challenger notebook
+
+`notebooks/kaggle_multi_dense_weight_selection.ipynb` evaluates exactly one
+new dense challenger beside the fixed BGE-M3 baseline. The active verified case
+is `mainguyen9/vietlegal-e5`; alternative model declarations remain commented
+and deliberately fail preflight while their model-specific prompt or pooling is
+marked `<VERIFY>`. The corresponding reusable configuration is
+`configs/hybrid_reranker_multi_dense.yaml`.
+
+The notebook retrieves BM25, BGE-M3, and challenger component rankings once.
+It evaluates five normalized WRRF weight combinations offline from those fixed
+top-100 component lists, selects by fixed top-3 development F2 with Recall@50 as
+the tie-break, and runs the epoch-3 direct-chunk reranker only for that winner.
+It then evaluates a newly trained query-grouped five-fold OOF LightGBM and
+creates public/private fixed-top-2 and threshold/fallback-2 submissions both
+with and without LightGBM. Output is archived at
+`/kaggle/working/multi_dense_results.tar.gz`.
+
+Preflight requires two GPUs with at least 14 GiB each, at least 24 GiB system
+RAM, and 12 GiB free working storage. Artifact directories include a fingerprint
+of the active model/prefix configuration and the selected weight triple so a
+later challenger cannot silently reuse OOF or test outputs from an earlier case.
+
+Offline article-rank weight selection is an efficient screening approximation:
+the final direct-chunk fusion is reconstructed by the selected weights only in
+the reranker run. Therefore the weight-grid scores are not evidence that the
+same ordering holds after chunk fusion and reranking; the final dev metrics are
+reported separately.
 
 ## Hybrid plus cross-encoder reranking
 

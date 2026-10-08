@@ -62,6 +62,27 @@ def _rank_features(record: dict[str, Any]) -> dict[int, tuple[float, float]]:
     }
 
 
+def _dense_feature_schema(
+    components: dict[int, dict[str, dict[int, tuple[float, float]]]],
+) -> tuple[list[str], list[str]]:
+    """Return a stable dense-component order and its score/rank feature names."""
+    component_sets = [
+        {name for name in values if name == "dense" or name.startswith("dense:")}
+        for values in components.values()
+    ]
+    if not component_sets or not component_sets[0]:
+        raise ValueError("Component rankings contain no dense retriever")
+    expected = component_sets[0]
+    if any(names != expected for names in component_sets[1:]):
+        raise ValueError("Dense component names differ across queries")
+    ordered = sorted(expected)
+    feature_names: list[str] = []
+    for name in ordered:
+        slug = name.replace(":", "_").replace("-", "_")
+        feature_names.extend((f"{slug}_score", f"{slug}_reciprocal_rank"))
+    return ordered, feature_names
+
+
 def build_ltr_examples(
     result_dir: str | Path,
     queries: Sequence[Query],
@@ -116,6 +137,13 @@ def build_ltr_examples(
         if set(mapping) != expected_qids:
             raise ValueError(f"{name} qids do not match the supplied query set")
 
+    dense_components, dense_feature_names = _dense_feature_schema(components)
+    feature_names = (
+        FEATURE_NAMES[:7]
+        + tuple(dense_feature_names)
+        + FEATURE_NAMES[9:]
+    )
+
     features: list[list[float]] = []
     labels: list[int] = []
     qids: list[int] = []
@@ -131,13 +159,17 @@ def build_ltr_examples(
         top_score = reranker_scores[0]
         gold = set(query.relevant_aids)
         sparse = components[qid].get("sparse", {})
-        dense = components[qid].get("dense", {})
         for rank, (aid, reranker_score) in enumerate(
             zip(ranked_aids, reranker_scores), start=1
         ):
             first_score, first_rr = first_stage[qid].get(aid, (0.0, 0.0))
             sparse_score, sparse_rr = sparse.get(aid, (0.0, 0.0))
-            dense_score, dense_rr = dense.get(aid, (0.0, 0.0))
+            dense_values: list[float] = []
+            for component in dense_components:
+                dense_score, dense_rr = components[qid][component].get(
+                    aid, (0.0, 0.0)
+                )
+                dense_values.extend((dense_score, dense_rr))
             chunk_score, chunk_rr, chunk_count = chunks[qid].get(
                 aid, (0.0, 0.0, 0.0)
             )
@@ -150,8 +182,7 @@ def build_ltr_examples(
                     first_rr,
                     sparse_score,
                     sparse_rr,
-                    dense_score,
-                    dense_rr,
+                    *dense_values,
                     chunk_score,
                     chunk_rr,
                     chunk_count,
@@ -164,7 +195,7 @@ def build_ltr_examples(
             original_ranks.append(rank)
 
     return {
-        "feature_names": FEATURE_NAMES,
+        "feature_names": feature_names,
         "features": np.asarray(features, dtype=np.float64),
         "labels": np.asarray(labels, dtype=np.int8),
         "qids": np.asarray(qids, dtype=np.int64),

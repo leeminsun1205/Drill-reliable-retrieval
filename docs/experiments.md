@@ -68,8 +68,20 @@ retrieval:
 Weights in this example are illustrative, not measured. Model-specific query
 instructions and pooling must follow the verified model card rather than being
 silently guessed. The current thirteen-feature LightGBM path expects one
-component named `dense`; a multi-dense run requires new per-model or explicitly
-rank-normalized features and fresh OOF training.
+component named `dense`. Multi-dense runs now extend that schema with a raw-score
+and reciprocal-rank pair for each stable `dense:<name>` component, ordered by
+component name; a two-dense run therefore has 15 rather than 13 features. Dev
+and test component schemas must match exactly, and every multi-dense treatment
+requires fresh query-grouped OOF training rather than reuse of the baseline
+LightGBM model.
+
+The first configured challenger is `mainguyen9/vietlegal-e5`, verified from its
+model card on 2026-10-09 as a SentenceTransformer with 512-token maximum,
+1024-dimensional normalized embeddings, cosine similarity, and required
+`query: ` / `passage: ` prefixes. The model-card benchmark is external evidence,
+not a result of this repository. The controlled config freezes BGE-M3
+Khoản–Điểm 448/64 chunk boundaries for both dense encoders so this treatment
+changes embeddings rather than segmentation.
 
 The dense baseline is decomposed into encoder, cache, and search components in
 `configs/dense.yaml`. It uses `intfloat/multilingual-e5-base`, explicit E5 query
@@ -231,11 +243,16 @@ The first owner-run Kaggle screen on 2026-10-08 found that conservative RM3
 produced the same selected epoch-3 threshold/fallback-2 development F2 as the
 no-feedback baseline (`0.608053`). The next larger RM3 profile reached reranker
 weight loading only at `43212` seconds, approximately the Kaggle 12-hour limit;
-the supplied log contained no OOM traceback. Consequently, the active notebook
-screens six Rocchio settings and defers larger RM3 treatments until postings
-scoring is bounded or optimized. This runtime observation does not establish
-that RM3 is ineffective; it establishes that the present larger-profile
-implementation is not suitable for the shared Kaggle runtime budget.
+the supplied log contained no OOM traceback. The notebook was then changed to
+screen six Rocchio settings. On 2026-10-09 the owner reported that this Rocchio
+screen also stalled before producing a usable comparison; no completed Rocchio
+metric or traceback was supplied, so no effectiveness or OOM claim is made.
+RM3 and Rocchio are therefore deferred, remain disabled by default, and are not
+part of the selected pipeline. They should be reconsidered only after profiling
+and bounding retrieval runtime independently of the reranker. These execution
+failures do not establish that pseudo-relevance feedback is ineffective; they
+establish that the present implementations are not suitable for the shared
+Kaggle runtime budget.
 
 ## Configuration
 

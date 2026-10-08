@@ -94,6 +94,51 @@ class LtrFeatureTest(unittest.TestCase):
             self.assertEqual(examples["features"].shape, (1, 13))
             self.assertEqual(examples["labels"].tolist(), [0])
 
+    def test_builds_separate_features_for_multiple_dense_components(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def write(name: str, row: dict) -> None:
+                (root / name).write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+            write(
+                "predictions.jsonl",
+                {"qid": 1, "retrieved_aids": [10], "scores": [4.0]},
+            )
+            write(
+                "first_stage_predictions.jsonl",
+                {"qid": 1, "retrieved_aids": [10], "scores": [0.4]},
+            )
+            write(
+                "component_rankings.jsonl",
+                {
+                    "qid": 1,
+                    "components": {
+                        "sparse": {"retrieved_aids": [10], "scores": [2.0]},
+                        "dense:bge_m3": {
+                            "retrieved_aids": [10],
+                            "scores": [0.8],
+                        },
+                        "dense:vietlegal_e5": {
+                            "retrieved_aids": [10],
+                            "scores": [0.9],
+                        },
+                    },
+                },
+            )
+            write(
+                "reranker_chunk_candidates.jsonl",
+                {"qid": 1, "chunks": [{"aid": 10, "fusion_score": 0.3}]},
+            )
+            examples = build_ltr_examples(root, [Query(1, "query", (10,))])
+            self.assertEqual(examples["features"].shape, (1, 15))
+            self.assertIn("dense_bge_m3_score", examples["feature_names"])
+            self.assertIn("dense_vietlegal_e5_reciprocal_rank", examples["feature_names"])
+            self.assertEqual(
+                examples["features"][0, examples["feature_names"].index("dense_vietlegal_e5_score")],
+                0.9,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -120,6 +120,23 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(config["reranking"]["candidate_pool_size"], 50)
         self.assertEqual(config["reranking"]["max_length"], 512)
 
+    def test_multi_dense_config_keeps_bge_and_one_challenger(self) -> None:
+        config = load_config(
+            Path(__file__).parents[1]
+            / "configs"
+            / "hybrid_reranker_multi_dense.yaml"
+        )
+        components = config["retrieval"]["hybrid"]["dense_components"]
+        self.assertEqual([item["name"] for item in components], ["bge_m3", "challenger"])
+        self.assertEqual(
+            config["retrieval"]["dense_profiles"]["challenger"]["encoder"]["model_name"],
+            "mainguyen9/vietlegal-e5",
+        )
+        self.assertEqual(
+            config["retrieval"]["dense"]["chunking"]["tokenizer_model_name"],
+            "BAAI/bge-m3",
+        )
+
     def test_config_overrides_are_typed_and_do_not_mutate_source(self) -> None:
         source = {"retrieval": {"top_k": 100, "prefix": "query: "}}
         resolved = apply_config_overrides(
