@@ -347,31 +347,41 @@ separate efficiency treatment, such as feedback-term document-frequency caps or
 optimized postings scoring, before being restored to the end-to-end notebook.
 Rocchio likewise requires a retrieval-only timing profile before its six-case
 screen is restored. Until then both feedback mechanisms remain disabled and the
-selected baseline is epoch-3 reranking plus the existing OOF LightGBM threshold
-policy.
+selected baseline is epoch-3 reranking plus OOF LightGBM and query-adaptive
+score-gap final-set selection. The global-threshold and fixed-top-2 outputs
+remain required controls.
 
-### Multi-dense challenger notebook
+### Multi-dense peer notebook
 
-`notebooks/kaggle_multi_dense_weight_selection.ipynb` evaluates exactly one
-new dense challenger beside the fixed BGE-M3 baseline. The active verified case
-is `mainguyen9/vietlegal-e5`; alternative model declarations remain commented
-and deliberately fail preflight while their model-specific prompt or pooling is
-marked `<VERIFY>`. The corresponding reusable configuration is
+`notebooks/kaggle_multi_dense_weight_selection.ipynb` accepts a list of peer
+dense components without a privileged anchor. The active two-model run is
+`mainguyen9/vietlegal-harrier-0.6b` plus
+`intfloat/multilingual-e5-large`. Each entry carries its own model identifier,
+prompt/prefix, remote-code setting, cache, and WRRF weight. The corresponding reusable configuration is
 `configs/hybrid_reranker_multi_dense.yaml`.
 
-The notebook retrieves BM25, BGE-M3, and challenger component rankings once.
+The notebook retrieves standard BM25 and every configured dense component once.
 It evaluates five normalized WRRF weight combinations offline from those fixed
 top-100 component lists, selects by fixed top-3 development F2 with Recall@50 as
 the tie-break, and runs the epoch-3 direct-chunk reranker only for that winner.
 It then evaluates a newly trained query-grouped five-fold OOF LightGBM and
 creates public/private fixed-top-2 and threshold/fallback-2 submissions both
-with and without LightGBM. Output is archived at
+with and without LightGBM, plus the selected LightGBM score-gap submissions.
+Output is archived at
 `/kaggle/working/multi_dense_results.tar.gz`.
 
 Preflight requires two GPUs with at least 14 GiB each, at least 24 GiB system
 RAM, and 12 GiB free working storage. Artifact directories include a fingerprint
-of the active model/prefix configuration and the selected weight triple so a
-later challenger cannot silently reuse OOF or test outputs from an earlier case.
+of the active model/prefix list, sparse variant, and selected weights so a later
+component list or BM25 variant cannot silently reuse OOF or test outputs from an
+earlier case.
+
+The first run keeps `BM25_VARIANT='bm25'`. After that control completes, set
+only `BM25_VARIANT='bm25_plus'` in the same multi-dense notebook; the default
+delta is `1.0`, and both variant and delta enter the run/cache identity. This
+order tests the stronger sparse scorer without confounding it with the change
+from one dense model to two. BM25+ is not omitted as a candidate improvement;
+it is deliberately sequenced as the next isolated ablation.
 
 Offline article-rank weight selection is an efficient screening approximation:
 the final direct-chunk fusion is reconstructed by the selected weights only in
@@ -719,14 +729,16 @@ at `/kaggle/input/models/lmnhnht125/drill-reranker-bce-epoch3/pytorch/default/1/
 and the prior metrics archive under
 `/kaggle/input/datasets/lmnhnht125/drill-epoch3-4-experiment-artifacts`.
 
-The notebook variable `ADAPTIVE_SELECTION` controls the new final-set ablation.
-Use `"score_gap"` to additionally package
+The notebook defaults `ADAPTIVE_SELECTION` to the selected `"score_gap"`
+final-set policy and additionally packages
 `public_lightgbm_score_gap_results.zip` and
 `private_lightgbm_score_gap_results.zip`; use `"disabled"` to reproduce only
 the original fixed-top-2 and global-threshold outputs. Both modes retain those
 original outputs. The score-gap parameters come from pooled OOF development
 tuning, while `oof_metrics.json` separately records its nested-OOF selector
 estimate and a clearly labeled, non-deployable oracle-prefix diagnostic.
+The notebook validates the exact ZIP list implied by this mode, so score-gap
+runs expect six submission ZIPs and disabled runs expect four.
 
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired

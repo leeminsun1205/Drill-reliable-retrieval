@@ -121,17 +121,24 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(config["reranking"]["candidate_pool_size"], 50)
         self.assertEqual(config["reranking"]["max_length"], 512)
 
-    def test_multi_dense_config_keeps_bge_and_one_challenger(self) -> None:
+    def test_multi_dense_config_uses_selected_peers_without_an_anchor(self) -> None:
         config = load_config(
             Path(__file__).parents[1]
             / "configs"
             / "hybrid_reranker_multi_dense.yaml"
         )
         components = config["retrieval"]["hybrid"]["dense_components"]
-        self.assertEqual([item["name"] for item in components], ["bge_m3", "challenger"])
         self.assertEqual(
-            config["retrieval"]["dense_profiles"]["challenger"]["encoder"]["model_name"],
-            "mainguyen9/vietlegal-e5",
+            [item["name"] for item in components],
+            ["vietlegal_harrier", "multilingual_e5_large"],
+        )
+        self.assertEqual(
+            config["retrieval"]["dense_profiles"]["vietlegal_harrier"]["encoder"]["model_name"],
+            "mainguyen9/vietlegal-harrier-0.6b",
+        )
+        self.assertEqual(
+            config["retrieval"]["dense_profiles"]["multilingual_e5_large"]["encoder"]["model_name"],
+            "intfloat/multilingual-e5-large",
         )
         self.assertEqual(
             config["retrieval"]["dense"]["chunking"]["tokenizer_model_name"],

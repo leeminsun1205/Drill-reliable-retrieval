@@ -45,18 +45,18 @@ preparation. A missing or incompatible cache then fails immediately instead of
 silently rebuilding inside a long experiment. Cache preparation produces no
 metric and is not itself an experiment result.
 
-Example selection after independent screening:
+Example peer selection after independent screening:
 
 ```yaml
 retrieval:
   hybrid:
     fusion: weighted_rrf
     rrf_k: 20
-    sparse_weight: 0.2
+    sparse_weight: 0.1
     sparse_top_k: 100
     dense_components:
-      - {name: bge_m3, profile: bge_m3, weight: 0.4, top_k: 100}
-      - {name: e5_large, profile: e5_large, weight: 0.4, top_k: 100}
+      - {name: vietlegal_harrier, profile: vietlegal_harrier, weight: 0.5, top_k: 100}
+      - {name: multilingual_e5_large, profile: multilingual_e5_large, weight: 0.4, top_k: 100}
   dense:
     chunking:
       method: khoan_diem
@@ -68,18 +68,26 @@ retrieval:
       backend: sentence_transformers
       max_seq_length: 512
   dense_profiles:
-    bge_m3:
-      encoder: {model_name: BAAI/bge-m3, query_prefix: "", document_prefix: ""}
-      cache: {directory: embeddings/bge_m3}
-    e5_large:
+    vietlegal_harrier:
+      encoder:
+        model_name: mainguyen9/vietlegal-harrier-0.6b
+        query_prefix: "Instruct: Given a Vietnamese legal question, retrieve relevant legal passages that answer the question\nQuery: "
+        document_prefix: ""
+        trust_remote_code: true
+      cache: {directory: embeddings/vietlegal_harrier_0_6b}
+    multilingual_e5_large:
       encoder:
         model_name: intfloat/multilingual-e5-large
         query_prefix: "query: "
         document_prefix: "passage: "
-      cache: {directory: embeddings/e5_large}
+      cache: {directory: embeddings/multilingual_e5_large}
 ```
 
-Weights in this example are illustrative, not measured. Model-specific query
+The peer list is structurally unbounded, although the active controlled run uses
+exactly the two models shown. The owner-selected primary WRRF ratio is
+BM25/Harrier/E5-large `1:5:4`, stored as normalized weights `0.1/0.5/0.4`;
+normalization changes only the common score scale, not ranking. This is a
+planned setting, not a measured winner. Model-specific query
 instructions and pooling must follow the verified model card rather than being
 silently guessed. The current thirteen-feature LightGBM path expects one
 component named `dense`. Multi-dense runs now extend that schema with a raw-score
@@ -89,13 +97,21 @@ and test component schemas must match exactly, and every multi-dense treatment
 requires fresh query-grouped OOF training rather than reuse of the baseline
 LightGBM model.
 
-The first configured challenger is `mainguyen9/vietlegal-e5`, verified from its
-model card on 2026-10-09 as a SentenceTransformer with 512-token maximum,
-1024-dimensional normalized embeddings, cosine similarity, and required
-`query: ` / `passage: ` prefixes. The model-card benchmark is external evidence,
-not a result of this repository. The controlled config freezes BGE-M3
-Khoản–Điểm 448/64 chunk boundaries for both dense encoders so this treatment
-changes embeddings rather than segmentation.
+The active peer pair selected by the project owner on 2026-10-26 is
+`mainguyen9/vietlegal-harrier-0.6b` plus
+`intfloat/multilingual-e5-large`. Their query/document instructions match the
+completed standalone screen. The controlled config retains BGE-M3-tokenized
+Khoản–Điểm 448/64 chunk boundaries for both encoders so this treatment changes
+embeddings rather than segmentation; the tokenizer fixes representation
+boundaries and does not make BGE-M3 an ensemble anchor.
+
+The multi-dense notebook carries this pair through the strongest existing
+epoch-3 reranker, freshly trained multi-component LightGBM, and score-gap final
+selection; it does not modify or reuse the single-dense LightGBM notebook.
+Standard BM25 is the first sparse control. BM25+ with delta `1.0` is the next
+isolated treatment in the same notebook, after the control completes, because
+changing the dense set and sparse scoring rule in one run would not identify
+which change caused the result.
 
 On 2026-10-26, the project owner reported an isolated Kaggle T4 smoke test over
 the same first 128 articles, which produced 505 Khoản–Điểm representations for
@@ -113,6 +129,51 @@ Python's resource tracker reported four leaked semaphore objects at process
 shutdown. The warning is diagnostic evidence of incompletely reclaimed
 multiprocessing resources, not proof that it caused the full-corpus timeout.
 Larger samples and total process-tree memory measurement remain pending.
+
+#### Standalone dense-screening results
+
+On 2026-10-26, the project owner reported completion of all seven standalone
+dense runs on the fixed 438-query seed-42 development split. The runs were
+reported as using the screening protocol documented in `docs/research_plan.md`: BGE-M3-tokenized
+Khoản–Điểm 448/64 representations, exact cosine search, candidate depth 100,
+and no BM25, fusion, or reranker. The following values are measured run outputs
+reported by the owner, but remain pending inspection of the downloaded
+`dense_screening_*.tar.gz` archives, including their configs, split IDs,
+predictions, rankings, and provenance.
+
+| Model | Best output k | Precision | Recall | F2 | R@1 | R@5 | R@10 | R@20 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `BAAI/bge-m3` | 2 | 0.309361 | 0.526826 | 0.461889 | 0.411149 | 0.663775 | 0.747624 | 0.828104 | 0.878816 | 0.910421 |
+| `intfloat/multilingual-e5-large` | 2 | 0.311644 | 0.529322 | 0.464441 | 0.402664 | 0.673157 | 0.761704 | 0.828696 | 0.896015 | 0.929447 |
+| `nhminh107/VietRAG-Embed` | 2 | 0.286530 | 0.489346 | 0.428661 | 0.350647 | 0.616955 | 0.699717 | 0.755730 | 0.848543 | 0.883496 |
+| `mainguyen9/vietlegal-e5` | 3 | 0.242770 | 0.610997 | 0.468788 | 0.400571 | 0.696804 | 0.781279 | 0.850500 | 0.919145 | **0.946760** |
+| `mainguyen9/vietlegal-harrier-0.6b` | 2 | 0.337900 | 0.581050 | **0.507947** | **0.456240** | **0.704338** | **0.803050** | **0.866862** | **0.924364** | 0.946325 |
+| `bqbbao6/vietnamese-legal-embedding` | 2 | 0.311644 | 0.519597 | 0.458418 | 0.409056 | 0.675875 | 0.762139 | 0.844711 | 0.897380 | 0.928800 |
+| `truro7/vn-law-embedding` | 2 | 0.287671 | 0.483828 | 0.425764 | 0.356164 | 0.624049 | 0.703006 | 0.790030 | 0.859252 | 0.909426 |
+
+For completeness, the reported macro-F2 sweep at every fixed output size is:
+
+| Model | k=1 | k=2 | k=3 | k=4 | k=5 | k=10 |
+|---|---:|---:|---:|---:|---:|---:|
+| `BAAI/bge-m3` | 0.422127 | **0.461889** | 0.461228 | 0.443455 | 0.409414 | 0.310329 |
+| `intfloat/multilingual-e5-large` | 0.412781 | **0.464441** | 0.462161 | 0.438793 | 0.412249 | 0.314301 |
+| `nhminh107/VietRAG-Embed` | 0.360177 | **0.428661** | 0.424328 | 0.398340 | 0.377566 | 0.286898 |
+| `mainguyen9/vietlegal-e5` | 0.412815 | 0.468025 | **0.468788** | 0.448016 | 0.429426 | 0.325152 |
+| `mainguyen9/vietlegal-harrier-0.6b` | 0.468166 | **0.507947** | 0.481232 | 0.451163 | 0.431702 | 0.332737 |
+| `bqbbao6/vietnamese-legal-embedding` | 0.421078 | **0.458418** | 0.451936 | 0.434285 | 0.415435 | 0.316912 |
+| `truro7/vn-law-embedding` | 0.366283 | **0.425764** | 0.421291 | 0.411025 | 0.385605 | 0.291446 |
+
+The best-output row is selected independently for each model from fixed
+`output_k` values 1, 2, 3, 4, 5, and 10. VietLegal-Harrier has the highest
+reported best F2 and candidate recall at every recorded cutoff through 50.
+VietLegal-E5 is ahead at Recall@100 by only `0.000435` and is second on best F2.
+These aggregate results make both legal-domain models plausible follow-up
+candidates, but do not establish error complementarity. Selection for a
+multi-dense treatment still requires the planned per-query overlap, uniquely
+recovered gold, and oracle-union analysis against BGE-M3. Runtime, peak memory,
+resolved revisions, embedding dimensions, prefix/pooling details, and remote-
+code status were not included in this report and must be recovered from the
+archives or recorded separately before the screen is considered fully verified.
 
 The dense baseline is decomposed into encoder, cache, and search components in
 `configs/dense.yaml`. It uses `intfloat/multilingual-e5-base`, explicit E5 query
@@ -335,7 +396,7 @@ the reranker ranking, unchanged first-stage ranking, sparse/dense component
 rankings, and fused chunk candidates for every test split so training and test
 feature schemas remain identical.
 
-An optional final-set ablation is available through
+The selected final-set policy is available through
 `--adaptive-selection score_gap`. For each query it examines score drops after
 ranks 1 through `maximum_k - 1`, returns the prefix ending at the largest drop
 when that drop exceeds a tuned minimum, and otherwise uses a fixed fallback
@@ -343,26 +404,30 @@ prefix. The tuner searches exact observed gap values plus the fixed-fallback
 case and records `minimum_gap`, `fallback_k`, and `maximum_k`. This policy does
 not change ranking, retrieval, reranking, or the two baseline ZIPs. Omitting the
 flag (the default `disabled`) exactly preserves the original top-2 and global-
-threshold handoff.
+threshold handoff. Keep the flag explicit so the older policies remain
+reproducible controls.
 
 Report three score-gap views separately: pooled OOF tuning supplies the frozen
 deployment parameters; nested OOF evaluation estimates transfer by generating
 inner-OOF scores and tuning only within each outer-training fold; and the
 per-query best prefix through rank 5 is labeled a non-deployable oracle upper
-bound. The oracle is only a headroom diagnostic. No score-gap effectiveness
-result has yet been measured, so it must not be described as an improvement
-until the aligned experiment completes.
+bound. The oracle is only a headroom diagnostic. The aligned result below is
+now complete; report its nested-OOF and frozen public/private results rather
+than treating the more optimistic oracle as measured deployable performance.
 
 ### Epoch-3 LightGBM fusion result
 
 The project owner reported the completed five-fold query-grouped OOF run on
 2026-10-07. It used the unchanged epoch-3 direct-chunk candidate artifacts and
 the thirteen documented reranker, first-stage, sparse, dense, chunk, and query-
-length features. The strongest preselected policy was threshold `0.1020920005`
-with empty-only top-2 fallback:
+length features. The original comparison selected threshold `0.1020920005`
+with empty-only top-2 fallback; the subsequently completed score-gap treatment
+is included here as the selected final-set policy:
 
 | System | Policy | Precision | Recall | F2 |
 |---|---|---:|---:|---:|
+| LightGBM nested OOF | score-gap | 0.517884 | 0.682344 | **0.641595** |
+| LightGBM pooled OOF | score-gap | 0.520548 | 0.683486 | 0.643219 |
 | Epoch 3 | threshold + fallback 2 | 0.487123 | 0.648288 | 0.608053 |
 | LightGBM OOF | threshold + fallback 2 | 0.484078 | 0.683295 | **0.631332** |
 | Epoch 3 | fixed top 2 | 0.365297 | 0.614992 | 0.541029 |
@@ -383,6 +448,17 @@ absolute. These leaderboard values are user-reported pending inspection of the
 saved LightGBM provenance, predictions, ZIP payloads, and finished submission
 records. They are single frozen-policy evaluations, not permission to retune
 the threshold on private results.
+
+On 2026-10-26, the owner additionally reported Codabench F2 `0.6187` for the
+public score-gap submission and `0.5954` for the private score-gap submission.
+Against the previously submitted LightGBM threshold policy, these are gains of
+`0.0027` public and `0.0072` private. The direction agrees with the completed
+nested-OOF score-gap estimate (`0.641595` versus pooled-OOF threshold
+`0.631332`), so this is evidence that query-adaptive final-set selection
+transferred rather than merely improving pooled development tuning. These
+leaderboard values remain owner-reported pending inspection of the saved
+artifacts and finished submission records; they must not be used to retune the
+policy on the private set.
 
 Mean split-count importance ranked reranker score and margin first, followed by
 sparse reciprocal rank, dense score, sparse score, and chunk fusion score. This

@@ -1,4 +1,4 @@
-experiment_name: hybrid_bge_m3_plus_challenger_wrrf20_seed42
+experiment_name: hybrid_harrier_plus_e5_large_wrrf20_seed42
 method: hybrid_reranker
 seed: 42
 
@@ -13,17 +13,17 @@ retrieval:
   hybrid:
     fusion: weighted_rrf
     rrf_k: 20
-    sparse_weight: 0.2
+    sparse_weight: 0.1
     sparse_top_k: 100
     dense_top_k: 100
     include_zero_score_sparse: false
     dense_components:
-      - name: bge_m3
-        profile: bge_m3
-        weight: 0.4
+      - name: vietlegal_harrier
+        profile: vietlegal_harrier
+        weight: 0.5
         top_k: 100
-      - name: challenger
-        profile: challenger
+      - name: multilingual_e5_large
+        profile: multilingual_e5_large
         weight: 0.4
         top_k: 100
   bm25:
@@ -96,20 +96,22 @@ retrieval:
       require_hit: false
       directory: embeddings/shared_default
   dense_profiles:
-    bge_m3:
+    vietlegal_harrier:
       encoder:
-        model_name: BAAI/bge-m3
-        query_prefix: ""
+        model_name: mainguyen9/vietlegal-harrier-0.6b
+        query_prefix: "Instruct: Given a Vietnamese legal question, retrieve relevant legal passages that answer the question\nQuery: "
         document_prefix: ""
+        trust_remote_code: true
       cache:
-        directory: embeddings/bge_m3_khoan_diem448
-    challenger:
+        directory: embeddings/vietlegal_harrier_0_6b_khoan_diem448
+    multilingual_e5_large:
       encoder:
-        model_name: mainguyen9/vietlegal-e5
+        model_name: intfloat/multilingual-e5-large
         query_prefix: "query: "
         document_prefix: "passage: "
+        trust_remote_code: false
       cache:
-        directory: embeddings/vietlegal_e5_khoan_diem448
+        directory: embeddings/multilingual_e5_large_khoan_diem448
 
 reranking:
   enabled: true

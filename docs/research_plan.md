@@ -40,16 +40,18 @@ The selected strong pipeline for subsequent controlled comparisons is hybrid
 Khoản–Điểm retrieval with 448-token chunks and 64-token overlap, weighted RRF,
 then direct reranking of the top 50 fused retrieved chunks with a 512-token
 cross-encoder pair budget. Reranker scores are max-aggregated to unique `aid`
-values. Article-first rechunking remains an ablation, not the default pipeline.
+values, the thirteen-feature pointwise LightGBM model supplies the final
+ranking scores, and query-adaptive early score-gap selection produces the final
+set. Article-first rechunking remains an ablation, not the default pipeline.
 Hold this configuration fixed when testing structure or reference components.
 
-Before adding a new retriever, a lightweight final-set-selection ablation may
-reuse the selected pipeline's saved LightGBM rankings. Compare unchanged fixed
-top-2 and global-threshold/fallback-2 policies against query-adaptive early
-score-gap selection. Keep it independently disableable, select its parameters
-on development data only, and report a nested-OOF selector estimate as well
-as pooled tuning. This strengthens the baseline but is not itself evidence for
-the structure/reference hypothesis.
+The completed final-set-selection ablation compared unchanged fixed top-2 and
+global-threshold/fallback-2 policies against query-adaptive early score-gap
+selection using the same saved LightGBM rankings. Score-gap is now selected for
+the strong pipeline because it improved nested-OOF and both reported Codabench
+splits. Keep it independently disableable and retain the older policies as
+controls. This strengthens the baseline but is not itself evidence for the
+structure/reference hypothesis.
 
 ## Organizer baselines
 
@@ -127,14 +129,15 @@ tokenizer when the comparison must reuse identical chunk boundaries; otherwise
 record that model-specific tokenizers changed both the chunks and embeddings.
 
 The screening registry was narrowed by the project owner on 2026-10-26 to seven
-models total, with `BAAI/bge-m3` as the fixed anchor. Model identifiers are
-recorded for reproducible screening; model-card scores and claimed context
+models total. No model has a privileged anchor role: screened dense retrievers
+are peers whose contributions are controlled by explicit WRRF weights. Model
+identifiers are recorded for reproducible screening; model-card scores and claimed context
 lengths are external evidence, not results measured by this repository, and
 must be verified before execution.
 
 | Role | Model identifier |
 |---|---|
-| fixed anchor | `BAAI/bge-m3` |
+| multilingual baseline | `BAAI/bge-m3` |
 | multilingual control | `intfloat/multilingual-e5-large` |
 | Vietnamese general | `nhminh107/VietRAG-Embed` |
 | Vietnamese legal E5-large adaptation | `mainguyen9/vietlegal-e5` |
@@ -155,17 +158,16 @@ reranker. It requires a verified corpus embedding cache hit and holds seed-42
 development IDs, BGE-M3-tokenized Khoản–Điểm 448/64 representations, encoder
 limit 512, exact cosine search, candidate depth 100, and native embedding
 dimension fixed. Report candidate Recall@1/5/10/20/50/100 and macro-F2 for
-fixed output k=1/2/3/4/5/10. Standalone results select plausible challengers;
-they do not by themselves establish complementarity with BGE-M3.
+fixed output k=1/2/3/4/5/10. Standalone results select plausible ensemble
+members; they do not by themselves establish complementarity between any pair.
 
 Do not expand the first screening round beyond these seven models without a
 documented scientific reason. Apply each model's verified query/document
 prefix or query instruction rather than forcing identical prompt text. Keep the
 split, BGE-M3-tokenized Khoản–Điểm 448/64 chunk boundaries, 512-token encoder
-limit, exact cosine search, and candidate depth fixed. Screen all six
-challengers standalone before selecting at most two or three that improve both
-quality and error complementarity with the BGE-M3 anchor. Do not ensemble all
-seven by default.
+limit, exact cosine search, and candidate depth fixed. Screen all seven models
+standalone before selecting at most two or three that improve quality and show
+useful error complementarity. Do not ensemble all seven by default.
 
 After screening, an ensemble may combine only a small set of complementary
 models. Configuration supports named `retrieval.dense_profiles` selected by
@@ -176,6 +178,74 @@ reranking. The existing thirteen-feature LightGBM treatment expects a single
 component named `dense`; it must not be applied to a multi-dense run until
 per-model or explicitly rank-normalized dense features are implemented and the
 LightGBM model is retrained OOF.
+
+### Session checkpoint: dense screening and low-cost follow-ups
+
+The execution order, updated by the project owner on 2026-10-26 after completion
+of the seven-model screen, is:
+
+1. Build and verify one portable cache archive for BM25 and each of the seven
+   dense models.
+2. Run every dense model standalone with the fixed screening protocol; do not
+   use BM25, fusion, or reranking in this comparison.
+3. Run the first peer ensemble with `mainguyen9/vietlegal-harrier-0.6b` and
+   `intfloat/multilingual-e5-large`, retaining standard BM25 and the strongest
+   existing reranker/LightGBM stages. Sweep only the predefined WRRF grid from
+   saved component rankings, with the owner-selected BM25/Harrier/E5-large
+   ratio `1:5:4` (`0.1/0.5/0.4`) as the primary setting. This is a selected two-model confirmation, not a
+   claim that standalone rank alone proves complementarity.
+4. Report overlap@k, uniquely recovered gold articles, union Recall@50/100, and
+   an explicitly labeled oracle-union diagnostic for the selected pair. Primary
+   first-stage selection metrics are Recall@50 and Recall@100; fixed-output F2
+   remains secondary.
+5. If the standard-BM25 multi-dense control completes, change only the sparse
+   scorer to BM25+ and rerun the same pipeline and WRRF protocol. Keep model
+   pair, split, chunking, depths, reranker, LightGBM training procedure, and
+   output policies fixed so the BM25-to-BM25+ effect remains attributable.
+
+Two later inexpensive treatments are allowed after the fixed-weight control:
+query-adaptive sparse/dense weights from deterministic query features, and
+deterministic reference-edge candidate expansion evaluated first for recall.
+Both require independently disableable ablations and query-fold-safe parameter
+selection. Do not expand into an unconstrained model/weight search.
+
+### Deferred participant-inspired methods
+
+The current phase may reuse participant lessons about complementary candidate
+generation, small predefined fusion grids, near-positive-aware hard-negative
+sampling, and variable-size final selection. These ideas must remain separate
+treatments and may not be bundled into the dense-screening baseline.
+
+The following methods are explicitly deferred until the dense screen,
+complementarity analysis, one multi-dense confirmation, and the controlled
+structure/reference study are complete:
+
+- large-LLM final judges, including Qwen 32B/72B entailment filtering,
+  KEEP/DROP classification, pairwise or collective chain-of-thought scoring,
+  and multi-round voting or debate;
+- a full EDM-style stack combining 500-to-100-to-10 progressive filtering,
+  HyDE, generated titles, reference signals, LambdaMART, LightGBM, and LLM
+  features;
+- HyDE or other generated query-document representations;
+- LLM-generated corpus titles or summaries;
+- external title/hierarchy reconstruction that requires crawling and uncertain
+  `law_id`/`aid` alignment;
+- Milvus or another vector database while exact cosine search remains feasible;
+- dense-retriever fine-tuning across the screening registry;
+- additional reranker families or checkpoint searches before the selected
+  epoch-3 control has been evaluated with the chosen multi-dense treatment;
+- a new multi-budget dual-level chunking search beyond the existing generic
+  and Khoản–Điểm controls; and
+- LLM query rewriting or reasoning extensions that were not part of the
+  corresponding team's official competition pipeline.
+
+These are deferred rather than rejected. Reopen one only with a new, explicit
+research question, a reproducible resource budget, and a comparison that keeps
+the other pipeline stages fixed. In particular, deterministic title/hierarchy
+enrichment may follow the frozen baseline-v2 comparison when its mapping can be
+audited; near-positive-aware hard-negative training may be tested later as one
+reranker-supervision ablation; and reference expansion should first demonstrate
+candidate-recall value before incurring reranking and final-selection costs.
 
 ## Structure and references
 
