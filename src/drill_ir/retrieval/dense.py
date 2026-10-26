@@ -338,6 +338,7 @@ class DenseRetriever:
         rocchio_gamma: float = 0.0,
         rocchio_negative_documents: int = 0,
         rocchio_candidate_depth: int = 20,
+        require_cache_hit: bool = False,
     ) -> None:
         if rocchio_feedback_documents <= 0 or rocchio_candidate_depth <= 0:
             raise ValueError("Rocchio feedback documents and candidate depth must be positive")
@@ -367,6 +368,9 @@ class DenseRetriever:
         self.rocchio_gamma = rocchio_gamma
         self.rocchio_negative_documents = rocchio_negative_documents
         self.rocchio_candidate_depth = rocchio_candidate_depth
+        self.require_cache_hit = require_cache_hit
+        if self.require_cache_hit and self.cache is None:
+            raise ValueError("require_cache_hit requires an enabled dense cache")
         self._last_feedback: list[dict[str, object]] = []
         self._cached_query_key: tuple[tuple[int, str], ...] | None = None
         self._cached_query_embeddings: np.ndarray | None = None
@@ -411,6 +415,8 @@ class DenseRetriever:
                 flush=True,
             )
         if embeddings is None:
+            if self.require_cache_hit:
+                raise RuntimeError("Required dense embedding cache is missing or invalid")
             print("[dense] Encoding corpus representations", flush=True)
             embeddings = self.encoder.encode_documents([chunk.text for chunk in self._chunks])
             if embeddings.ndim != 2 or embeddings.shape[0] != len(self._chunks):
@@ -434,6 +440,7 @@ class DenseRetriever:
             "corpus_fingerprint": self.corpus_fingerprint,
             "embedding_shape": shape,
             "embedding_cache_hit": self.cache_hit,
+            "embedding_cache_required": self.require_cache_hit,
             "search_backend": "exact",
             "search_metric": self.search.metric,
             "encoder_device": device,

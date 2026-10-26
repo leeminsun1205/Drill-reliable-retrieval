@@ -1,7 +1,7 @@
 """First-stage retrieval and rank fusion."""
 
 from .base import Retriever
-from .bm25 import BM25Retriever, tokenize
+from .bm25 import BM25IndexCache, BM25Retriever, tokenize
 from .dense import (
     ChunkRetrievalResult,
     DenseRetriever,
@@ -17,6 +17,7 @@ from .fusion import MultiDenseWeightedRRFRetriever, WeightedRRFRetriever
 __all__ = [
     "ChunkRetrievalResult",
     "BM25Retriever",
+    "BM25IndexCache",
     "DenseRetriever",
     "EmbeddingCache",
     "ExactVectorSearch",

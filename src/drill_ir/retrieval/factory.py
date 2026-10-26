@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import Retriever
-from .bm25 import BM25Retriever
+from .bm25 import BM25IndexCache, BM25Retriever
 from .dense import (
     DenseRetriever,
     EmbeddingCache,
@@ -120,6 +120,9 @@ def build_retriever(
         )
     if method == "bm25":
         params = retrieval_config.get("bm25", {})
+        cache_config = params.get("cache", {})
+        if not isinstance(cache_config, dict):
+            raise ValueError("retrieval.bm25.cache must be a YAML mapping")
         feedback = params.get("feedback", {})
         if not isinstance(feedback, dict):
             raise ValueError("retrieval.bm25.feedback must be a YAML mapping")
@@ -150,6 +153,12 @@ def build_retriever(
                 feedback.get("original_query_weight", 0.7)
             ),
             rm3_dirichlet_mu=float(feedback.get("dirichlet_mu", 1000.0)),
+            cache=(
+                BM25IndexCache(Path(str(cache_config.get("directory", "indexes/bm25"))))
+                if bool(cache_config.get("enabled", False))
+                else None
+            ),
+            require_cache_hit=bool(cache_config.get("require_hit", False)),
         )
     if method != "dense":
         raise ValueError(f"No retriever factory registered for method={method!r}")
@@ -285,4 +294,5 @@ def build_retriever(
             feedback_config.get("negative_documents", 0)
         ),
         rocchio_candidate_depth=int(feedback_config.get("candidate_depth", 20)),
+        require_cache_hit=bool(cache_config.get("require_hit", False)),
     )

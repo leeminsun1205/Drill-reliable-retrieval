@@ -90,6 +90,19 @@ class DenseRetrieverTest(unittest.TestCase):
             second.fit(self.articles)
             self.assertEqual(second_encoder.document_calls, 0)
 
+    def test_required_cache_rejects_miss_without_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            encoder = FakeEncoder(self.vectors)
+            retriever = DenseRetriever(
+                encoder=encoder,
+                search=ExactVectorSearch(),
+                cache=EmbeddingCache(Path(directory)),
+                require_cache_hit=True,
+            )
+            with self.assertRaisesRegex(RuntimeError, "Required dense"):
+                retriever.fit(self.articles)
+            self.assertEqual(encoder.document_calls, 0)
+
     def test_rejects_zero_vector_for_cosine_search(self) -> None:
         with self.assertRaises(ValueError):
             ExactVectorSearch(metric="cosine").search(

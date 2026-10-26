@@ -1,8 +1,10 @@
 import unittest
 import math
+import tempfile
+from pathlib import Path
 
 from drill_ir.data import Article, Query
-from drill_ir.retrieval import BM25Retriever, tokenize
+from drill_ir.retrieval import BM25IndexCache, BM25Retriever, tokenize
 from drill_ir.preprocessing import build_token_processor
 
 
@@ -51,6 +53,33 @@ class BM25Test(unittest.TestCase):
         metadata = retriever.run_metadata()
         self.assertEqual(metadata["variant"], "bm25_plus")
         self.assertEqual(metadata["delta"], 0.5)
+
+    def test_valid_index_cache_restores_identical_results(self) -> None:
+        articles = [
+            Article(10, "law-a", "alpha alpha beta"),
+            Article(20, "law-b", "beta gamma"),
+        ]
+        query = Query(1, "alpha", ())
+        with tempfile.TemporaryDirectory() as directory:
+            cache = BM25IndexCache(Path(directory))
+            first = BM25Retriever(cache=cache)
+            first.fit(articles)
+            expected = first.retrieve([query], top_k=2)
+            self.assertFalse(first.cache_hit)
+
+            second = BM25Retriever(cache=cache, require_cache_hit=True)
+            second.fit(articles)
+            self.assertTrue(second.cache_hit)
+            self.assertEqual(second.retrieve([query], top_k=2), expected)
+            self.assertIsNotNone(second.run_metadata()["cache"]["directory"])
+
+    def test_required_index_cache_rejects_miss(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            retriever = BM25Retriever(
+                cache=BM25IndexCache(Path(directory)), require_cache_hit=True
+            )
+            with self.assertRaisesRegex(RuntimeError, "Required BM25"):
+                retriever.fit([Article(10, "law", "alpha")])
 
     def test_rejects_unknown_bm25_variant_and_negative_delta(self) -> None:
         with self.assertRaisesRegex(ValueError, "variant"):

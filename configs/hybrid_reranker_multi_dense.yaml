@@ -34,6 +34,10 @@ retrieval:
     min_document_frequency: 1
     max_document_frequency: null
     max_document_frequency_ratio: 1.0
+    cache:
+      enabled: true
+      require_hit: false
+      directory: indexes/bm25_vncorenlp
     feedback:
       enabled: false
       method: rm3
@@ -89,6 +93,7 @@ retrieval:
       query_batch_size: 64
     cache:
       enabled: true
+      require_hit: false
       directory: embeddings/shared_default
   dense_profiles:
     bge_m3:

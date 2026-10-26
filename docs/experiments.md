@@ -31,6 +31,20 @@ their dense rank contributions before direct-chunk reranking. Non-identical
 chunks remain distinct evidence. Omitting `dense_components` preserves the
 original one-sparse/one-dense behavior and artifact schema.
 
+Retrieval cache preparation is a separate, non-evaluating stage. Run
+`scripts/prepare_retrieval_cache.py` once per component so each dense model exits
+before the next is loaded. Supported component names are `sparse`, `dense` for
+a single-dense config, or names under `retrieval.hybrid.dense_components`.
+Dense caches retain the validated embedding matrix and ordered `aid` mapping.
+Sparse caches store the fitted BM25 index as JSON metadata/terms plus NumPy
+integer arrays; pickle is not used. Both cache types validate a deterministic
+corpus fingerprint and a configuration key before reuse.
+
+Set `cache.require_hit: true` in evaluation and inference configs after cache
+preparation. A missing or incompatible cache then fails immediately instead of
+silently rebuilding inside a long experiment. Cache preparation produces no
+metric and is not itself an experiment result.
+
 Example selection after independent screening:
 
 ```yaml
@@ -82,6 +96,23 @@ model card on 2026-10-09 as a SentenceTransformer with 512-token maximum,
 not a result of this repository. The controlled config freezes BGE-M3
 Khoản–Điểm 448/64 chunk boundaries for both dense encoders so this treatment
 changes embeddings rather than segmentation.
+
+On 2026-10-26, the project owner reported an isolated Kaggle T4 smoke test over
+the same first 128 articles, which produced 505 Khoản–Điểm representations for
+each encoder. BGE-M3 completed in 85.27 seconds on one GPU and 54.79 seconds on
+two GPUs; VietLegal-E5 completed in 75.82 seconds on one GPU and 54.45 seconds
+on two GPUs. Every output had shape `[505, 1024]`. These are measured diagnostic
+timings, not retrieval-quality results. They show that both checkpoints and the
+SentenceTransformers two-GPU path work at small scale; they do not rule out a
+large-input queue/memory problem or interference when the two encoders run
+sequentially in one process. A matched sequential two-GPU test also completed:
+BGE-M3 took 53.28 seconds, VietLegal-E5 then took 42.10 seconds, and the total
+was 96.63 seconds. Parent-process peak RSS rose from 5.20 GiB after BGE-M3 to
+7.95 GiB after VietLegal-E5; this measurement excludes the worker processes.
+Python's resource tracker reported four leaked semaphore objects at process
+shutdown. The warning is diagnostic evidence of incompletely reclaimed
+multiprocessing resources, not proof that it caused the full-corpus timeout.
+Larger samples and total process-tree memory measurement remain pending.
 
 The dense baseline is decomposed into encoder, cache, and search components in
 `configs/dense.yaml`. It uses `intfloat/multilingual-e5-base`, explicit E5 query

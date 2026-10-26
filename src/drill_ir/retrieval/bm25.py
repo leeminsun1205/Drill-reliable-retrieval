@@ -1,12 +1,145 @@
 """Dependency-light BM25 using a deterministic Unicode tokenization baseline."""
 
 from collections import Counter, defaultdict
+import hashlib
 import heapq
+import json
 import math
+from pathlib import Path
 from typing import Sequence
+
+import numpy as np
 
 from drill_ir.data.models import Article, Query, RetrievalResult
 from drill_ir.preprocessing import TokenProcessor, build_token_processor
+
+
+class BM25IndexCache:
+    """Validated, non-pickle on-disk cache for a fitted BM25 index."""
+
+    VERSION = 1
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+
+    def _directory(self, corpus_fingerprint: str, index_key: str) -> Path:
+        digest = hashlib.sha256(
+            f"{corpus_fingerprint}\0{index_key}".encode()
+        ).hexdigest()[:20]
+        return self.root / digest
+
+    def load(self, *, corpus_fingerprint: str, index_key: str) -> dict[str, object] | None:
+        directory = self._directory(corpus_fingerprint, index_key)
+        required = {
+            "metadata": directory / "metadata.json",
+            "terms": directory / "terms.json",
+            "aids": directory / "aids.npy",
+            "doc_lengths": directory / "doc_lengths.npy",
+            "offsets": directory / "postings_offsets.npy",
+            "positions": directory / "postings_positions.npy",
+            "frequencies": directory / "postings_frequencies.npy",
+        }
+        if not all(path.is_file() for path in required.values()):
+            return None
+        metadata = json.loads(required["metadata"].read_text(encoding="utf-8"))
+        if (
+            metadata.get("version") != self.VERSION
+            or metadata.get("corpus_fingerprint") != corpus_fingerprint
+            or metadata.get("index_key") != index_key
+        ):
+            return None
+        terms = json.loads(required["terms"].read_text(encoding="utf-8"))
+        aids = np.load(required["aids"], allow_pickle=False)
+        doc_lengths = np.load(required["doc_lengths"], allow_pickle=False)
+        offsets = np.load(required["offsets"], allow_pickle=False)
+        positions = np.load(required["positions"], allow_pickle=False)
+        frequencies = np.load(required["frequencies"], allow_pickle=False)
+        if (
+            not isinstance(terms, list)
+            or len(offsets) != len(terms) + 1
+            or len(positions) != len(frequencies)
+            or int(offsets[-1]) != len(positions)
+            or len(aids) != len(doc_lengths)
+        ):
+            raise ValueError(f"Invalid BM25 cache: {directory}")
+        postings = {
+            str(term): list(
+                zip(
+                    positions[int(offsets[index]) : int(offsets[index + 1])].astype(int).tolist(),
+                    frequencies[int(offsets[index]) : int(offsets[index + 1])].astype(int).tolist(),
+                )
+            )
+            for index, term in enumerate(terms)
+        }
+        return {
+            "aids": aids.astype(int).tolist(),
+            "doc_lengths": doc_lengths.astype(int).tolist(),
+            "postings": postings,
+            "avgdl": float(metadata["avgdl"]),
+            "vocabulary_stats": metadata["vocabulary_stats"],
+            "directory": directory,
+        }
+
+    def save(
+        self,
+        *,
+        corpus_fingerprint: str,
+        index_key: str,
+        aids: Sequence[int],
+        doc_lengths: Sequence[int],
+        postings: dict[str, list[tuple[int, int]]],
+        avgdl: float,
+        vocabulary_stats: dict[str, int | float | None],
+    ) -> Path:
+        directory = self._directory(corpus_fingerprint, index_key)
+        directory.mkdir(parents=True, exist_ok=True)
+        terms = sorted(postings)
+        offsets = [0]
+        positions: list[int] = []
+        frequencies: list[int] = []
+        for term in terms:
+            for position, frequency in postings[term]:
+                positions.append(position)
+                frequencies.append(frequency)
+            offsets.append(len(positions))
+        np.save(directory / "aids.npy", np.asarray(aids, dtype=np.int64), allow_pickle=False)
+        np.save(
+            directory / "doc_lengths.npy",
+            np.asarray(doc_lengths, dtype=np.int64),
+            allow_pickle=False,
+        )
+        np.save(
+            directory / "postings_offsets.npy",
+            np.asarray(offsets, dtype=np.int64),
+            allow_pickle=False,
+        )
+        np.save(
+            directory / "postings_positions.npy",
+            np.asarray(positions, dtype=np.int64),
+            allow_pickle=False,
+        )
+        np.save(
+            directory / "postings_frequencies.npy",
+            np.asarray(frequencies, dtype=np.int64),
+            allow_pickle=False,
+        )
+        (directory / "terms.json").write_text(
+            json.dumps(terms, ensure_ascii=False), encoding="utf-8"
+        )
+        metadata = {
+            "version": self.VERSION,
+            "corpus_fingerprint": corpus_fingerprint,
+            "index_key": index_key,
+            "avgdl": avgdl,
+            "vocabulary_stats": vocabulary_stats,
+            "documents": len(aids),
+            "terms": len(terms),
+            "postings": len(positions),
+        }
+        (directory / "metadata.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return directory
 
 def tokenize(text: str) -> list[str]:
     """Backward-compatible default tokenizer used by the original baseline."""
@@ -30,6 +163,8 @@ class BM25Retriever:
         rm3_feedback_terms: int = 10,
         rm3_original_query_weight: float = 0.7,
         rm3_dirichlet_mu: float = 1000.0,
+        cache: BM25IndexCache | None = None,
+        require_cache_hit: bool = False,
     ) -> None:
         if k1 <= 0 or not 0 <= b <= 1:
             raise ValueError("BM25 requires k1 > 0 and 0 <= b <= 1")
@@ -62,6 +197,13 @@ class BM25Retriever:
         self.rm3_feedback_terms = rm3_feedback_terms
         self.rm3_original_query_weight = rm3_original_query_weight
         self.rm3_dirichlet_mu = rm3_dirichlet_mu
+        self.cache = cache
+        self.require_cache_hit = require_cache_hit
+        if self.require_cache_hit and self.cache is None:
+            raise ValueError("require_cache_hit requires an enabled BM25 cache")
+        self.cache_hit = False
+        self.cache_directory: str | None = None
+        self.corpus_fingerprint: str | None = None
         self._aids: list[int] = []
         self._doc_lengths: list[int] = []
         self._postings: dict[str, list[tuple[int, int]]] = {}
@@ -72,7 +214,80 @@ class BM25Retriever:
         self._collection_probabilities: dict[str, float] = {}
         self._last_feedback: list[dict[str, object]] = []
 
+    @staticmethod
+    def _corpus_fingerprint(articles: Sequence[Article]) -> str:
+        digest = hashlib.sha256()
+        for article in articles:
+            digest.update(str(article.aid).encode())
+            digest.update(b"\0")
+            digest.update(article.law_id.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(article.text.encode("utf-8"))
+            digest.update(b"\0")
+        return digest.hexdigest()
+
+    @property
+    def cache_key(self) -> str:
+        metadata = getattr(self.text_processor, "metadata", None)
+        payload = {
+            "preprocessing": metadata() if callable(metadata) else None,
+            "min_document_frequency": self.min_document_frequency,
+            "max_document_frequency": self.max_document_frequency,
+            "max_document_frequency_ratio": self.max_document_frequency_ratio,
+            "rm3_enabled": self.rm3_enabled,
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+    def _restore_cache(self, payload: dict[str, object]) -> None:
+        self._aids = list(payload["aids"])  # type: ignore[arg-type]
+        self._doc_lengths = list(payload["doc_lengths"])  # type: ignore[arg-type]
+        self._postings = dict(payload["postings"])  # type: ignore[arg-type]
+        self._avgdl = float(payload["avgdl"])
+        self._vocabulary_stats = dict(payload["vocabulary_stats"])  # type: ignore[arg-type]
+        document_count = len(self._aids)
+        self._idf = {
+            term: math.log(1.0 + (document_count - len(items) + 0.5) / (len(items) + 0.5))
+            for term, items in self._postings.items()
+        }
+        self._prepare_rm3_statistics(document_count)
+
+    def _prepare_rm3_statistics(self, document_count: int) -> None:
+        self._doc_term_counts = []
+        self._collection_probabilities = {}
+        if not self.rm3_enabled:
+            return
+        self._doc_term_counts = [Counter() for _ in range(document_count)]
+        collection_frequency: Counter[str] = Counter()
+        for term, items in self._postings.items():
+            for position, frequency in items:
+                self._doc_term_counts[position][term] = frequency
+                collection_frequency[term] += frequency
+        collection_length = sum(collection_frequency.values())
+        self._collection_probabilities = {
+            term: frequency / collection_length
+            for term, frequency in collection_frequency.items()
+        }
+
     def fit(self, articles: Sequence[Article]) -> None:
+        if not articles:
+            raise ValueError("Cannot fit BM25 on an empty corpus")
+        self.corpus_fingerprint = self._corpus_fingerprint(articles)
+        self.cache_hit = False
+        self.cache_directory = None
+        if self.cache is not None:
+            cached = self.cache.load(
+                corpus_fingerprint=self.corpus_fingerprint,
+                index_key=self.cache_key,
+            )
+            if cached is not None:
+                self._restore_cache(cached)
+                self.cache_hit = True
+                self.cache_directory = str(cached["directory"])
+                print("[bm25] Index cache hit", flush=True)
+                return
+            print("[bm25] Index cache miss", flush=True)
+            if self.require_cache_hit:
+                raise RuntimeError("Required BM25 index cache is missing or invalid")
         postings: defaultdict[str, list[tuple[int, int]]] = defaultdict(list)
         self._aids = []
         self._doc_lengths = []
@@ -84,8 +299,6 @@ class BM25Retriever:
                 postings[term].append((position, frequency))
 
         document_count = len(self._aids)
-        if not document_count:
-            raise ValueError("Cannot fit BM25 on an empty corpus")
         maximum_df = int(document_count * self.max_document_frequency_ratio)
         if self.max_document_frequency is not None:
             maximum_df = min(maximum_df, self.max_document_frequency)
@@ -105,20 +318,7 @@ class BM25Retriever:
             term: math.log(1.0 + (document_count - len(items) + 0.5) / (len(items) + 0.5))
             for term, items in self._postings.items()
         }
-        self._doc_term_counts = []
-        self._collection_probabilities = {}
-        if self.rm3_enabled:
-            self._doc_term_counts = [Counter() for _ in range(document_count)]
-            collection_frequency: Counter[str] = Counter()
-            for term, items in retained.items():
-                for position, frequency in items:
-                    self._doc_term_counts[position][term] = frequency
-                    collection_frequency[term] += frequency
-            collection_length = sum(collection_frequency.values())
-            self._collection_probabilities = {
-                term: frequency / collection_length
-                for term, frequency in collection_frequency.items()
-            }
+        self._prepare_rm3_statistics(document_count)
         self._vocabulary_stats = {
             "original_terms": len(postings),
             "retained_terms": len(retained),
@@ -128,6 +328,18 @@ class BM25Retriever:
             "max_document_frequency_ratio": self.max_document_frequency_ratio,
             "effective_max_document_frequency": maximum_df,
         }
+        if self.cache is not None:
+            directory = self.cache.save(
+                corpus_fingerprint=self.corpus_fingerprint,
+                index_key=self.cache_key,
+                aids=self._aids,
+                doc_lengths=self._doc_lengths,
+                postings=self._postings,
+                avgdl=self._avgdl,
+                vocabulary_stats=self._vocabulary_stats,
+            )
+            self.cache_directory = str(directory)
+            print("[bm25] Saved index cache", flush=True)
 
     def _score(self, term_weights: dict[str, float], top_k: int) -> list[tuple[int, float]]:
         scores: defaultdict[int, float] = defaultdict(float)
@@ -269,5 +481,12 @@ class BM25Retriever:
                 "feedback_terms": self.rm3_feedback_terms,
                 "original_query_weight": self.rm3_original_query_weight,
                 "dirichlet_mu": self.rm3_dirichlet_mu,
+            },
+            "cache": {
+                "enabled": self.cache is not None,
+                "hit": self.cache_hit,
+                "required": self.require_cache_hit,
+                "directory": self.cache_directory,
+                "corpus_fingerprint": self.corpus_fingerprint,
             },
         }

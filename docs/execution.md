@@ -59,6 +59,50 @@ Dense experiments require the optional model stack:
   --output-root /kaggle/working/results
 ```
 
+## Retrieval cache preparation
+
+Build expensive retrieval state independently from evaluation. Each invocation
+prepares exactly one component and exits, ensuring that multi-GPU workers and
+model memory are released before the next dense encoder starts. For the current
+multi-dense config, use three separate commands:
+
+```python
+!python scripts/prepare_retrieval_cache.py \
+  --config configs/hybrid_reranker_multi_dense.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --component sparse \
+  --set retrieval.bm25.preprocessing.tokenizer.word_segmenter=vncorenlp \
+  --set retrieval.bm25.preprocessing.tokenizer.vncorenlp_jar_path=/kaggle/working/VnCoreNLP/VnCoreNLP-1.2.jar \
+  --set retrieval.bm25.cache.directory=/kaggle/working/retrieval-cache/bm25
+
+!python scripts/prepare_retrieval_cache.py \
+  --config configs/hybrid_reranker_multi_dense.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --component bge_m3 --devices 2 \
+  --set retrieval.dense_profiles.bge_m3.cache.directory=/kaggle/working/retrieval-cache/bge_m3
+
+!python scripts/prepare_retrieval_cache.py \
+  --config configs/hybrid_reranker_multi_dense.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --component challenger --devices 2 \
+  --set retrieval.dense_profiles.challenger.cache.directory=/kaggle/working/retrieval-cache/vietlegal_e5
+```
+
+The sparse cache depends on the exact preprocessing configuration, including
+the configured VnCoreNLP path. Dense caches depend on model/revision, document
+prefix, chunking, normalization, ordered `aid` mapping, and corpus content.
+After saving `/kaggle/working/retrieval-cache` as a Kaggle output or dataset,
+point the corresponding cache directories at that attached input and enable
+`require_hit: true`. Do not copy or commit generated caches to Git.
+
+For parallel Kaggle preparation, use
+`notebooks/kaggle_build_retrieval_cache.ipynb`. Clone it into separate Kaggle
+notebooks and change only `CACHE_TARGET`: `0` builds VnCoreNLP BM25 and `1`–`7`
+select the fixed seven-model dense screening registry. Every notebook builds
+one component, then reruns the loader with `--require-existing`; the version is
+successful only if the just-written cache passes full validation and reports a
+cache hit.
+
 For user-facing Kaggle notebooks, use the repository scripts consistently. Run
 the exact-token audit before selecting a chunk budget:
 
