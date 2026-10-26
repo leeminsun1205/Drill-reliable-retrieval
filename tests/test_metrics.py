@@ -3,7 +3,10 @@ import unittest
 from drill_ir.evaluation import (
     evaluate_fixed_cutoffs,
     evaluate_predictions,
+    evaluate_oracle_prefix,
     macro_recall_at_k,
+    select_by_score_gap,
+    tune_score_gap,
     tune_score_thresholds,
 )
 
@@ -43,6 +46,31 @@ class DrillMetricsTest(unittest.TestCase):
         self.assertEqual(best["precision"], 1.0)
         self.assertEqual(best["recall"], 1.0)
         self.assertEqual(best["output_size"]["mean"], 1.5)
+
+    def test_score_gap_selects_query_specific_prefix_and_fallback(self) -> None:
+        rankings = {
+            1: ([10, 20, 30], [0.9, 0.8, 0.2]),
+            2: ([40, 50, 60], [0.9, 0.85, 0.8]),
+        }
+        selected = select_by_score_gap(
+            rankings, minimum_gap=0.2, fallback_k=1, maximum_k=3
+        )
+        self.assertEqual(selected, {1: [10, 20], 2: [40]})
+
+        tuned = tune_score_gap(
+            {1: [10, 20], 2: [40]}, rankings,
+            fallback_cutoffs=[1], maximum_cutoffs=[3],
+        )
+        self.assertEqual(tuned["best"]["f2"], 1.0)
+
+    def test_oracle_prefix_is_labeled_and_uses_best_per_query_cutoff(self) -> None:
+        result = evaluate_oracle_prefix(
+            {1: [10, 20], 2: [40]},
+            {1: ([10, 20, 30], [3, 2, 1]), 2: ([40, 50], [2, 1])},
+            maximum_k=3,
+        )
+        self.assertEqual(result["label"], "oracle_upper_bound_not_deployable")
+        self.assertEqual(result["f2"], 1.0)
 
     def test_macro_precision_recall_then_f2(self) -> None:
         metrics = evaluate_predictions(

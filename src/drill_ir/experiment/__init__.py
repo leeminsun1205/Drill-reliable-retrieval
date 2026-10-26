@@ -3,13 +3,18 @@
 from .config import apply_config_overrides, load_config, set_config_value
 from .inference import run_submission_inference
 from .run import deterministic_split, run_experiment
-from .submission import package_submission, package_threshold_submission
+from .submission import (
+    package_score_gap_submission,
+    package_submission,
+    package_threshold_submission,
+)
 
 __all__ = [
     "apply_config_overrides",
     "deterministic_split",
     "load_config",
     "package_submission",
+    "package_score_gap_submission",
     "package_threshold_submission",
     "run_experiment",
     "run_submission_inference",

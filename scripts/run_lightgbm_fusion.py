@@ -18,7 +18,11 @@ from drill_ir.analysis import (
     fit_lightgbm_and_rank,
 )
 from drill_ir.data import load_queries
-from drill_ir.experiment import package_submission, package_threshold_submission
+from drill_ir.experiment import (
+    package_score_gap_submission,
+    package_submission,
+    package_threshold_submission,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -46,6 +50,12 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--adaptive-selection",
+        choices=("disabled", "score_gap"),
+        default="disabled",
+        help="Optionally package a score-gap submission in addition to unchanged baselines",
+    )
     args = parser.parse_args()
 
     dev_qids_path = args.dev_run_dir / "split_dev_qids.json"
@@ -57,7 +67,13 @@ def main() -> None:
     output = args.output_dir
     output.mkdir(parents=True, exist_ok=True)
     dev_examples = build_ltr_examples(args.dev_run_dir, dev_queries)
-    oof = evaluate_oof_lightgbm(dev_examples, dev_queries, folds=args.folds, seed=args.seed)
+    oof = evaluate_oof_lightgbm(
+        dev_examples,
+        dev_queries,
+        folds=args.folds,
+        seed=args.seed,
+        include_score_gap=args.adaptive_selection == "score_gap",
+    )
     oof_rankings = oof.pop("rankings")
     (output / "oof_metrics.json").write_text(
         json.dumps(oof, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -68,6 +84,11 @@ def main() -> None:
     threshold = selected["threshold"]
     if threshold is None:
         raise ValueError("OOF tuning selected fallback-only output; no threshold to transfer")
+    score_gap_policy = (
+        oof["score_gap"]["pooled_oof_tuning_for_deployment"]["best"]
+        if args.adaptive_selection == "score_gap"
+        else None
+    )
 
     test_sets = {
         "public": (args.public_test, "public_"),
@@ -94,6 +115,16 @@ def main() -> None:
             score_threshold=float(threshold),
             fallback_k=2,
         )
+        if args.adaptive_selection == "score_gap":
+            assert score_gap_policy is not None
+            package_score_gap_submission(
+                predictions,
+                expected,
+                output / f"{name}_lightgbm_score_gap_results.zip",
+                minimum_gap=float(score_gap_policy["minimum_gap"]),
+                fallback_k=int(score_gap_policy["fallback_k"]),
+                maximum_k=int(score_gap_policy["maximum_k"]),
+            )
         summaries[name] = {"queries": len(queries), "candidate_rows": len(examples["labels"])}
 
     assert fitted_model is not None
@@ -118,6 +149,13 @@ def main() -> None:
         },
         "test_sets": summaries,
         "selected_oof_policy": selected,
+        "adaptive_selection": {
+            "mode": args.adaptive_selection,
+            "selected_oof_policy": (
+                score_gap_policy if args.adaptive_selection == "score_gap" else None
+            ),
+            "baseline_outputs_preserved": True,
+        },
         "input_sha256": inputs,
         "note": "The pooled OOF threshold is a development-selected diagnostic.",
     }

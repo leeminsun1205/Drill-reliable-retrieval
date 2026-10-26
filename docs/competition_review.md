@@ -304,6 +304,15 @@ training. Engineers and CUDO add hybrid candidates and threshold selection.
 FPT IS changes representation through hierarchy-aware chunking and adds an LLM
 judge. EDM modifies all five decisions and learns the final selection boundary.
 
+The repository's score-gap ablation is a deliberately smaller adaptation of
+this shared design pattern, not an EDM reproduction. It borrows the general
+lesson that final cardinality should vary by query; its concrete largest-gap
+rule is closer to the score-clustering heuristic reported by FPT IS. It does
+not reproduce EDM's progressive 500-to-100-to-10 stack, HyDE/reference/title
+representations, LambdaMART plus LightGBM stages, LLM-derived scores, or
+unpublished threshold details. This distinction must remain explicit when the
+ablation is reported.
+
 ### Why candidate recall and final F2 differ
 
 A deep candidate list can have excellent Recall@100 or Recall@500 but extremely

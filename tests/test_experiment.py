@@ -15,6 +15,7 @@ from drill_ir.experiment import (
     apply_config_overrides,
     deterministic_split,
     load_config,
+    package_score_gap_submission,
     package_submission,
     package_threshold_submission,
     run_submission_inference,
@@ -203,6 +204,31 @@ class ExperimentTest(unittest.TestCase):
                     {"qid": 1, "relevant_laws": [10, 20]},
                     {"qid": 2, "relevant_laws": [40, 50]},
                     {"qid": 3, "relevant_laws": [70]},
+                ],
+            )
+
+    def test_score_gap_submission_uses_adaptive_prefixes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            predictions = root / "predictions.jsonl"
+            rows = [
+                {"qid": 1, "retrieved_aids": [10, 20, 30], "scores": [0.9, 0.8, 0.1]},
+                {"qid": 2, "retrieved_aids": [40, 50, 60], "scores": [0.9, 0.85, 0.8]},
+            ]
+            predictions.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            destination = package_score_gap_submission(
+                predictions, {1, 2}, root / "gap_results.zip",
+                minimum_gap=0.2, fallback_k=1, maximum_k=3,
+            )
+            with ZipFile(destination) as archive:
+                payload = json.loads(archive.read("results.json"))
+            self.assertEqual(
+                payload,
+                [
+                    {"qid": 1, "relevant_laws": [10, 20]},
+                    {"qid": 2, "relevant_laws": [40]},
                 ],
             )
 

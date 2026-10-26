@@ -719,6 +719,15 @@ at `/kaggle/input/models/lmnhnht125/drill-reranker-bce-epoch3/pytorch/default/1/
 and the prior metrics archive under
 `/kaggle/input/datasets/lmnhnht125/drill-epoch3-4-experiment-artifacts`.
 
+The notebook variable `ADAPTIVE_SELECTION` controls the new final-set ablation.
+Use `"score_gap"` to additionally package
+`public_lightgbm_score_gap_results.zip` and
+`private_lightgbm_score_gap_results.zip`; use `"disabled"` to reproduce only
+the original fixed-top-2 and global-threshold outputs. Both modes retain those
+original outputs. The score-gap parameters come from pooled OOF development
+tuning, while `oof_metrics.json` separately records its nested-OOF selector
+estimate and a clearly labeled, non-deployable oracle-prefix diagnostic.
+
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired
 training script and rerun the training cell in the same Kaggle session. Do not

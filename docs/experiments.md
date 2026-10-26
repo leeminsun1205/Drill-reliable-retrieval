@@ -335,6 +335,24 @@ the reranker ranking, unchanged first-stage ranking, sparse/dense component
 rankings, and fused chunk candidates for every test split so training and test
 feature schemas remain identical.
 
+An optional final-set ablation is available through
+`--adaptive-selection score_gap`. For each query it examines score drops after
+ranks 1 through `maximum_k - 1`, returns the prefix ending at the largest drop
+when that drop exceeds a tuned minimum, and otherwise uses a fixed fallback
+prefix. The tuner searches exact observed gap values plus the fixed-fallback
+case and records `minimum_gap`, `fallback_k`, and `maximum_k`. This policy does
+not change ranking, retrieval, reranking, or the two baseline ZIPs. Omitting the
+flag (the default `disabled`) exactly preserves the original top-2 and global-
+threshold handoff.
+
+Report three score-gap views separately: pooled OOF tuning supplies the frozen
+deployment parameters; nested OOF evaluation estimates transfer by generating
+inner-OOF scores and tuning only within each outer-training fold; and the
+per-query best prefix through rank 5 is labeled a non-deployable oracle upper
+bound. The oracle is only a headroom diagnostic. No score-gap effectiveness
+result has yet been measured, so it must not be described as an improvement
+until the aligned experiment completes.
+
 ### Epoch-3 LightGBM fusion result
 
 The project owner reported the completed five-fold query-grouped OOF run on

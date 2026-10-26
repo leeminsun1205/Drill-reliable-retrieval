@@ -5,6 +5,8 @@ import math
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from drill_ir.evaluation import select_by_score_gap
+
 
 def _write_submission(records: list[dict[str, object]], destination: str | Path) -> Path:
     destination = Path(destination)
@@ -86,4 +88,38 @@ def package_threshold_submission(
             records.append({"qid": qid, "relevant_laws": selected})
 
     _validate_qids(seen, expected_qids)
+    return _write_submission(records, destination)
+
+
+def package_score_gap_submission(
+    predictions_path: str | Path,
+    expected_qids: set[int],
+    destination: str | Path,
+    *,
+    minimum_gap: float,
+    fallback_k: int,
+    maximum_k: int,
+) -> Path:
+    """Package query-adaptive prefixes selected by the strongest early gap."""
+    rankings: dict[int, tuple[list[int], list[float]]] = {}
+    with Path(predictions_path).open(encoding="utf-8") as stream:
+        for line in stream:
+            row = json.loads(line)
+            qid = int(row["qid"])
+            if qid in rankings:
+                raise ValueError(f"Duplicate qid in predictions: {qid}")
+            rankings[qid] = (
+                list(map(int, row["retrieved_aids"])),
+                list(map(float, row["scores"])),
+            )
+    _validate_qids(set(rankings), expected_qids)
+    selected = select_by_score_gap(
+        rankings,
+        minimum_gap=minimum_gap,
+        fallback_k=fallback_k,
+        maximum_k=maximum_k,
+    )
+    records = [
+        {"qid": qid, "relevant_laws": selected[qid]} for qid in sorted(selected)
+    ]
     return _write_submission(records, destination)

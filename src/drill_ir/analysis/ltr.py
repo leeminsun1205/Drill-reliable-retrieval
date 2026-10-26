@@ -11,7 +11,14 @@ from typing import Any, Sequence
 import numpy as np
 
 from drill_ir.data import Query
-from drill_ir.evaluation import evaluate_fixed_cutoffs, tune_score_thresholds
+from drill_ir.evaluation import (
+    evaluate_fixed_cutoffs,
+    evaluate_oracle_prefix,
+    evaluate_predictions,
+    select_by_score_gap,
+    tune_score_gap,
+    tune_score_thresholds,
+)
 
 
 FEATURE_NAMES = (
@@ -210,6 +217,7 @@ def evaluate_oof_lightgbm(
     *,
     folds: int = 5,
     seed: int = 42,
+    include_score_gap: bool = False,
 ) -> dict[str, Any]:
     """Produce query-grouped out-of-fold pointwise LightGBM predictions."""
     if folds < 2:
@@ -266,7 +274,7 @@ def evaluate_oof_lightgbm(
         gold, {qid: values[0] for qid, values in rankings.items()}, range(1, 6)
     )
     thresholds = tune_score_thresholds(gold, rankings, [1, 2])
-    return {
+    result = {
         "protocol": {
             "model": "LightGBM pointwise binary classifier",
             "prediction": f"{folds}-fold out-of-fold by qid",
@@ -288,6 +296,103 @@ def evaluate_oof_lightgbm(
         "threshold": thresholds,
         "rankings": rankings,
     }
+    if include_score_gap:
+        score_gap = tune_score_gap(gold, rankings)
+
+        # Fully nest selector tuning: inner OOF scores use outer-training qids
+        # only, then the selected policy is applied to the outer OOF ranking.
+        nested_predictions: dict[int, list[int]] = {}
+        nested_policies: list[dict[str, Any]] = []
+        for outer_fold in range(folds):
+            tuning_qids = {
+                qid for qid in unique_qids if fold_by_qid[qid] != outer_fold
+            }
+            validation_qids = {
+                qid for qid in unique_qids if fold_by_qid[qid] == outer_fold
+            }
+            inner_qids = sorted(tuning_qids)
+            random.Random(seed + 10_000 + outer_fold).shuffle(inner_qids)
+            inner_fold_by_qid = {
+                qid: index % folds for index, qid in enumerate(inner_qids)
+            }
+            inner_probabilities = np.zeros(len(labels), dtype=np.float64)
+            tuning_rows = np.asarray(
+                [int(qid) in tuning_qids for qid in row_qids], dtype=bool
+            )
+            for inner_fold in range(folds):
+                inner_validation = np.asarray(
+                    [
+                        int(qid) in tuning_qids
+                        and inner_fold_by_qid[int(qid)] == inner_fold
+                        for qid in row_qids
+                    ],
+                    dtype=bool,
+                )
+                inner_training = tuning_rows & ~inner_validation
+                if len(set(labels[inner_training])) != 2:
+                    raise ValueError(
+                        f"Outer fold {outer_fold}, inner fold {inner_fold} "
+                        "training rows do not contain both labels"
+                    )
+                inner_model = LGBMClassifier(
+                    **LIGHTGBM_PARAMETERS,
+                    random_state=seed + 10_000 + outer_fold * folds + inner_fold,
+                )
+                inner_model.fit(features[inner_training], labels[inner_training])
+                inner_probabilities[inner_validation] = inner_model.predict_proba(
+                    features[inner_validation]
+                )[:, 1]
+
+            tuning_rankings: dict[int, tuple[list[int], list[float]]] = {}
+            for qid in tuning_qids:
+                indices = np.flatnonzero(row_qids == qid)
+                ordered = sorted(
+                    indices,
+                    key=lambda index: (
+                        -inner_probabilities[index],
+                        original_ranks[index],
+                        aids[index],
+                    ),
+                )
+                tuning_rankings[qid] = (
+                    [int(aids[index]) for index in ordered],
+                    [float(inner_probabilities[index]) for index in ordered],
+                )
+            tuned = tune_score_gap(
+                {qid: gold[qid] for qid in tuning_qids},
+                tuning_rankings,
+            )
+            policy = tuned["best"]
+            selected = select_by_score_gap(
+                {qid: rankings[qid] for qid in validation_qids},
+                minimum_gap=float(policy["minimum_gap"]),
+                fallback_k=int(policy["fallback_k"]),
+                maximum_k=int(policy["maximum_k"]),
+            )
+            nested_predictions.update(selected)
+            nested_policies.append(
+                {
+                    "outer_fold": outer_fold,
+                    "inner_folds": folds,
+                    "tuning_queries": len(tuning_qids),
+                    "validation_queries": len(validation_qids),
+                    "policy": policy,
+                }
+            )
+        nested_metrics = evaluate_predictions(gold, nested_predictions)
+        result["score_gap"] = {
+            "pooled_oof_tuning_for_deployment": score_gap,
+            "nested_oof_estimate": {
+                **nested_metrics.to_dict(),
+                "fold_policies": nested_policies,
+                "note": (
+                    "Each score-gap policy is tuned on inner OOF rankings from "
+                    "outer-training queries and applied to the outer-held-out fold."
+                ),
+            },
+            "oracle_prefix_at_5": evaluate_oracle_prefix(gold, rankings, maximum_k=5),
+        }
+    return result
 
 
 def fit_lightgbm_and_rank(

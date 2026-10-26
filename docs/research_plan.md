@@ -43,6 +43,14 @@ cross-encoder pair budget. Reranker scores are max-aggregated to unique `aid`
 values. Article-first rechunking remains an ablation, not the default pipeline.
 Hold this configuration fixed when testing structure or reference components.
 
+Before adding a new retriever, a lightweight final-set-selection ablation may
+reuse the selected pipeline's saved LightGBM rankings. Compare unchanged fixed
+top-2 and global-threshold/fallback-2 policies against query-adaptive early
+score-gap selection. Keep it independently disableable, select its parameters
+on development data only, and report a nested-OOF selector estimate as well
+as pooled tuning. This strengthens the baseline but is not itself evidence for
+the structure/reference hypothesis.
+
 ## Organizer baselines
 
 The official shared-task overview and its extended journal version report two

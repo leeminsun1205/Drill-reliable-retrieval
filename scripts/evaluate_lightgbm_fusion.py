@@ -19,6 +19,11 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--adaptive-selection",
+        choices=("disabled", "score_gap"),
+        default="disabled",
+    )
     args = parser.parse_args()
 
     expected_qids = set(
@@ -30,7 +35,11 @@ def main() -> None:
 
     examples = build_ltr_examples(args.run_dir, queries)
     result = evaluate_oof_lightgbm(
-        examples, queries, folds=args.folds, seed=args.seed
+        examples,
+        queries,
+        folds=args.folds,
+        seed=args.seed,
+        include_score_gap=args.adaptive_selection == "score_gap",
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     rankings = result.pop("rankings")

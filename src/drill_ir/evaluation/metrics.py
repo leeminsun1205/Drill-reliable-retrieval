@@ -1,6 +1,7 @@
 """Official DRiLL set-based macro metrics."""
 
 from dataclasses import asdict, dataclass
+import math
 from statistics import median
 from typing import Iterable, Mapping
 
@@ -192,6 +193,169 @@ def tune_score_thresholds(
         "tuned_on": "development_split",
         "evaluated_unique_thresholds": unique_threshold_count,
         "best_by_fallback_k": results,
+    }
+
+
+def select_by_score_gap(
+    rankings: Mapping[int, tuple[Iterable[int], Iterable[float]]],
+    *,
+    minimum_gap: float,
+    fallback_k: int,
+    maximum_k: int,
+) -> dict[int, list[int]]:
+    """Select a query-specific prefix at its strongest early score drop.
+
+    Only gaps after ranks 1 through ``maximum_k - 1`` are considered. If no
+    gap reaches ``minimum_gap``, the deterministic fixed ``fallback_k`` prefix
+    is used. This is a final-set policy; it never changes candidate ordering.
+    """
+    if not math.isfinite(minimum_gap) or minimum_gap < 0:
+        raise ValueError("minimum_gap must be finite and non-negative")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        for value in (fallback_k, maximum_k)
+    ):
+        raise ValueError("fallback_k and maximum_k must be positive integers")
+    if fallback_k > maximum_k:
+        raise ValueError("fallback_k cannot exceed maximum_k")
+
+    predictions: dict[int, list[int]] = {}
+    for qid, (aids_iterable, scores_iterable) in rankings.items():
+        aids = tuple(map(int, aids_iterable))
+        scores = tuple(map(float, scores_iterable))
+        if len(aids) != len(scores):
+            raise ValueError(f"Ranking aids/scores length mismatch for qid={qid}")
+        if not aids:
+            raise ValueError(f"Score-gap selection requires candidates for qid={qid}")
+        if any(not math.isfinite(score) for score in scores):
+            raise ValueError(f"Ranking contains non-finite scores for qid={qid}")
+        if any(scores[index] < scores[index + 1] for index in range(len(scores) - 1)):
+            raise ValueError(f"Ranking scores must be descending for qid={qid}")
+
+        gap_count = min(maximum_k - 1, len(scores) - 1)
+        gaps = [scores[index] - scores[index + 1] for index in range(gap_count)]
+        if gaps and max(gaps) >= minimum_gap:
+            # Earlier boundary wins an exact tie, yielding the smaller set.
+            selected_count = gaps.index(max(gaps)) + 1
+        else:
+            selected_count = min(fallback_k, maximum_k, len(aids))
+        predictions[int(qid)] = list(dict.fromkeys(aids[:selected_count]))
+    return predictions
+
+
+def tune_score_gap(
+    gold: Mapping[int, Iterable[int]],
+    rankings: Mapping[int, tuple[Iterable[int], Iterable[float]]],
+    *,
+    fallback_cutoffs: Iterable[int] = (1, 2, 3),
+    maximum_cutoffs: Iterable[int] = (3, 4, 5),
+) -> dict[str, object]:
+    """Tune score-gap prefix selection on labeled data.
+
+    Candidate gap thresholds are exact observed early gaps plus a value just
+    above the maximum (the fixed-fallback case), avoiding an arbitrary grid.
+    """
+    if set(rankings) != set(gold):
+        raise ValueError("Score-gap rankings must contain every gold qid exactly once")
+    fallbacks = sorted(set(fallback_cutoffs))
+    maxima = sorted(set(maximum_cutoffs))
+    if not fallbacks or not maxima:
+        raise ValueError("Score-gap tuning requires fallback and maximum cutoffs")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in fallbacks + maxima):
+        raise ValueError("Score-gap cutoffs must be positive integers")
+
+    candidates = {0.0}
+    for _, scores_iterable in rankings.values():
+        scores = tuple(map(float, scores_iterable))
+        for index in range(min(max(maxima) - 1, len(scores) - 1)):
+            candidates.add(scores[index] - scores[index + 1])
+    candidates.add(math.nextafter(max(candidates), math.inf))
+
+    best: dict[str, object] | None = None
+    evaluated = 0
+    for maximum_k in maxima:
+        for fallback_k in fallbacks:
+            if fallback_k > maximum_k:
+                continue
+            for minimum_gap in sorted(candidates):
+                predictions = select_by_score_gap(
+                    rankings,
+                    minimum_gap=minimum_gap,
+                    fallback_k=fallback_k,
+                    maximum_k=maximum_k,
+                )
+                metrics = evaluate_predictions(gold, predictions)
+                sizes = [len(values) for values in predictions.values()]
+                candidate: dict[str, object] = {
+                    "minimum_gap": minimum_gap,
+                    "fallback_k": fallback_k,
+                    "maximum_k": maximum_k,
+                    **metrics.to_dict(),
+                    "output_size": {
+                        "minimum": min(sizes),
+                        "median": median(sizes),
+                        "mean": sum(sizes) / len(sizes),
+                        "maximum": max(sizes),
+                    },
+                }
+                evaluated += 1
+                key = (
+                    candidate["f2"], candidate["precision"], candidate["recall"],
+                    -candidate["output_size"]["mean"], -minimum_gap,
+                )
+                if best is None:
+                    best = candidate
+                else:
+                    best_key = (
+                        best["f2"], best["precision"], best["recall"],
+                        -best["output_size"]["mean"], -best["minimum_gap"],
+                    )
+                    if key > best_key:
+                        best = candidate
+    assert best is not None
+    return {
+        "selection": "largest_early_score_gap_with_fixed_fallback",
+        "tuned_on": "development_split",
+        "evaluated_policies": evaluated,
+        "best": best,
+    }
+
+
+def evaluate_oracle_prefix(
+    gold: Mapping[int, Iterable[int]],
+    rankings: Mapping[int, tuple[Iterable[int], Iterable[float]]],
+    *,
+    maximum_k: int = 5,
+) -> dict[str, object]:
+    """Measure optimistic headroom from choosing the best prefix per query."""
+    predictions: dict[int, list[int]] = {}
+    selected_sizes: list[int] = []
+    for qid, relevant in gold.items():
+        aids = list(rankings[qid][0])
+        gold_set = set(relevant)
+        best_key: tuple[float, float, float, int] | None = None
+        best_k = 1
+        for cutoff in range(1, min(maximum_k, len(aids)) + 1):
+            selected = set(aids[:cutoff])
+            precision = len(selected & gold_set) / cutoff
+            recall = len(selected & gold_set) / len(gold_set)
+            denominator = 4 * precision + recall
+            f2 = 5 * precision * recall / denominator if denominator else 0.0
+            key = (f2, precision, recall, -cutoff)
+            if best_key is None or key > best_key:
+                best_key, best_k = key, cutoff
+        predictions[qid] = aids[:best_k]
+        selected_sizes.append(best_k)
+    return {
+        "label": "oracle_upper_bound_not_deployable",
+        "maximum_k": maximum_k,
+        **evaluate_predictions(gold, predictions).to_dict(),
+        "output_size": {
+            "minimum": min(selected_sizes),
+            "median": median(selected_sizes),
+            "mean": sum(selected_sizes) / len(selected_sizes),
+            "maximum": max(selected_sizes),
+        },
     }
 
 
