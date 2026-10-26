@@ -198,10 +198,18 @@ of the seven-model screen, is:
    an explicitly labeled oracle-union diagnostic for the selected pair. Primary
    first-stage selection metrics are Recall@50 and Recall@100; fixed-output F2
    remains secondary.
-5. If the standard-BM25 multi-dense control completes, change only the sparse
-   scorer to BM25+ and rerun the same pipeline and WRRF protocol. Keep model
-   pair, split, chunking, depths, reranker, LightGBM training procedure, and
-   output policies fixed so the BM25-to-BM25+ effect remains attributable.
+5. The matched sparse-only screen found BM25+ delta `1.0` worse than standard
+   BM25 at Recall@5 through Recall@100 and at best fixed-output F2, although it
+   improved rank 1 slightly. Keep standard BM25 in the primary multi-dense run.
+   If resources permit, BM25+ may still be run as a secondary end-to-end
+   complementarity ablation; keep model pair, split, chunking, depths, reranker,
+   LightGBM training procedure, and output policies fixed so its effect remains
+   attributable.
+6. Before the optional end-to-end BM25+ run, tune standard BM25 on the fixed
+   development split using the predefined 12-case `k1`/`b` grid. Select by
+   Recall@100, then Recall@50, then fixed top-3 F2. Confirm the selected sparse
+   configuration in the otherwise unchanged multi-dense pipeline; do not report
+   the grid winner as an unbiased evaluation result.
 
 Two later inexpensive treatments are allowed after the fixed-weight control:
 query-adaptive sparse/dense weights from deterministic query features, and

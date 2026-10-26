@@ -378,12 +378,55 @@ comparing the variants. BM25+ changes sparse ranks and therefore may change the 
 direct-chunk candidate set; report candidate Recall@k as well as final F2.
 
 `configs/sparse_screening.yaml` and
-`notebooks/kaggle_sparse_bm25_plus_screening.ipynb` implement the matched
-sparse-only control. They compare standard BM25 with BM25+ delta `1.0` on the
-same seed-42 split and top-100 rankings, report fixed output k=1/2/3/4/5/10 and
-candidate Recall@1/5/10/20/50/100, verify both cache hits, and package the BM25+
-cache independently from the small metrics archive. Values remain pending
-execution and must not be described as measured improvements.
+`notebooks/kaggle_sparse_bm25_plus_screening.ipynb` implement sparse tuning and
+the matched BM25+ control. The predefined BM25 grid crosses `k1` values
+`0.6/0.9/1.2/1.5` with `b` values `0.4/0.6/0.75`; BM25+ remains fixed at
+`k1=1.2`, `b=0.75`, and delta `1.0`. Every case uses the same seed-42 split,
+VnCoreNLP tokens, and top-100 depth. Selection prioritizes Recall@100, then
+Recall@50, then fixed top-3 F2 because this sparse branch supplies hybrid
+candidates. The notebook reports fixed output k=1/2/3/4/5/10 and candidate
+Recall@1/5/10/20/50/100, verifies both underlying index caches, and packages
+the BM25+ cache independently from the tuning archive. The grid winner is a
+development-selected configuration and requires downstream confirmation.
+
+The project owner reported the completed 438-query run on 2026-10-27. These
+values are measured notebook outputs pending inspection of the downloaded
+archive. Standard BM25 reached its best fixed-output F2 at k=3 (`0.379908`),
+while BM25+ also peaked at k=3 (`0.371605`), a decrease of `0.008303` absolute.
+BM25+ improved only the earliest cutoff: at k=1, precision/recall/F2 changed
+from `0.374429`/`0.323386`/`0.332450` to
+`0.383562`/`0.329093`/`0.338713`. At every candidate cutoff after rank 1 it was
+worse:
+
+| Method | Output k | Precision | Recall | F2 |
+|---|---:|---:|---:|---:|
+| BM25 | 1 | 0.374429 | 0.323386 | 0.332450 |
+| BM25 | 2 | 0.251142 | 0.429740 | 0.376229 |
+| BM25 | 3 | 0.196347 | 0.495782 | **0.379908** |
+| BM25 | 4 | 0.165525 | 0.549815 | 0.375473 |
+| BM25 | 5 | 0.142466 | 0.584442 | 0.360663 |
+| BM25 | 10 | 0.085160 | 0.674837 | 0.282966 |
+| BM25+ delta 1.0 | 1 | 0.383562 | 0.329093 | 0.338713 |
+| BM25+ delta 1.0 | 2 | 0.244292 | 0.415226 | 0.364252 |
+| BM25+ delta 1.0 | 3 | 0.192542 | 0.484176 | **0.371605** |
+| BM25+ delta 1.0 | 4 | 0.160388 | 0.527555 | 0.361872 |
+| BM25+ delta 1.0 | 5 | 0.139269 | 0.566368 | 0.351053 |
+| BM25+ delta 1.0 | 10 | 0.084018 | 0.662225 | 0.278669 |
+
+| Sparse method | R@1 | R@5 | R@10 | R@20 | R@50 | R@100 |
+|---|---:|---:|---:|---:|---:|---:|
+| BM25 | 0.323386 | **0.584442** | **0.674837** | **0.754120** | **0.834758** | **0.877452** |
+| BM25+ delta 1.0 | **0.329093** | 0.566368 | 0.662225 | 0.738519 | 0.814264 | 0.853783 |
+
+The corresponding BM25+ minus BM25 candidate-recall differences are
+`+0.005707`, `-0.018074`, `-0.012612`, `-0.015601`, `-0.020494`, and
+`-0.023669` at @1/5/10/20/50/100. The verified BM25+ cache was packaged as
+`retrieval_cache_bm25_plus_vncorenlp_delta1.tar` (reported size 0.0721 GiB),
+and the result archive as `sparse_screening_bm25_vs_bm25_plus.tar.gz` (reported
+size 0.00461 MiB). This standalone result does not prove that BM25+ cannot alter
+WRRF complementarity beneficially, but it does not support replacing standard
+BM25 as the default sparse branch. Any end-to-end BM25+ run remains an isolated
+secondary ablation with all dense, reranker, and final-selection settings fixed.
 
 The optional `scripts/evaluate_lightgbm_fusion.py` performs a low-cost first
 test of learned feature fusion from an existing development run. It consumes

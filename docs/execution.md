@@ -111,21 +111,25 @@ working directory is handled identically. Uncompressed tar is deliberate:
 dense float arrays generally gain little from gzip while compression adds a
 large CPU and wall-time cost.
 
-For the matched sparse-only comparison, run
-`notebooks/kaggle_sparse_bm25_plus_screening.ipynb`. It builds and verifies
-separate VnCoreNLP BM25 and BM25+ caches, evaluates both on the same persisted
-seed-42 development split, and writes two portable outputs:
+For sparse tuning and the matched BM25+ control, run
+`notebooks/kaggle_sparse_bm25_plus_screening.ipynb`. It builds and verifies two
+VnCoreNLP index caches, evaluates a predefined 12-case BM25 grid
+(`k1` in `0.6/0.9/1.2/1.5`, `b` in `0.4/0.6/0.75`) plus the fixed BM25+ control
+on the same persisted seed-42 development split, and writes two portable
+outputs:
 
 ```text
 /kaggle/working/retrieval_cache_bm25_plus_vncorenlp_delta1.tar
-/kaggle/working/sparse_screening_bm25_vs_bm25_plus.tar.gz
+/kaggle/working/sparse_tuning_bm25_and_bm25_plus.tar.gz
 ```
 
 The first file is the reusable cache accepted by the multi-dense notebook. The
 second contains comparison tables, metrics, configs, split IDs, and run
-provenance. BM25+ changes only `variant` and uses the predeclared `delta=1.0`;
-`k1`, `b`, preprocessing, candidate depth, split, and output cutoffs remain
-fixed.
+provenance. The BM25 grid winner is selected by Recall@100, then Recall@50,
+then fixed top-3 F2. BM25+ remains fixed at `k1=1.2`, `b=0.75`, and
+`delta=1.0`; preprocessing, candidate depth, split, and output cutoffs remain
+matched. Treat the winning grid score as development selection, not an unbiased
+test estimate.
 
 For user-facing Kaggle notebooks, use the repository scripts consistently. Run
 the exact-token audit before selecting a chunk budget:
