@@ -113,6 +113,7 @@ def run_submission_inference(
     named_feedback: dict[str, Any] = {}
     final_rankings = first_stage
     reranker = None
+    retriever_metadata = None
     if method == "hybrid_reranker":
         if not isinstance(reranking_config, dict):
             raise ValueError("hybrid_reranker requires a reranking mapping")
@@ -121,7 +122,6 @@ def run_submission_inference(
             raise ValueError(
                 "reranking.candidate_pool_size must be between output_k and retrieval.top_k"
             )
-        reranker = build_reranker(reranking_config, config.get("runtime", {}))
         if candidate_source == "article_rechunk":
             candidate_aids = {
                 aid
@@ -129,6 +129,12 @@ def run_submission_inference(
                 for result in rankings
                 for aid in result.aids[:candidate_pool_size]
             }
+            retriever_metadata = retriever.run_metadata()
+            close_retriever = getattr(retriever, "close", None)
+            if callable(close_retriever):
+                print("[inference] Releasing retrieval resources before reranker load", flush=True)
+                close_retriever()
+            reranker = build_reranker(reranking_config, config.get("runtime", {}))
             reranker.fit([article for article in articles if article.aid in candidate_aids])
             final_rankings = {
                 name: reranker.rerank(named_queries[name], rankings)
@@ -161,6 +167,12 @@ def run_submission_inference(
             # Complete dense/sparse candidate generation for every split before
             # the cross-encoder lazily loads onto GPU. This avoids returning to
             # dense inference after the larger reranker has occupied GPU memory.
+            retriever_metadata = retriever.run_metadata()
+            close_retriever = getattr(retriever, "close", None)
+            if callable(close_retriever):
+                print("[inference] Releasing retrieval resources before reranker load", flush=True)
+                close_retriever()
+            reranker = build_reranker(reranking_config, config.get("runtime", {}))
             final_rankings = {
                 name: reranker.rerank_chunks(named_queries[name], chunk_candidates[name])
                 for name in named_queries
@@ -326,7 +338,9 @@ def run_submission_inference(
             else None
         ),
         "retriever": (
-            retriever.run_metadata() if hasattr(retriever, "run_metadata") else {}
+            retriever_metadata
+            if retriever_metadata is not None
+            else (retriever.run_metadata() if hasattr(retriever, "run_metadata") else {})
         ),
         "reranker": reranker.run_metadata() if reranker is not None else None,
     }

@@ -113,6 +113,24 @@ isolated treatment in the same notebook, after the control completes, because
 changing the dense set and sparse scoring rule in one run would not identify
 which change caused the result.
 
+On 2026-10-27, the first selected multi-dense reranker run completed first-stage
+retrieval and the WRRF grid but then remained at 81% of RoBERTa checkpoint
+materialization for roughly ten hours. The selected `0.1/0.5/0.4`
+BM25/Harrier/E5-large case had already measured Recall@50 `0.922081`,
+Recall@100 `0.951653`, fixed top-2 F2 `0.518868`, and fixed top-3 F2 `0.514429`.
+No reranker metric was produced. The last logs showed both 205,898-by-1,024
+dense indexes and encoder state still resident immediately before loading the
+epoch-3 reranker, so the event is recorded as a probable resource-lifecycle
+stall, not a model-quality result or a proven CUDA OOM.
+
+The experiment and submission runners now snapshot retrieval provenance and
+component rankings, explicitly release every dense encoder, embedding matrix,
+query cache, and chunk list, run Python garbage collection and CUDA cache
+cleanup, and only then load the cross-encoder. The fix preserves retrieved
+chunks and rankings and therefore does not change the method. A repaired run
+must emit `Releasing retrieval resources before reranker load` before checkpoint
+materialization; completion on Kaggle remains pending.
+
 On 2026-10-26, the project owner reported an isolated Kaggle T4 smoke test over
 the same first 128 articles, which produced 505 Khoản–Điểm representations for
 each encoder. BGE-M3 completed in 85.27 seconds on one GPU and 54.79 seconds on
@@ -422,11 +440,38 @@ The corresponding BM25+ minus BM25 candidate-recall differences are
 `+0.005707`, `-0.018074`, `-0.012612`, `-0.015601`, `-0.020494`, and
 `-0.023669` at @1/5/10/20/50/100. The verified BM25+ cache was packaged as
 `retrieval_cache_bm25_plus_vncorenlp_delta1.tar` (reported size 0.0721 GiB),
-and the result archive as `sparse_screening_bm25_vs_bm25_plus.tar.gz` (reported
-size 0.00461 MiB). This standalone result does not prove that BM25+ cannot alter
+and the completed tuning archive as
+`sparse_tuning_bm25_and_bm25_plus.tar.gz` (reported size 0.01466 MiB). This
+standalone result does not prove that BM25+ cannot alter
 WRRF complementarity beneficially, but it does not support replacing standard
 BM25 as the default sparse branch. Any end-to-end BM25+ run remains an isolated
 secondary ablation with all dense, reranker, and final-selection settings fixed.
+
+The same reported run completed the predefined 12-case standard-BM25 grid. The
+table is ordered by the declared selection key: Recall@100, then Recall@50,
+then fixed top-3 F2.
+
+| k1 | b | R@1 | R@5 | R@10 | R@20 | R@50 | R@100 | F2@3 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **1.2** | **0.75** | 0.323386 | **0.584442** | 0.674837 | **0.754120** | 0.834758 | **0.877452** | 0.379908 |
+| 1.5 | 0.75 | 0.314253 | 0.570363 | 0.673125 | 0.752979 | **0.838182** | 0.877071 | **0.381754** |
+| 1.5 | 0.60 | 0.293705 | 0.570820 | 0.675027 | 0.740422 | 0.836660 | 0.868319 | 0.367842 |
+| 0.9 | 0.75 | 0.319961 | 0.578354 | **0.681061** | 0.751837 | 0.828289 | 0.867939 | 0.373696 |
+| 1.2 | 0.60 | 0.297130 | 0.573483 | 0.677310 | 0.747652 | 0.834377 | 0.863753 | 0.374232 |
+| 0.6 | 0.75 | **0.326810** | 0.564085 | 0.671929 | 0.744227 | 0.814590 | 0.859491 | 0.370638 |
+| 1.5 | 0.40 | 0.287997 | 0.538992 | 0.642248 | 0.729006 | 0.826006 | 0.859187 | 0.353890 |
+| 0.9 | 0.60 | 0.305121 | 0.571581 | 0.668504 | **0.754120** | 0.821059 | 0.859187 | 0.374622 |
+| 1.2 | 0.40 | 0.292564 | 0.550408 | 0.641868 | 0.732050 | 0.816873 | 0.856143 | 0.360296 |
+| 0.9 | 0.40 | 0.287997 | 0.562394 | 0.643009 | 0.725582 | 0.808121 | 0.855001 | 0.368070 |
+| 0.6 | 0.60 | 0.302838 | 0.563780 | 0.663748 | 0.738139 | 0.817689 | 0.852261 | 0.377485 |
+| 0.6 | 0.40 | 0.296369 | 0.556306 | 0.639775 | 0.714547 | 0.796380 | 0.848076 | 0.372170 |
+
+The selected `k1=1.2`, `b=0.75` configuration is therefore unchanged. The
+closest alternative, `1.5/0.75`, improves Recall@50 by `0.003424` and F2@3 by
+`0.001846`, but reduces the primary Recall@100 metric by `0.000381`. This grid
+supports retaining the existing Lucene-style defaults for the main hybrid run;
+the small trade-off between the top two settings should not be overstated
+without paired per-query or downstream hybrid confirmation.
 
 The optional `scripts/evaluate_lightgbm_fusion.py` performs a low-cost first
 test of learned feature fusion from an existing development run. It consumes

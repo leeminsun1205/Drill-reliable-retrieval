@@ -120,6 +120,12 @@ class WeightedRRFRetriever:
                     records[name] = values
         return records
 
+    def close(self) -> None:
+        for retriever in (self.sparse, self.dense):
+            close = getattr(retriever, "close", None)
+            if callable(close):
+                close()
+
     def retrieve_chunks(
         self,
         queries: Sequence[Query],
@@ -304,6 +310,12 @@ class MultiDenseWeightedRRFRetriever:
             if callable(getter) and (values := getter()):
                 records[name] = values
         return records
+
+    def close(self) -> None:
+        for retriever in (self.sparse, *self.dense_retrievers.values()):
+            close = getattr(retriever, "close", None)
+            if callable(close):
+                close()
 
     def retrieve_chunks(
         self,

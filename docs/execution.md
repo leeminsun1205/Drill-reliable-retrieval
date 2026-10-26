@@ -409,6 +409,32 @@ the reranker run. Therefore the weight-grid scores are not evidence that the
 same ordering holds after chunk fusion and reranking; the final dev metrics are
 reported separately.
 
+For multi-dense reranking, candidate generation deliberately finishes before
+the epoch-3 cross-encoder loads. The runner then releases dense encoder models,
+the two corpus embedding matrices, cached query embeddings, and full chunk
+lists while retaining the selected top-50 chunk candidates and saved component
+rankings. The log line
+`[experiment] Releasing retrieval resources before reranker load` (or the
+corresponding `[inference]` line) is required before reranker checkpoint
+materialization. If an older revision remains at partial RoBERTa weight loading
+for hours, stop it and rerun with this lifecycle repair; it is not productive
+reranking work.
+
+The active multi-dense notebook uses three independent retrieval caches:
+VnCoreNLP BM25, VietLegal-Harrier corpus embeddings, and multilingual-E5-large
+corpus embeddings. A sparse cache stores the ordered `aid` array, retained term
+vocabulary, postings offsets/positions/frequencies, retained-vocabulary
+document lengths, average document length, vocabulary statistics, corpus
+fingerprint, and preprocessing/index key. It does not store query rankings.
+A dense cache stores the ordered chunk-parent `aid` mapping in validated
+metadata and the float32 corpus embedding matrix, together with corpus and
+encoder/chunker fingerprints. It does not store model weights, reconstructed
+chunk objects/text, query embeddings, exact-search results, fused rankings, or
+reranker scores. Consequently, a dense cache hit avoids corpus encoding but
+still requires deterministic rechunking for validation/alignment, model loading
+for query encoding, matrix loading, and exact search. First-stage component
+rankings are separate experiment artifacts, not part of the embedding cache.
+
 ## Hybrid plus cross-encoder reranking
 
 After fixing the hybrid candidates, run the zero-shot BGE reranker over the top

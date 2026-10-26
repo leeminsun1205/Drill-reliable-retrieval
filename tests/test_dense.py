@@ -15,6 +15,7 @@ class FakeEncoder:
         self._cache_key = cache_key
         self.document_calls = 0
         self.query_calls = 0
+        self.closed = False
 
     @property
     def cache_key(self) -> str:
@@ -30,6 +31,9 @@ class FakeEncoder:
     def encode_queries(self, texts: list[str]) -> np.ndarray:
         self.query_calls += 1
         return self._encode(texts)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class DenseRetrieverTest(unittest.TestCase):
@@ -89,6 +93,20 @@ class DenseRetrieverTest(unittest.TestCase):
             )
             second.fit(self.articles)
             self.assertEqual(second_encoder.document_calls, 0)
+
+    def test_close_releases_dense_state_and_encoder(self) -> None:
+        encoder = FakeEncoder(self.vectors)
+        retriever = DenseRetriever(encoder=encoder, search=ExactVectorSearch())
+        retriever.fit(self.articles)
+        retriever.retrieve(
+            [Query(qid=7, question="money question", relevant_aids=(20,))], top_k=2
+        )
+        retriever.close()
+        self.assertTrue(encoder.closed)
+        self.assertIsNone(retriever._document_embeddings)
+        self.assertIsNone(retriever._cached_query_embeddings)
+        self.assertEqual(retriever._chunks, [])
+        self.assertEqual(retriever._aids, [])
 
     def test_required_cache_rejects_miss_without_encoding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

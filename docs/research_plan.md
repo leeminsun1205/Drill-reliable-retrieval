@@ -205,17 +205,49 @@ of the seven-model screen, is:
    complementarity ablation; keep model pair, split, chunking, depths, reranker,
    LightGBM training procedure, and output policies fixed so its effect remains
    attributable.
-6. Before the optional end-to-end BM25+ run, tune standard BM25 on the fixed
-   development split using the predefined 12-case `k1`/`b` grid. Select by
-   Recall@100, then Recall@50, then fixed top-3 F2. Confirm the selected sparse
-   configuration in the otherwise unchanged multi-dense pipeline; do not report
-   the grid winner as an unbiased evaluation result.
+6. The predefined 12-case standard-BM25 grid selected the existing
+   `k1=1.2`, `b=0.75` configuration by Recall@100, then Recall@50, then fixed
+   top-3 F2. Retain it in the primary multi-dense pipeline. The runner-up
+   `1.5/0.75` had slightly higher Recall@50 and F2@3 but slightly lower
+   Recall@100; do not overinterpret this small dev-only trade-off or report the
+   grid winner as an unbiased evaluation result.
 
 Two later inexpensive treatments are allowed after the fixed-weight control:
 query-adaptive sparse/dense weights from deterministic query features, and
 deterministic reference-edge candidate expansion evaluated first for recall.
 Both require independently disableable ablations and query-fold-safe parameter
 selection. Do not expand into an unconstrained model/weight search.
+
+### Planned multi-dense resource hardening
+
+The immediate lifecycle repair releases dense models, matrices, query caches,
+and full chunk stores after selected chunk candidates are fixed and before the
+reranker loads. After confirming that repair on Kaggle, retain the following
+implementation order for further reliability work:
+
+1. Persist selected chunk candidates before reranking so a reranker failure can
+   resume without repeating retrieval.
+2. Split retrieval and reranking into separate processes: retrieval writes
+   auditable candidate artifacts and exits; reranking reads only those fixed
+   candidates. Process exit, rather than Python garbage collection alone, then
+   guarantees reclamation of model, CUDA, multiprocessing, and index state.
+3. Persist per-model top-depth chunk rankings with `qid`, component, rank,
+   `aid`, chunk identity/text, and score. Reconstruct WRRF candidates offline so
+   weight sweeps and selected reranker runs do not reload dense encoders.
+4. Reuse one immutable BGE-M3-tokenized Khoản–Điểm chunk store across dense
+   models that intentionally share boundaries, instead of constructing and
+   retaining duplicate Python chunk objects.
+5. Consider normalized memory-mapped corpus embeddings and blockwise exact
+   search only after the process boundary is stable; verify that normalization
+   does not create full in-memory copies.
+6. Record process-tree RSS, CUDA allocated/reserved memory, resident model and
+   matrix counts, and stage timings. Add a bounded no-progress failure for model
+   loading rather than allowing an apparent stall to consume a Kaggle session.
+
+These are engineering/reproducibility improvements, not new retrieval methods.
+Persisted rankings and candidates must be fingerprinted by corpus, split,
+chunking, model/revision/prefix, depth, and component name so reuse cannot
+silently change an experiment.
 
 ### Deferred participant-inspired methods
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import gc
 import hashlib
 import json
 from pathlib import Path
@@ -144,6 +145,20 @@ class SentenceTransformerEncoder:
 
     def encode_queries(self, texts: Sequence[str]) -> np.ndarray:
         return self._encode(texts, prefix=self.config.query_prefix)
+
+    def close(self) -> None:
+        """Release model and CUDA allocations before a downstream model loads."""
+        model, self._model = self._model, None
+        if model is not None:
+            del model
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
 
 
 def _l2_normalize(matrix: np.ndarray) -> np.ndarray:
@@ -461,6 +476,18 @@ class DenseRetriever:
                 "unique_aids": True,
             },
         }
+
+    def close(self) -> None:
+        """Drop corpus/query matrices, chunks, and encoder resources."""
+        close_encoder = getattr(self.encoder, "close", None)
+        if callable(close_encoder):
+            close_encoder()
+        self._document_embeddings = None
+        self._cached_query_embeddings = None
+        self._cached_query_key = None
+        self._chunks = []
+        self._aids = []
+        gc.collect()
 
     def _feedback_embeddings(self, queries: Sequence[Query]) -> np.ndarray:
         if self._document_embeddings is None:

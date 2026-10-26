@@ -86,6 +86,7 @@ def run_experiment(config: dict[str, Any]) -> Path:
     ranked = first_stage_ranked
     reranker = None
     retrieved_chunk_candidates = None
+    retriever_metadata = None
     if method == "hybrid_reranker":
         reranking_config = config.get("reranking")
         if not isinstance(reranking_config, dict):
@@ -95,7 +96,6 @@ def run_experiment(config: dict[str, Any]) -> Path:
             raise ValueError(
                 "reranking.candidate_pool_size must be between output_k and retrieval.top_k"
             )
-        reranker = build_reranker(reranking_config, config.get("runtime", {}))
         candidate_source = str(reranking_config.get("candidate_source", "article_rechunk"))
         if candidate_source == "article_rechunk":
             candidate_aids = {
@@ -104,6 +104,12 @@ def run_experiment(config: dict[str, Any]) -> Path:
                 for aid in result.aids[:candidate_pool_size]
             }
             candidate_articles = [article for article in articles if article.aid in candidate_aids]
+            retriever_metadata = retriever.run_metadata()
+            close_retriever = getattr(retriever, "close", None)
+            if callable(close_retriever):
+                print("[experiment] Releasing retrieval resources before reranker load", flush=True)
+                close_retriever()
+            reranker = build_reranker(reranking_config, config.get("runtime", {}))
             reranker.fit(candidate_articles)
             ranked = reranker.rerank(dev_queries, first_stage_ranked)
         elif candidate_source == "retrieved_chunks":
@@ -116,6 +122,12 @@ def run_experiment(config: dict[str, Any]) -> Path:
                 top_k=candidate_pool_size,
                 dense_depth=dense_depth,
             )
+            retriever_metadata = retriever.run_metadata()
+            close_retriever = getattr(retriever, "close", None)
+            if callable(close_retriever):
+                print("[experiment] Releasing retrieval resources before reranker load", flush=True)
+                close_retriever()
+            reranker = build_reranker(reranking_config, config.get("runtime", {}))
             ranked = reranker.rerank_chunks(dev_queries, retrieved_chunk_candidates)
         else:
             raise ValueError(
@@ -273,7 +285,9 @@ def run_experiment(config: dict[str, Any]) -> Path:
         "indexed_articles": len(articles),
         "dev_queries": len(dev_queries),
         "retriever": (
-            retriever.run_metadata() if hasattr(retriever, "run_metadata") else {}
+            retriever_metadata
+            if retriever_metadata is not None
+            else (retriever.run_metadata() if hasattr(retriever, "run_metadata") else {})
         ),
         "reranker": (
             reranker.run_metadata() if reranker is not None else None
