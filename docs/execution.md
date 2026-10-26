@@ -737,6 +737,25 @@ empty or partial model directory is not treated as completion because the
 notebook requires final config, weights, provenance, and two valid epoch
 checkpoint directories.
 
+## Standalone dense-model screening
+
+Use `notebooks/kaggle_dense_standalone_screening.ipynb` after building or
+uploading a verified dense cache archive. Set only `DENSE_TARGET` from 1 through
+7 according to the notebook's model table. The notebook discovers either an
+expanded cache dataset or `retrieval_cache_<slug>.tar`, extracts archives under
+Kaggle working storage, and runs `scripts/run_experiment.py` with
+`configs/dense_screening.yaml`. `require_hit=true` prevents an accidental full
+corpus re-encoding when the archive, corpus, model prefix, or chunk protocol is
+wrong.
+
+Each run is dense-only: no BM25, weighted RRF, or reranker. It writes the usual
+config, split IDs, ranking, metrics, and provenance, then packages them as one
+downloadable `dense_screening_<slug>.tar.gz`. Use the same target number in
+seven cloned notebooks to run the models concurrently. Model weights are still
+loaded to encode development queries; the cache removes corpus encoding, which
+is the dominant cost. Weight tuning should happen later from saved component
+rankings so changing weighted-RRF coefficients does not rerun any encoder.
+
 ## Public/private submission inference
 
 The submission runner fits the configured corpus index once, infers the public

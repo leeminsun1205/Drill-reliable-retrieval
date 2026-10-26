@@ -1,0 +1,62 @@
+experiment_name: dense_screening_bge_m3_seed42
+method: dense
+seed: 42
+
+data:
+  corpus_path: data/legal-corpus.parquet
+  train_path: data/train.parquet
+  dev_fraction: 0.2
+
+retrieval:
+  top_k: 100
+  output_k: 3
+  dense:
+    feedback:
+      enabled: false
+      method: rocchio
+      feedback_documents: 5
+      alpha: 1.0
+      beta: 0.25
+      gamma: 0.0
+      negative_documents: 0
+      candidate_depth: 20
+    chunking:
+      method: khoan_diem
+      max_tokens: 448
+      overlap_tokens: 64
+      minimum_fill_ratio: 0.5
+      aggregation: max
+      tokenizer_model_name: BAAI/bge-m3
+      tokenizer_revision: null
+      tokenizer_document_prefix: ""
+      tokenizer_trust_remote_code: false
+    encoder:
+      backend: sentence_transformers
+      model_name: BAAI/bge-m3
+      revision: null
+      query_prefix: ""
+      document_prefix: ""
+      max_seq_length: 512
+      batch_size: 4
+      normalize_embeddings: false
+      trust_remote_code: false
+    search:
+      backend: exact
+      metric: cosine
+      query_batch_size: 64
+    cache:
+      enabled: true
+      require_hit: true
+      directory: embeddings/bge_m3_khoan_diem448
+
+evaluation:
+  output_k_values: [1, 2, 3, 4, 5, 10]
+  recall_at_k: [1, 5, 10, 20, 50, 100]
+
+runtime:
+  accelerator: auto
+  devices: auto
+  mixed_precision: false
+
+output:
+  root_dir: results/dense_screening

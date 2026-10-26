@@ -148,6 +148,16 @@ revision, prefix/instruction, pooling behavior, and whether custom remote code
 was required. The primary comparison uses full embedding dimensions; Matryoshka
 dimension reduction and context lengths above 512 are later ablations.
 
+The standalone screening control uses `configs/dense_screening.yaml` and
+`notebooks/kaggle_dense_standalone_screening.ipynb`. It evaluates exactly one
+of the seven registered dense encoders per run, with no BM25, fusion, or
+reranker. It requires a verified corpus embedding cache hit and holds seed-42
+development IDs, BGE-M3-tokenized Khoản–Điểm 448/64 representations, encoder
+limit 512, exact cosine search, candidate depth 100, and native embedding
+dimension fixed. Report candidate Recall@1/5/10/20/50/100 and macro-F2 for
+fixed output k=1/2/3/4/5/10. Standalone results select plausible challengers;
+they do not by themselves establish complementarity with BGE-M3.
+
 Do not expand the first screening round beyond these seven models without a
 documented scientific reason. Apply each model's verified query/document
 prefix or query instruction rather than forcing identical prompt text. Keep the
