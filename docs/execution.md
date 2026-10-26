@@ -78,14 +78,14 @@ multi-dense config, use three separate commands:
 !python scripts/prepare_retrieval_cache.py \
   --config configs/hybrid_reranker_multi_dense.yaml \
   --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
-  --component bge_m3 --devices 2 \
-  --set retrieval.dense_profiles.bge_m3.cache.directory=/kaggle/working/retrieval-cache/bge_m3
+  --component vietlegal_harrier --devices 2 \
+  --set retrieval.dense_profiles.vietlegal_harrier.cache.directory=/kaggle/working/retrieval-cache/vietlegal_harrier_0_6b
 
 !python scripts/prepare_retrieval_cache.py \
   --config configs/hybrid_reranker_multi_dense.yaml \
   --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
-  --component challenger --devices 2 \
-  --set retrieval.dense_profiles.challenger.cache.directory=/kaggle/working/retrieval-cache/vietlegal_e5
+  --component multilingual_e5_large --devices 2 \
+  --set retrieval.dense_profiles.multilingual_e5_large.cache.directory=/kaggle/working/retrieval-cache/multilingual_e5_large
 ```
 
 The sparse cache depends on the exact preprocessing configuration, including
