@@ -1,0 +1,54 @@
+experiment_name: sparse_screening_bm25_seed42
+method: bm25
+seed: 42
+
+data:
+  corpus_path: data/legal-corpus.parquet
+  train_path: data/train.parquet
+  dev_fraction: 0.2
+
+retrieval:
+  top_k: 100
+  output_k: 3
+  bm25:
+    variant: bm25
+    delta: 1.0
+    k1: 1.2
+    b: 0.75
+    min_document_frequency: 1
+    max_document_frequency: null
+    max_document_frequency_ratio: 1.0
+    cache:
+      enabled: true
+      require_hit: false
+      directory: indexes/bm25_vncorenlp
+    feedback:
+      enabled: false
+      method: rm3
+      feedback_documents: 5
+      feedback_terms: 10
+      original_query_weight: 0.7
+      dirichlet_mu: 1000.0
+    preprocessing:
+      normalization:
+        unicode_form: NFKC
+        lowercase: true
+        normalize_whitespace: true
+        strip_control_characters: true
+      tokenizer:
+        word_segmenter: vncorenlp
+        vncorenlp_jar_path: /kaggle/working/VnCoreNLP/VnCoreNLP-1.2.jar
+        segmenter_max_characters: 20000
+        stopword_preset: none
+
+evaluation:
+  output_k_values: [1, 2, 3, 4, 5, 10]
+  recall_at_k: [1, 5, 10, 20, 50, 100]
+
+runtime:
+  accelerator: cpu
+  devices: 1
+  mixed_precision: false
+
+output:
+  root_dir: results/sparse_screening

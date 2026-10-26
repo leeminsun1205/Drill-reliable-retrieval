@@ -111,6 +111,22 @@ working directory is handled identically. Uncompressed tar is deliberate:
 dense float arrays generally gain little from gzip while compression adds a
 large CPU and wall-time cost.
 
+For the matched sparse-only comparison, run
+`notebooks/kaggle_sparse_bm25_plus_screening.ipynb`. It builds and verifies
+separate VnCoreNLP BM25 and BM25+ caches, evaluates both on the same persisted
+seed-42 development split, and writes two portable outputs:
+
+```text
+/kaggle/working/retrieval_cache_bm25_plus_vncorenlp_delta1.tar
+/kaggle/working/sparse_screening_bm25_vs_bm25_plus.tar.gz
+```
+
+The first file is the reusable cache accepted by the multi-dense notebook. The
+second contains comparison tables, metrics, configs, split IDs, and run
+provenance. BM25+ changes only `variant` and uses the predeclared `delta=1.0`;
+`k1`, `b`, preprocessing, candidate depth, split, and output cutoffs remain
+fixed.
+
 For user-facing Kaggle notebooks, use the repository scripts consistently. Run
 the exact-token audit before selecting a chunk budget:
 

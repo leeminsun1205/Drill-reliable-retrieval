@@ -377,6 +377,14 @@ WRRF, reranker checkpoint, candidate budgets, and final policy fixed when
 comparing the variants. BM25+ changes sparse ranks and therefore may change the fused
 direct-chunk candidate set; report candidate Recall@k as well as final F2.
 
+`configs/sparse_screening.yaml` and
+`notebooks/kaggle_sparse_bm25_plus_screening.ipynb` implement the matched
+sparse-only control. They compare standard BM25 with BM25+ delta `1.0` on the
+same seed-42 split and top-100 rankings, report fixed output k=1/2/3/4/5/10 and
+candidate Recall@1/5/10/20/50/100, verify both cache hits, and package the BM25+
+cache independently from the small metrics archive. Values remain pending
+execution and must not be described as measured improvements.
+
 The optional `scripts/evaluate_lightgbm_fusion.py` performs a low-cost first
 test of learned feature fusion from an existing development run. It consumes
 saved reranker, first-stage, sparse, dense, and chunk-candidate artifacts and

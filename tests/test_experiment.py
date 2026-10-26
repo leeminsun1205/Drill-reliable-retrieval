@@ -145,6 +145,20 @@ class ExperimentTest(unittest.TestCase):
             "BAAI/bge-m3",
         )
 
+    def test_sparse_screening_config_fixes_matched_bm25_protocol(self) -> None:
+        config = load_config(
+            Path(__file__).parents[1] / "configs" / "sparse_screening.yaml"
+        )
+        bm25 = config["retrieval"]["bm25"]
+        self.assertEqual(config["method"], "bm25")
+        self.assertEqual(config["seed"], 42)
+        self.assertEqual(config["retrieval"]["top_k"], 100)
+        self.assertEqual(bm25["variant"], "bm25")
+        self.assertEqual(bm25["delta"], 1.0)
+        self.assertEqual(bm25["preprocessing"]["tokenizer"]["word_segmenter"], "vncorenlp")
+        self.assertEqual(config["evaluation"]["output_k_values"], [1, 2, 3, 4, 5, 10])
+        self.assertEqual(config["evaluation"]["recall_at_k"], [1, 5, 10, 20, 50, 100])
+
     def test_config_overrides_are_typed_and_do_not_mutate_source(self) -> None:
         source = {"retrieval": {"top_k": 100, "prefix": "query: "}}
         resolved = apply_config_overrides(
