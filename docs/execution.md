@@ -101,7 +101,15 @@ notebooks and change only `CACHE_TARGET`: `0` builds VnCoreNLP BM25 and `1`–`7
 select the fixed seven-model dense screening registry. Every notebook builds
 one component, then reruns the loader with `--require-existing`; the version is
 successful only if the just-written cache passes full validation and reports a
-cache hit.
+cache hit. The final cell also packages the config, manifest, and cache directory
+as one uncompressed `retrieval_cache_<slug>.tar`. Download or upload only this
+single archive when moving a cache through Drive or a Kaggle Dataset. The
+multi-dense notebook discovers attached archives, extracts them under
+`/kaggle/working`, and validates them before use. It searches both
+`/kaggle/input` and `/kaggle/working`, so an archive copied from Drive into the
+working directory is handled identically. Uncompressed tar is deliberate:
+dense float arrays generally gain little from gzip while compression adds a
+large CPU and wall-time cost.
 
 For user-facing Kaggle notebooks, use the repository scripts consistently. Run
 the exact-token audit before selecting a chunk budget:
