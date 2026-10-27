@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
+from unittest.mock import patch
 
 import numpy as np
 
@@ -12,6 +14,10 @@ from drill_ir.retrieval import (
     EmbeddingCache,
     ExactVectorSearch,
     FaissFlatVectorSearch,
+)
+from drill_ir.retrieval.dense import (
+    SentenceTransformerEncoder,
+    SentenceTransformerEncoderConfig,
 )
 
 
@@ -196,6 +202,46 @@ class DenseRetrieverTest(unittest.TestCase):
         self.assertIsNone(retriever._cached_query_embeddings)
         self.assertEqual(retriever._chunks, [])
         self.assertEqual(retriever._aids, [])
+
+    def test_multi_gpu_source_model_loads_on_cpu(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        class FakeSentenceTransformer:
+            def __init__(self, model_name: str, **kwargs: object) -> None:
+                calls.append({"model_name": model_name, **kwargs})
+
+        fake_module = ModuleType("sentence_transformers")
+        fake_module.SentenceTransformer = FakeSentenceTransformer
+        encoder = SentenceTransformerEncoder(
+            SentenceTransformerEncoderConfig(
+                model_name="example/model",
+                device=["cuda:0", "cuda:1"],
+            )
+        )
+        with patch.dict("sys.modules", {"sentence_transformers": fake_module}):
+            encoder._load_model()
+
+        self.assertEqual(calls[0]["device"], "cpu")
+
+    def test_single_device_source_model_keeps_requested_device(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        class FakeSentenceTransformer:
+            def __init__(self, model_name: str, **kwargs: object) -> None:
+                calls.append({"model_name": model_name, **kwargs})
+
+        fake_module = ModuleType("sentence_transformers")
+        fake_module.SentenceTransformer = FakeSentenceTransformer
+        encoder = SentenceTransformerEncoder(
+            SentenceTransformerEncoderConfig(
+                model_name="example/model",
+                device="cuda:0",
+            )
+        )
+        with patch.dict("sys.modules", {"sentence_transformers": fake_module}):
+            encoder._load_model()
+
+        self.assertEqual(calls[0]["device"], "cuda:0")
 
     def test_required_cache_rejects_miss_without_encoding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

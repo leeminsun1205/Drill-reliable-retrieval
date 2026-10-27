@@ -16,6 +16,15 @@ Dense retrieval must encode corpus and queries independently, retain the mapping
 from vector positions to `aid`, support batching, and avoid unnecessary corpus
 re-encoding.
 
+For Sentence Transformers multi-GPU encoding, the parent process loads the
+source model on CPU before spawning one worker per configured CUDA device. This
+prevents the parent model from occupying GPU 0 alongside the GPU-0 worker. A
+Kaggle T4x2 process trace on 2026-10-27 verified the previous failure mode: the
+parent `run_experiment.py` process held 13,576 MiB on GPU 0 while its GPU-0
+worker attempted to materialize another model replica and ran out of memory;
+the GPU-1 worker completed its chunks. This is a runtime lifecycle correction,
+not a retrieval-method or scoring change.
+
 The active exact-search implementation uses FAISS `IndexFlatIP` over float32
 vectors, with explicit L2 normalization for cosine similarity. This remains
 exhaustive exact KNN, not ANN. `exact_numpy` is retained as the reference

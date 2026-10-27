@@ -91,6 +91,14 @@ class SentenceTransformerEncoder:
             self.config.model_name,
             revision=self.config.revision,
             trust_remote_code=self.config.trust_remote_code,
+            # A list makes Sentence Transformers spawn one encoding worker per
+            # device.  Keep the source model in host memory so the parent does
+            # not occupy cuda:0 alongside its worker's model replica.
+            device=(
+                "cpu"
+                if isinstance(self.config.device, list)
+                else None if self.config.device == "auto" else self.config.device
+            ),
         )
         if self.config.max_seq_length is not None:
             self._model.max_seq_length = self.config.max_seq_length
