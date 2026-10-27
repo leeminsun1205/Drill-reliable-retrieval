@@ -1063,3 +1063,30 @@ plus reranking, LightGBM, query analysis, and public/private inference. It does
 not import or inspect CUDA, RAM, models, or retrieval internals and therefore
 cannot affect model execution. The file is included in
 `multi_dense_results.tar.gz`.
+
+To run the fixed-budget distinct-article candidate ablation without changing
+the tracked baseline, override the explicit policy leaf:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/hybrid_reranker_multi_dense.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --output-root /kaggle/working/best_per_aid_ablation \
+  --devices 2 \
+  --set retrieval.hybrid.chunk_candidate_selection=best_per_aid
+```
+
+Keep `reranking.candidate_pool_size=50` and
+`reranking.retrieved_chunk_depth=100` fixed for the first comparison. The
+resolved config and retriever metadata record the selected policy. This test
+maximizes distinct-article coverage within the existing chunk-scored pool; it
+is not the later treatment that guarantees the article-level fused top 50.
+
+The tracked `notebooks/kaggle_multi_dense_weight_selection.ipynb` is currently
+configured as this full treatment: `best_per_aid`, packed-stream reranking,
+batch size 256, and a separate
+`/kaggle/working/multi_dense_best_per_aid` output root. It writes
+`multi_dense_best_per_aid_results.tar.gz` and compares its development metrics
+against the measured 2026-10-28 `top_chunks` packed-stream batch-256 baseline.
+Switching `CHUNK_CANDIDATE_SELECTION` back to `top_chunks` restores the control.

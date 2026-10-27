@@ -736,6 +736,22 @@ The owner also reported the following finished Codabench F2 values:
 | Multi-dense LightGBM | score-gap | 0.6260 | 0.5920 |
 | Single-BGE LightGBM | threshold + fallback 2 | 0.6160 | 0.5882 |
 
+The later full `packed_stream` batch-256 rerun produced the following completed
+Codabench results on 2026-10-28:
+
+| Submission ID | Policy | Split | F2 |
+|---:|---|---|---:|
+| 1014193 | LightGBM threshold + fallback 2 | public | 0.6293 |
+| 1014192 | LightGBM threshold + fallback 2 | private | **0.5960** |
+| 1014187 | LightGBM score-gap | public | 0.6228 |
+| 1014186 | LightGBM score-gap | private | 0.5914 |
+
+Relative to the earlier matched multi-dense submissions, threshold changed by
+`-0.0091` public and `+0.0008` private, while score-gap changed by `-0.0032`
+public and `-0.0006` private. Threshold still exceeded score-gap by `0.0065`
+public and `0.0046` private in the new run. These leaderboard observations are
+reported outcomes, not a license to tune further on the private split.
+
 Under the matched threshold policy, multi-dense improves the reported public
 score by `0.0224` and private score by `0.0070` over single BGE. This is evidence
 that the additional dense signals transfer, although the private gain is
@@ -746,6 +762,78 @@ only aggregate F2 here, so they cannot establish whether this reversal arose
 from output-size shift, calibration shift, or ranking errors. These submissions
 must be recorded as completed evaluations, not used to tune another policy on
 the private set.
+
+### Full multi-dense query failure analysis
+
+The 438-query packed-stream batch-256 archive contains 593 labeled gold
+articles and complete component, fusion, direct-chunk, epoch-3, and OOF
+LightGBM rankings. Measured macro Recall@50 was `0.834758` for BM25S,
+`0.924364` for VietLegal-Harrier, `0.896015` for multilingual-E5,
+`0.922081` after article-level fusion, and `0.903033` for the actual top-50
+direct-chunk candidate pool consumed by reranking. The top-50 union oracle of
+the three components was `0.942901`; it is descriptive and not a realizable
+fusion result.
+
+Of 593 gold articles, 509 survived into the direct-chunk candidate pool. The 84
+missing gold articles decomposed as follows: 36 were outside every component's
+top 100; 16 were outside every component's top 50 but appeared in at least one
+component at ranks 51--100; 15 were found by a component at top 50 but fusion
+placed them at ranks 51--100; two were found by a component but excluded from
+the fused top 100; and 15 appeared in fused article top 50 but not in the
+deduplicated direct-chunk top-50 pool. This identifies three separate controls
+for future work: component recall, fusion, and article-to-chunk candidate
+construction.
+
+The archived handoff contained exactly 50 chunks for every query, but those
+chunks covered only `31.9041` unique article IDs per query on average (minimum
+14, median 32, maximum 49); all 438 queries had fewer than 50 unique article
+IDs. Thus the fixed 50-pair budget was partly spent on multiple passages from
+the same article. This is a verified property of the saved candidate artifact,
+not an inference from final rankings.
+
+`retrieval.hybrid.chunk_candidate_selection` now exposes a controlled
+candidate-construction ablation. `top_chunks` is the default and preserves the
+measured baseline exactly. `best_per_aid` applies the same chunk-level WRRF
+scores and deterministic ordering, then retains only the first (highest-ranked)
+chunk for each `aid` until the same `candidate_pool_size` is filled or the
+retrieved depth is exhausted. It changes neither component retrieval, WRRF
+weights, cross-encoder, nor LightGBM, and it does not claim to reproduce the
+article-level fused top 50. Compare the two policies with the same depth and
+50-pair budget before implementing the stronger article-aligned handoff.
+
+Harrier supplied 14 gold articles found by no other top-50 component, while E5
+and BM25S each supplied five. Harrier and E5 rescued respectively 60 and 51
+BM25S top-50 misses. The principal weakness was multi-article supervision:
+fused Recall@50 was `0.971787` for 319 one-gold queries, `0.809783` for 92
+two-gold queries, and `0.681818` for 22 three-gold queries. Grouped by legal
+source, the 77 multi-gold queries whose gold articles belonged to one law had
+Recall@50 `0.801793`, while 42 cross-law multi-gold queries had `0.765079`.
+Among missing gold articles, 35 had another retrieved gold article from the
+same law; eight were immediately adjacent in corpus article order and 14 were
+within five articles. These observations motivate a controlled same-law
+structure/reference expansion, but do not by themselves prove that adjacency
+or references are causal.
+
+At rank five, 374 gold articles were found by OOF LightGBM. Another 122 were in
+the candidate pool but outside epoch-3 top five, while 13 were in epoch-3 top
+five but outside LightGBM top five. Across all 509 candidate gold articles,
+epoch-3 improved 156 relative to candidate order, left 210 unchanged, and
+worsened 143; LightGBM improved 170, left 258 unchanged, and worsened 81. Query
+length was a weak descriptive separator (`0.927651` fused Recall@50 for 269
+queries of at most 20 whitespace tokens versus `0.911647` for 166 queries of
+21--40 tokens). The current explicit-reference detector matched no development
+query, so this run provides no evidence about that subgroup and the detector
+must not be used to claim that explicit citations are absent in a broader
+dataset.
+
+The smallest justified next experiments are therefore: (1) compare direct
+chunk top 50 against a candidate pool that guarantees inclusion of fused
+article top 50; (2) test a fixed-budget union or learned fusion treatment
+against WRRF without changing reranking; and (3) add deterministic, independently
+disableable same-law structural or explicit-reference expansion, reporting
+single-gold, same-law multi-gold, and cross-law multi-gold strata. Increasing
+all candidate budgets or adding unrestricted query expansion would confound
+these failure modes and is not the first recommended treatment.
 
 Split-count feature importance ranked reranker score (`309.6`) and reranker
 margin (`278.2`) first. Harrier raw score (`212.6`) and reciprocal rank (`164.0`)
@@ -1172,7 +1260,26 @@ The active multi-dense notebook now promotes this measured treatment to a full
 can be silently reused. Its comparison table reports deltas against the
 documented 2026-10-27 multi-dense result (`0.663198` pooled score-gap F2 and
 `0.660836` nested-OOF score-gap F2), while preserving the earlier result as a
-reference rather than overwriting it. Full-run parity remains pending execution.
+reference rather than overwriting it. The owner subsequently reported that the
+full batch-256 run completed. All reported epoch-3 fixed-k and threshold metrics
+matched the prior full run at six decimal places, including
+threshold-fallback-2 F2 `0.594003` and fixed-top-2 F2 `0.529209`. LightGBM was
+close but not identical: pooled score-gap F2 was `0.660765` versus `0.663198`
+(`-0.002433`), nested-OOF score-gap F2 was `0.657352` versus `0.660836`
+(`-0.003484`), threshold-fallback-2 F2 was `0.648366` versus `0.647531`
+(`+0.000835`), and fixed-top-2 F2 was `0.568361` versus `0.574888`
+(`-0.006527`). These owner-reported values verify reranker metric parity but not
+LightGBM parity. Exact artifact comparison is still required to distinguish
+small FP16 score changes from LightGBM training or feature-construction
+variation.
+The historical reference was traced to Git commit `39a6232` rather than inferred
+from the later conservative config. At that revision the completed treatment
+used `global_stream`, neural batch 128, outer pair batch 1,024, the same epoch-3
+checkpoint, retrieved-chunk source, top-50 candidate pool, 512 pair tokens,
+Khoản–Điểm 448/64 representations, two CUDA devices with FP16, and five-fold
+LightGBM with seed 42. Therefore the new comparison changes both batching mode
+(`global_stream` to `packed_stream`) and neural batch size (128 to 256); it is
+not a comparison against `per_query` batch 8.
 Candidate sets, token budgets, model weights, and scoring remain unchanged.
 The 1,024-token article-rechunk controls retain their prior safe batches because
 the benchmark does not cover their activation footprint.

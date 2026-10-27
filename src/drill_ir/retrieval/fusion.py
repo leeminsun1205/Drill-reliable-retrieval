@@ -12,6 +12,39 @@ from .base import Retriever
 from .dense import ChunkRetrievalResult
 
 
+_CHUNK_CANDIDATE_SELECTIONS = {"top_chunks", "best_per_aid"}
+
+
+def _validate_chunk_candidate_selection(value: str) -> str:
+    if value not in _CHUNK_CANDIDATE_SELECTIONS:
+        choices = ", ".join(sorted(_CHUNK_CANDIDATE_SELECTIONS))
+        raise ValueError(f"chunk_candidate_selection must be one of: {choices}")
+    return value
+
+
+def _select_chunk_candidates(
+    ranked: Sequence[Sequence[object]],
+    *,
+    top_k: int,
+    selection: str,
+) -> list[Sequence[object]]:
+    """Select a fixed-size chunk pool, optionally limiting it to one chunk per aid."""
+    if selection == "top_chunks":
+        return list(ranked[:top_k])
+    selected: list[Sequence[object]] = []
+    seen_aids: set[int] = set()
+    for item in ranked:
+        chunk = item[0]
+        aid = int(getattr(chunk, "aid"))
+        if aid in seen_aids:
+            continue
+        seen_aids.add(aid)
+        selected.append(item)
+        if len(selected) == top_k:
+            break
+    return selected
+
+
 class WeightedRRFRetriever:
     """Fuse sparse and dense ranks with weighted reciprocal rank fusion."""
 
@@ -26,6 +59,7 @@ class WeightedRRFRetriever:
         sparse_top_k: int = 100,
         dense_top_k: int = 100,
         include_zero_score_sparse: bool = False,
+        chunk_candidate_selection: str = "top_chunks",
     ) -> None:
         if sparse_weight < 0 or dense_weight < 0:
             raise ValueError("WRRF weights cannot be negative")
@@ -43,6 +77,9 @@ class WeightedRRFRetriever:
         self.sparse_top_k = sparse_top_k
         self.dense_top_k = dense_top_k
         self.include_zero_score_sparse = include_zero_score_sparse
+        self.chunk_candidate_selection = _validate_chunk_candidate_selection(
+            chunk_candidate_selection
+        )
         self._component_results: dict[str, list[RetrievalResult]] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
@@ -183,7 +220,11 @@ class WeightedRRFRetriever:
                     score += self.sparse_weight / (self.rrf_k + sparse_rank)
                 ranked.append((chunk, float(score), dense_rank, raw_score))
             ranked.sort(key=lambda item: (-item[1], item[2], item[0].chunk_id))
-            selected = ranked[:top_k]
+            selected = _select_chunk_candidates(
+                ranked,
+                top_k=top_k,
+                selection=self.chunk_candidate_selection,
+            )
             fused.append(
                 ChunkRetrievalResult(
                     qid=result.qid,
@@ -204,6 +245,7 @@ class WeightedRRFRetriever:
             "sparse_top_k": self.sparse_top_k,
             "dense_top_k": self.dense_top_k,
             "include_zero_score_sparse": self.include_zero_score_sparse,
+            "chunk_candidate_selection": self.chunk_candidate_selection,
             "sparse": sparse_metadata() if callable(sparse_metadata) else {},
             "dense": dense_metadata() if callable(dense_metadata) else {},
         }
@@ -223,6 +265,7 @@ class MultiDenseWeightedRRFRetriever:
         sparse_top_k: int = 100,
         dense_top_k: Mapping[str, int] | None = None,
         include_zero_score_sparse: bool = False,
+        chunk_candidate_selection: str = "top_chunks",
     ) -> None:
         if not dense_retrievers:
             raise ValueError("Multi-dense WRRF requires at least one dense component")
@@ -245,6 +288,9 @@ class MultiDenseWeightedRRFRetriever:
         self.rrf_k = rrf_k
         self.sparse_top_k = sparse_top_k
         self.include_zero_score_sparse = include_zero_score_sparse
+        self.chunk_candidate_selection = _validate_chunk_candidate_selection(
+            chunk_candidate_selection
+        )
         self._component_results: dict[str, list[RetrievalResult]] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
@@ -394,12 +440,17 @@ class MultiDenseWeightedRRFRetriever:
                     )
             ranked = sorted(
                 candidates.values(), key=lambda item: (-float(item[1]), int(item[2]))
-            )[:top_k]
+            )
+            selected = _select_chunk_candidates(
+                ranked,
+                top_k=top_k,
+                selection=self.chunk_candidate_selection,
+            )
             fused.append(
                 ChunkRetrievalResult(
                     qid=query.qid,
-                    chunks=tuple(item[0] for item in ranked),
-                    scores=tuple(float(item[1]) for item in ranked),
+                    chunks=tuple(item[0] for item in selected),
+                    scores=tuple(float(item[1]) for item in selected),
                 )
             )
         return fused
@@ -411,6 +462,7 @@ class MultiDenseWeightedRRFRetriever:
             "sparse_weight": self.sparse_weight,
             "sparse_top_k": self.sparse_top_k,
             "include_zero_score_sparse": self.include_zero_score_sparse,
+            "chunk_candidate_selection": self.chunk_candidate_selection,
             "dense_components": {
                 name: {
                     "weight": self.dense_weights[name],

@@ -122,6 +122,55 @@ class WeightedRRFTest(unittest.TestCase):
         )[0]
         self.assertEqual(tuple(chunk.aid for chunk in result.chunks), (10, 20))
 
+    def test_best_per_aid_uses_fixed_chunk_budget_for_distinct_articles(self) -> None:
+        chunks = (
+            Chunk("10:0", 10, "L", 0, "diem", "best ten", 0, 1, 1),
+            Chunk("10:1", 10, "L", 1, "diem", "second ten", 0, 1, 1),
+            Chunk("20:0", 20, "L", 0, "diem", "best twenty", 0, 1, 1),
+        )
+        sparse = FakeRetriever([RetrievalResult(1, (), ())])
+        dense = FakeChunkRetriever(
+            [RetrievalResult(1, (10, 20), (1.0, 0.5))],
+            [ChunkRetrievalResult(1, chunks, (0.9, 0.8, 0.7))],
+        )
+        retriever = WeightedRRFRetriever(
+            sparse=sparse,
+            dense=dense,
+            chunk_candidate_selection="best_per_aid",
+        )
+        retriever.retrieve([Query(1, "q", ())], top_k=2)
+        result = retriever.retrieve_chunks(
+            [Query(1, "q", ())], top_k=2, dense_depth=3
+        )[0]
+        self.assertEqual(tuple(chunk.chunk_id for chunk in result.chunks), ("10:0", "20:0"))
+
+    def test_top_chunks_remains_the_default_chunk_selection(self) -> None:
+        chunks = (
+            Chunk("10:0", 10, "L", 0, "diem", "best ten", 0, 1, 1),
+            Chunk("10:1", 10, "L", 1, "diem", "second ten", 0, 1, 1),
+            Chunk("20:0", 20, "L", 0, "diem", "best twenty", 0, 1, 1),
+        )
+        sparse = FakeRetriever([RetrievalResult(1, (), ())])
+        dense = FakeChunkRetriever(
+            [RetrievalResult(1, (10, 20), (1.0, 0.5))],
+            [ChunkRetrievalResult(1, chunks, (0.9, 0.8, 0.7))],
+        )
+        retriever = WeightedRRFRetriever(sparse=sparse, dense=dense)
+        retriever.retrieve([Query(1, "q", ())], top_k=2)
+        result = retriever.retrieve_chunks(
+            [Query(1, "q", ())], top_k=2, dense_depth=3
+        )[0]
+        self.assertEqual(tuple(chunk.chunk_id for chunk in result.chunks), ("10:0", "10:1"))
+
+    def test_rejects_unknown_chunk_candidate_selection(self) -> None:
+        fake = FakeRetriever([])
+        with self.assertRaisesRegex(ValueError, "chunk_candidate_selection"):
+            WeightedRRFRetriever(
+                sparse=fake,
+                dense=fake,
+                chunk_candidate_selection="unknown",
+            )
+
     def test_multi_dense_fuses_articles_and_exact_matching_chunks(self) -> None:
         shared = Chunk("20:a", 20, "L", 0, "diem", "shared", 0, 6, 1)
         other = Chunk("30:a", 30, "L", 0, "diem", "other", 0, 5, 1)
@@ -182,11 +231,34 @@ class WeightedRRFTest(unittest.TestCase):
             retriever = build_retriever("hybrid", config, {"accelerator": "cpu"})
         self.assertIsInstance(retriever, MultiDenseWeightedRRFRetriever)
         self.assertEqual(set(retriever.dense_retrievers), {"first", "second"})
+        self.assertEqual(retriever.chunk_candidate_selection, "top_chunks")
         self.assertEqual(
             [call.args[0].model_name for call in encoder.call_args_list],
             ["model-a", "model-b"],
         )
         self.assertEqual(base_dense["encoder"]["model_name"], "base")
+
+    def test_factory_exposes_best_per_aid_chunk_selection(self) -> None:
+        config = {
+            "hybrid": {
+                "fusion": "weighted_rrf",
+                "chunk_candidate_selection": "best_per_aid",
+            },
+            "bm25": {},
+            "dense": {
+                "encoder": {
+                    "backend": "sentence_transformers",
+                    "model_name": "model",
+                    "max_seq_length": 512,
+                },
+                "search": {"backend": "exact", "metric": "cosine"},
+                "chunking": {"method": "article_truncate", "aggregation": "max"},
+                "cache": {"enabled": False},
+            },
+        }
+        with patch("drill_ir.retrieval.factory.SentenceTransformerEncoder"):
+            retriever = build_retriever("hybrid", config, {"accelerator": "cpu"})
+        self.assertEqual(retriever.chunk_candidate_selection, "best_per_aid")
 
 
 if __name__ == "__main__":

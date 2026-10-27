@@ -17,6 +17,9 @@ retrieval:
     sparse_top_k: 100
     dense_top_k: 100
     include_zero_score_sparse: false
+    # Ablation: top_chunks preserves the measured baseline; best_per_aid spends
+    # the fixed 50-pair reranking budget on distinct article IDs.
+    chunk_candidate_selection: top_chunks
     dense_components:
       - name: vietlegal_harrier
         profile: vietlegal_harrier

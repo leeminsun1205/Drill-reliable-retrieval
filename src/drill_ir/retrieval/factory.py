@@ -107,6 +107,9 @@ def build_retriever(
                 include_zero_score_sparse=bool(
                     hybrid.get("include_zero_score_sparse", False)
                 ),
+                chunk_candidate_selection=str(
+                    hybrid.get("chunk_candidate_selection", "top_chunks")
+                ),
             )
         return WeightedRRFRetriever(
             sparse=build_retriever("bm25", retrieval_config, runtime),
@@ -118,6 +121,9 @@ def build_retriever(
             dense_top_k=int(hybrid.get("dense_top_k", 100)),
             include_zero_score_sparse=bool(
                 hybrid.get("include_zero_score_sparse", False)
+            ),
+            chunk_candidate_selection=str(
+                hybrid.get("chunk_candidate_selection", "top_chunks")
             ),
         )
     if method == "bm25":
