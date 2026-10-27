@@ -505,17 +505,22 @@ outer size, neural size, scored-pair count, and scorer-call count.
 
 For the smallest useful batch-size decision, run
 `notebooks/kaggle_reranker_batch_benchmark.ipynb`. It loads the selected
-checkpoint once, builds 256 real Vietnamese legal query–Khoản/Điểm pairs from
-development gold articles, warms up both batch sizes, and alternates batch 8
-and 16 for at least three repeats. It automatically stops once each treatment
-has accumulated at least 30 measured seconds, capped at five repeats. The
+checkpoint once, builds ten deterministic question-length-stratified query
+groups with 50 real legal Khoản/Điểm candidates each, warms up batch sizes 8,
+64, and 128, and rotates
+their execution order for at least four repeats. It stops after four when all
+throughput CVs are at most 2%; otherwise it continues until each treatment
+accumulates 60 measured seconds, capped at seven repeats. The
 artifact reports median pairs/second, coefficient of variation, peak allocated
 CUDA memory, score drift, and a reranker-only extrapolation to the 21,900-pair
 upper bound (`438 * 50`). The extrapolation excludes checkpoint loading,
 retrieval, fusion, chunk preparation, and evaluation. Treat it as sufficient
-for choosing the neural batch size when throughput CV is at most 10%, score
-drift is at most `1e-3`, and batch 16 has safe memory headroom; otherwise extend
-the repeats or retain batch 8.
+for choosing the neural batch size when throughput CV is at most 10%, sampled
+top-1 agreement against batch 8 is 100%, mean top-3 overlap is at least 99%, mean rank
+correlation is at least 0.999, and batch 16 has safe memory headroom; otherwise
+extend the parity sample or retain batch 8. FP16 logits may vary slightly when
+the batch shape changes, so maximum absolute logit drift is recorded as a
+diagnostic rather than used alone as the acceptance criterion.
 
 The result directory contains reranked `predictions.jsonl`, frozen
 `first_stage_predictions.jsonl`, component rankings, resolved config, metrics,

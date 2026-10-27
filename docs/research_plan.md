@@ -261,16 +261,18 @@ resource-hardening list. It scores one deterministic global pair stream in
 bounded outer groups and preserves `per_query` as a parity control, without
 changing candidates, scores, max aggregation, or tie-breaking. Synthetic
 article-rechunk and direct-chunk tests are exact. A matched Kaggle T4 benchmark
-of neural batch sizes 8, 16, 24, and 32 is still pending; compare wall time,
+of neural batch sizes 8, 64, and 128 is still pending; compare wall time,
 pairs/second, peak CUDA memory, and exact output parity, and retain 8 when a
 larger batch is unstable. This is an engineering treatment, not a retrieval or
 quality treatment.
 
-The first decision gate is the minimal reranker-only notebook comparing batch
-8 with 16 on 256 deterministic real legal pairs, adaptive to at least three
-repeats and 30 measured seconds per treatment. Its full-run time is an
-inference-only projection, not a measured end-to-end runtime. Test 24 and 32
-only if 16 is both materially faster and comfortably below the T4 memory limit.
+The first decision gate is the reranker-only notebook comparing batch 8, 64,
+and 128 on 500 deterministic real legal pairs arranged as ten query-specific
+top-50 proxy groups, adaptive to at least four
+repeats, 2% early-stop CV, and 60 measured seconds per treatment when noisy.
+Its full-run time is an inference-only projection, not a measured end-to-end
+runtime. Select the fastest treatment only when sampled ranking parity and T4
+memory-headroom checks pass against batch 8.
 
 ### Deferred participant-inspired methods
 
