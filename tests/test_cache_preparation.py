@@ -7,7 +7,7 @@ class CachePreparationTest(unittest.TestCase):
     def test_lists_sparse_and_named_multi_dense_components(self) -> None:
         config = {
             "bm25": {},
-            "dense": {},
+            "dense": {"chunk_cache": {"enabled": True}},
             "hybrid": {
                 "dense_components": [
                     {"name": "bge_m3", "profile": "bge_m3"},
@@ -17,7 +17,7 @@ class CachePreparationTest(unittest.TestCase):
         }
         self.assertEqual(
             configured_cache_components(config),
-            ["sparse", "bge_m3", "challenger"],
+            ["sparse", "chunks", "bge_m3", "challenger"],
         )
 
     def test_single_dense_config_does_not_invent_sparse_component(self) -> None:

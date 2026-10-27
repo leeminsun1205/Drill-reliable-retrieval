@@ -45,6 +45,14 @@ ranking scores, and query-adaptive early score-gap selection produces the final
 set. Article-first rechunking remains an ablation, not the default pipeline.
 Hold this configuration fixed when testing structure or reference components.
 
+The completed multi-dense treatment improves the user-reported matched
+threshold submission from single-BGE public/private F2 `0.6160/0.5882` to
+`0.6384/0.5952`. Its nested-OOF score-gap estimate is `0.660836`, but the frozen
+multi-dense threshold submission outscored score-gap on both reported
+leaderboard splits (`0.6384/0.5952` versus `0.6260/0.5920`). Record this policy
+reversal as test-distribution evidence; do not use the private result to tune a
+replacement policy.
+
 The completed final-set-selection ablation compared unchanged fixed top-2 and
 global-threshold/fallback-2 policies against query-adaptive early score-gap
 selection using the same saved LightGBM rankings. Score-gap is now selected for
@@ -273,6 +281,12 @@ repeats, 2% early-stop CV, and 60 measured seconds per treatment when noisy.
 Its full-run time is an inference-only projection, not a measured end-to-end
 runtime. Select the fastest treatment only when sampled ranking parity and T4
 memory-headroom checks pass against batch 8.
+
+The 2026-10-27 two-T4 decision-gate run selected batch 128: it delivered about
+89.37 pairs/second versus 29.03 for batch 8 (3.08x), used 3,659 MiB peak
+allocated memory on the most-used GPU, and preserved sampled top-1 and top-3
+rankings exactly. Treat this as measured support for the next full-run
+configuration, not proof of parity for every development query.
 
 ### Deferred participant-inspired methods
 

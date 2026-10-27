@@ -8,11 +8,17 @@ from typing import Any, Sequence
 from drill_ir.data.models import Article
 
 from .factory import _merged_mapping, build_retriever
+from .dense import DenseRetriever
 
 
 def configured_cache_components(retrieval_config: dict[str, Any]) -> list[str]:
     """Return the sparse cache plus configured dense component names."""
     components = ["sparse"] if isinstance(retrieval_config.get("bm25"), dict) else []
+    dense = retrieval_config.get("dense")
+    if isinstance(dense, dict):
+        chunk_cache = dense.get("chunk_cache", {})
+        if isinstance(chunk_cache, dict) and bool(chunk_cache.get("enabled", False)):
+            components.append("chunks")
     hybrid = retrieval_config.get("hybrid", {})
     dense_components = hybrid.get("dense_components") if isinstance(hybrid, dict) else None
     if dense_components is None:
@@ -45,6 +51,24 @@ def prepare_retrieval_cache(
         cache["enabled"] = True
         cache["require_hit"] = require_existing
         retriever = build_retriever("bm25", config, runtime_config)
+    elif component == "chunks":
+        if not isinstance(config.get("dense"), dict):
+            raise ValueError("Cannot prepare chunks without retrieval.dense")
+        retriever = build_retriever("dense", config, runtime_config)
+        if not isinstance(retriever, DenseRetriever) or retriever.chunk_cache is None:
+            raise ValueError("Component 'chunks' requires enabled retrieval.dense.chunk_cache")
+        chunks = retriever.prepare_chunks(articles)
+        return {
+            "component": component,
+            "chunk_cache": {
+                "hit": retriever.chunk_cache_hit,
+                "raw_corpus_fingerprint": retriever.raw_corpus_fingerprint,
+                "chunker_cache_key": retriever.chunker.cache_key,
+                "representations": len(chunks),
+                "unique_aids": len({chunk.aid for chunk in chunks}),
+                "chunking": getattr(retriever.chunker, "last_stats", {}),
+            },
+        }
     else:
         hybrid = config.get("hybrid", {})
         dense_components = hybrid.get("dense_components") if isinstance(hybrid, dict) else None

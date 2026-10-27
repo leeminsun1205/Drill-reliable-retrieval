@@ -117,8 +117,9 @@ point the corresponding cache directories at that attached input and enable
 
 For parallel Kaggle preparation, use
 `notebooks/kaggle_build_retrieval_cache.ipynb`. Clone it into separate Kaggle
-notebooks and change only `CACHE_TARGET`: `0` builds VnCoreNLP BM25 and `1`–`7`
-select the fixed seven-model dense screening registry. Every notebook builds
+notebooks and change only `CACHE_TARGET`: `0` builds VnCoreNLP BM25S, `1`–`7`
+select the fixed seven-model dense screening registry, and `8` builds the
+shared BGE-M3 Khoản–Điểm 448/64 chunk records without encoding documents. Every notebook builds
 one component, then reruns the loader with `--require-existing`; the version is
 successful only if the just-written cache passes full validation and reports a
 cache hit. The final cell also packages the config, manifest, and cache directory
@@ -455,6 +456,39 @@ still requires deterministic rechunking for validation/alignment, model loading
 for query encoding, matrix loading, and exact search. First-stage component
 rankings are separate experiment artifacts, not part of the embedding cache.
 
+The preferred attachment layout is one Kaggle Dataset containing the three
+already-extracted cache roots and their sibling manifests: BM25S,
+VietLegal-Harrier, and multilingual-E5-large. The active notebook can read
+these immutable files directly under `/kaggle/input`; this avoids tar
+extraction, working-disk duplication, and accidentally attaching multiple
+versions of the same slug. Do not rebuild dense embeddings merely because the
+reranker batch size changed: reranker batching is absent from the dense cache
+identity.
+
+Dense `embeddings.npy` files are loaded read-only with NumPy memory mapping.
+This preserves the exact float32 matrix while avoiding an eager anonymous-RAM
+copy before FAISS prepares its search index. The active notebook no longer runs
+a separate full-corpus `--require-existing` preparation pass for a populated
+attached cache; the actual experiment remains fail-closed with `require_hit`
+and performs the authoritative corpus/chunker/encoder/alignment validation.
+New embedding caches also record and verify the matrix SHA-256 checksum. Older
+caches without this optional field remain readable for backward compatibility;
+their corpus, encoder/chunker identity, shape, dtype, and ordered `aid` mapping
+are still validated as before.
+
+The remaining cache limitation is deterministic rechunking. Each embedding
+cache stores the matrix and ordered parent `aid` mapping, but not the 205,898
+serialized `Chunk` records needed for chunk-level retrieval and reranking. A
+cache hit must therefore rerun the shared BGE-M3 Khoản–Điểm 448/64 tokenizer
+pipeline. The next cache-format revision should add one shared, immutable chunk
+table keyed by the ordered raw-corpus fingerprint and chunker key, then make
+both dense embedding caches reference its fingerprint. Store chunk ID, parent
+`aid`, `law_id`, chunk index/type, text, character offsets, and token count in a
+portable Parquet or JSONL artifact. Keep the current rechunk-and-validate path
+as a backward-compatible fallback. Only after that implementation and parity
+tests should Harrier and E5 caches be rebuilt; rebuilding them in the current
+format provides no scientific or runtime benefit.
+
 ## Hybrid plus cross-encoder reranking
 
 After fixing the hybrid candidates, run the zero-shot BGE reranker over the top
@@ -489,7 +523,7 @@ The active reranker configs use continuous pair batching:
 reranking:
   batching: global_stream
   outer_pair_batch_size: 1024
-  batch_size: 8
+  batch_size: 128
 ```
 
 `outer_pair_batch_size` bounds each group passed to the scorer, while
@@ -498,10 +532,13 @@ multiple of the neural batch size avoids introducing a partially filled batch
 at every outer boundary. `global_stream` may combine the tail of one query with
 the beginning of the next mini-batch, but restores every score to its original
 query before aggregation. Use `--set reranking.batching=per_query` only as a
-parity/debug control. The selected batch size remains 8 until a matched T4
-benchmark establishes the largest safe value; do not interpret this code change
-alone as a measured runtime improvement. `run_info.json` records batching mode,
-outer size, neural size, scored-pair count, and scorer-call count.
+parity/debug control. The selected direct-chunk, 512-token two-T4 configuration
+uses batch 128 after the measured benchmark reported 3.08 times batch-8
+throughput, exact sampled top-1/top-3 parity, and 3,659 MiB peak allocated
+memory. This setting does not transfer automatically to the 1,024-token
+article-rechunk configs, which retain their separately safe batches.
+`run_info.json` records batching mode, outer size, neural size, scored-pair
+count, and scorer-call count.
 
 For the smallest useful batch-size decision, run
 `notebooks/kaggle_reranker_batch_benchmark.ipynb`. It loads the selected
@@ -517,7 +554,7 @@ upper bound (`438 * 50`). The extrapolation excludes checkpoint loading,
 retrieval, fusion, chunk preparation, and evaluation. Treat it as sufficient
 for choosing the neural batch size when throughput CV is at most 10%, sampled
 top-1 agreement against batch 8 is 100%, mean top-3 overlap is at least 99%, mean rank
-correlation is at least 0.999, and batch 16 has safe memory headroom; otherwise
+correlation is at least 0.999, and the candidate has safe memory headroom; otherwise
 extend the parity sample or retain batch 8. FP16 logits may vary slightly when
 the batch shape changes, so maximum absolute logit drift is recorded as a
 diagnostic rather than used alone as the acceptance criterion.

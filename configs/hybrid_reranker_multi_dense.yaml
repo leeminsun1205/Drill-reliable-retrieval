@@ -58,6 +58,9 @@ retrieval:
         segmenter_max_characters: 20000
         stopword_preset: none
   dense:
+    chunk_cache:
+      enabled: true
+      directory: embeddings/shared_bge_m3_khoan_diem448_chunks
     feedback:
       enabled: false
       method: rocchio
@@ -129,7 +132,9 @@ reranking:
   document_max_tokens: 448
   overlap_tokens: 64
   max_length: 512
-  batch_size: 8
+  # Two-T4 benchmark winner at max_length 512: 3.08x batch-8 throughput with
+  # exact sampled top-1/top-3 parity and ample memory headroom.
+  batch_size: 128
   positive_label_index: 1
   trust_remote_code: false
   fp16: true

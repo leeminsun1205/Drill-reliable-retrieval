@@ -7,6 +7,7 @@ import numpy as np
 from drill_ir.data import Article, Query
 from drill_ir.preprocessing import Chunk
 from drill_ir.retrieval import (
+    DenseChunkCache,
     DenseRetriever,
     EmbeddingCache,
     ExactVectorSearch,
@@ -146,6 +147,26 @@ class DenseRetrieverTest(unittest.TestCase):
             )
             second.fit(self.articles)
             self.assertEqual(second_encoder.document_calls, 0)
+            self.assertFalse(second._document_embeddings.flags.writeable)
+
+    def test_chunk_cache_round_trip_preserves_full_records_and_checks_checksum(self) -> None:
+        chunk = Chunk(
+            "10:khoan:0", 10, "L1", 0, "khoan_diem", "Điều 1", 2, 9, 3,
+            parse_status="parsed", structure_path=("khoan:1",), source_spans=((2, 9),),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            cache = DenseChunkCache(Path(directory))
+            cache.save(
+                [chunk], corpus_fingerprint="corpus", chunker_key="chunker",
+                chunking_stats={"method": "khoan_diem"},
+            )
+            loaded = cache.load(corpus_fingerprint="corpus", chunker_key="chunker")
+            self.assertEqual(loaded, ([chunk], {"method": "khoan_diem"}))
+            chunks_path = next(Path(directory).rglob("chunks.jsonl"))
+            chunks_path.write_text(chunks_path.read_text() + "\n", encoding="utf-8")
+            self.assertIsNone(
+                cache.load(corpus_fingerprint="corpus", chunker_key="chunker")
+            )
 
     def test_close_releases_dense_state_and_encoder(self) -> None:
         encoder = FakeEncoder(self.vectors)

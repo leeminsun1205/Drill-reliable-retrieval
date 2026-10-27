@@ -7,6 +7,7 @@ from typing import Any
 from .base import Retriever
 from .bm25 import BM25IndexCache, BM25Retriever, BM25SIndexCache, BM25SRetriever
 from .dense import (
+    DenseChunkCache,
     DenseRetriever,
     EmbeddingCache,
     ExactVectorSearch,
@@ -188,12 +189,15 @@ def build_retriever(
     encoder_config = dense.get("encoder")
     search_config = dense.get("search")
     cache_config = dense.get("cache", {})
+    chunk_cache_config = dense.get("chunk_cache", {})
     chunking_config = dense.get("chunking", {"method": "article_truncate"})
     feedback_config = dense.get("feedback", {})
     if not isinstance(encoder_config, dict) or not isinstance(search_config, dict):
         raise ValueError("retrieval.dense requires encoder and search mappings")
     if not isinstance(chunking_config, dict):
         raise ValueError("retrieval.dense.chunking must be a YAML mapping")
+    if not isinstance(chunk_cache_config, dict):
+        raise ValueError("retrieval.dense.chunk_cache must be a YAML mapping")
     if not isinstance(feedback_config, dict):
         raise ValueError("retrieval.dense.feedback must be a YAML mapping")
     feedback_method = str(feedback_config.get("method", "none"))
@@ -246,6 +250,11 @@ def build_retriever(
     cache = None
     if bool(cache_config.get("enabled", True)):
         cache = EmbeddingCache(Path(str(cache_config.get("directory", "embeddings"))))
+    chunk_cache = None
+    if bool(chunk_cache_config.get("enabled", False)):
+        chunk_cache = DenseChunkCache(
+            Path(str(chunk_cache_config.get("directory", "embeddings/chunks")))
+        )
     chunking_method = chunking_config.get("method", "article_truncate")
     if chunking_config.get("aggregation", "max") != "max":
         raise ValueError("Only dense chunk aggregation='max' is currently supported")
@@ -313,6 +322,7 @@ def build_retriever(
         encoder=encoder,
         search=search,
         cache=cache,
+        chunk_cache=chunk_cache,
         chunker=chunker,
         rocchio_enabled=bool(feedback_config.get("enabled", False)),
         rocchio_feedback_documents=int(

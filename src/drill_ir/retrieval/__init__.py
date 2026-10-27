@@ -4,6 +4,7 @@ from .base import Retriever
 from .bm25 import BM25IndexCache, BM25Retriever, BM25SIndexCache, BM25SRetriever, tokenize
 from .dense import (
     ChunkRetrievalResult,
+    DenseChunkCache,
     DenseRetriever,
     EmbeddingCache,
     ExactVectorSearch,
@@ -22,6 +23,7 @@ __all__ = [
     "BM25SIndexCache",
     "BM25SRetriever",
     "DenseRetriever",
+    "DenseChunkCache",
     "EmbeddingCache",
     "ExactVectorSearch",
     "FaissFlatVectorSearch",

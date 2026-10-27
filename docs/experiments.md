@@ -332,6 +332,16 @@ token budget, chunk count, maximum chunks per article, representation count,
 unique aid count, and aggregation method. Changing the representation therefore
 cannot silently reuse article-level embeddings.
 
+The implemented shared dense chunk cache is additionally keyed by the ordered
+raw-corpus fingerprint and stores every `Chunk` field in checksummed UTF-8
+JSONL. Harrier and multilingual-E5 share this artifact because their controlled
+multi-dense treatment freezes boundaries to the same BGE-M3 Khoản–Điểm 448/64
+chunker. Existing embedding caches remain compatible: on a chunk-cache miss the
+first dense component deterministically rebuilds and saves the table, while the
+second component and later processes load it. Embedding matrices remain
+model-specific and continue to validate the reconstructed chunk fingerprint and
+ordered parent-`aid` mapping.
+
 Length settings are tokenizer-token counts, not words or characters. A dense
 bi-encoder encodes query and document independently, so each side has its own
 maximum. A cross-encoder instead encodes a query-document pair; its configured
@@ -631,6 +641,54 @@ supports complementary retrieval signals but is not a causal attribution;
 split-count importance is biased by feature scale/cardinality and should be
 supplemented by ablation or permutation importance before making a feature-
 specific claim.
+
+### Multi-dense LightGBM result
+
+On 2026-10-27, the owner reported the completed BM25 + VietLegal-Harrier +
+multilingual-E5 treatment with fixed WRRF weights `0.1/0.5/0.4`, epoch-3
+reranking, and a newly trained fifteen-feature LightGBM model. The development
+set contained 438 queries, 13,973 candidate rows, 509 positive rows, and 13,464
+negative rows. Its principal measured development results were:
+
+| System | Policy | Precision | Recall | F2 |
+|---|---|---:|---:|---:|
+| LightGBM pooled OOF | score-gap, max 3 | 0.561644 | 0.694597 | **0.663198** |
+| LightGBM nested OOF | score-gap, max 3 | 0.566210 | 0.689650 | **0.660836** |
+| LightGBM OOF | threshold + fallback 2 | 0.435151 | 0.737519 | 0.647531 |
+| Epoch 3 | threshold + fallback 2 | 0.483893 | 0.629833 | 0.594003 |
+| LightGBM OOF | fixed top 2 | 0.388128 | 0.653501 | 0.574888 |
+| Epoch 3 | fixed top 2 | 0.355023 | 0.603196 | 0.529209 |
+
+The pooled score-gap policy used minimum gap `0.430864`, fallback 3, maximum 3,
+and mean output size `1.982`; its nested-OOF estimate was only `0.002362` lower,
+which indicates limited policy-selection optimism on this development split.
+The LightGBM threshold policy selected probability `0.075641` with empty-only
+fallback 2 and mean output size `2.614` (maximum 11).
+
+The owner also reported the following finished Codabench F2 values:
+
+| Retrieval/model | Final policy | Public | Private |
+|---|---|---:|---:|
+| Multi-dense LightGBM | threshold + fallback 2 | **0.6384** | **0.5952** |
+| Multi-dense LightGBM | score-gap | 0.6260 | 0.5920 |
+| Single-BGE LightGBM | threshold + fallback 2 | 0.6160 | 0.5882 |
+
+Under the matched threshold policy, multi-dense improves the reported public
+score by `0.0224` and private score by `0.0070` over single BGE. This is evidence
+that the additional dense signals transfer, although the private gain is
+modest. The development ordering between final-set policies did not transfer:
+score-gap led threshold by `0.015667` development F2, but threshold led
+score-gap by `0.0124` public and `0.0032` private. Leaderboard results expose
+only aggregate F2 here, so they cannot establish whether this reversal arose
+from output-size shift, calibration shift, or ranking errors. These submissions
+must be recorded as completed evaluations, not used to tune another policy on
+the private set.
+
+Split-count feature importance ranked reranker score (`309.6`) and reranker
+margin (`278.2`) first. Harrier raw score (`212.6`) and reciprocal rank (`164.0`)
+both exceeded the corresponding multilingual-E5 values (`174.0`, `97.4`). This
+is consistent with useful Harrier signal but is not a causal component
+ablation; correlated features and split-count bias prevent that interpretation.
 
 Record model identifiers, candidate pool size, final count, thresholds, and
 normalization or fusion parameters whenever applicable.
@@ -1008,10 +1066,28 @@ one query can be filled by pairs from the next query. The legacy
 `batching=per_query` path remains available as an exact parity control. The
 outer grouping is an orchestration bound, not the GPU mini-batch;
 `outer_pair_batch_size=1024` feeds multiple calls of the configured neural
-`batch_size=8`. Metadata records both settings plus total scored pairs and
+batch size. The selected 512-token direct-chunk configs now use
+`batch_size=128`; 1,024-token article-rechunk controls retain their prior safe
+batches because the benchmark does not cover their activation footprint.
+Metadata records both settings plus total scored pairs and
 scorer-call count. Unit tests verify identical article rankings and scores for
-both article-rechunk and direct retrieved-chunk paths. No T4 speedup is reported
-yet; throughput and peak-memory measurements remain a separate benchmark.
+both article-rechunk and direct retrieved-chunk paths. The following isolated
+benchmark measures throughput and memory; it does not replace end-to-end
+quality evaluation.
+
+The reranker-only two-T4 benchmark was executed on 2026-10-27 with 500 real
+legal pairs arranged as ten question-length-stratified query groups of 50
+candidates. Median throughput over seven repeats was approximately 29.03,
+78.59, and 89.37 pairs/second for neural batch sizes 8, 64, and 128,
+respectively. Thus batch 64 was about 2.71 times batch 8, while batch 128 was
+about 3.08 times batch 8 and 1.14 times batch 64. Peak allocated memory on the
+most-used GPU was 3,156 MiB, 3,210 MiB, and 3,659 MiB. Against batch 8, both
+larger batches retained 100% sampled top-1 agreement, 100% mean top-3 overlap,
+and mean rank correlation 0.999962. FP16 logits were not bit-identical: both
+comparisons had maximum absolute difference 0.045898, mean absolute difference
+about 0.0021, and 95th-percentile difference 0.011719. These are measured
+engineering results, not retrieval-quality results. Batch 128 is the benchmark
+winner, but a full 438-query run remains the final end-to-end confirmation.
 
 Every current config evaluates fixed final cutoffs 1 through 5 from the same
 saved ranking and writes `metrics_by_output_k.json`; this does not rerun

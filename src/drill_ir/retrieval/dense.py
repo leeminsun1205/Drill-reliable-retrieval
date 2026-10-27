@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import gc
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
@@ -546,6 +547,14 @@ class EmbeddingCache:
         key = hashlib.sha256(f"{corpus_fingerprint}\0{encoder_key}".encode()).hexdigest()[:20]
         return self.root / key
 
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
+
     def load(
         self, *, corpus_fingerprint: str, encoder_key: str, aids: Sequence[int]
     ) -> np.ndarray | None:
@@ -562,7 +571,13 @@ class EmbeddingCache:
             or metadata.get("aids") != expected_aids
         ):
             return None
-        embeddings = np.load(embeddings_path, allow_pickle=False)
+        expected_sha256 = metadata.get("embeddings_sha256")
+        if expected_sha256 is not None and expected_sha256 != self._file_sha256(embeddings_path):
+            return None
+        # Keep the immutable matrix file-backed until a search backend truly
+        # needs resident/normalized storage. This avoids an eager duplicate in
+        # multi-dense processes and preserves the exact float32 values.
+        embeddings = np.load(embeddings_path, allow_pickle=False, mmap_mode="r")
         if embeddings.ndim != 2 or embeddings.shape[0] != len(expected_aids):
             raise ValueError(f"Invalid dense embedding cache: {directory}")
         return np.asarray(embeddings, dtype=np.float32)
@@ -585,6 +600,129 @@ class EmbeddingCache:
             "aids": list(aids),
             "shape": list(matrix.shape),
             "dtype": str(matrix.dtype),
+            "embeddings_sha256": self._file_sha256(directory / "embeddings.npy"),
+        }
+        (directory / "metadata.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return directory
+
+
+class DenseChunkCache:
+    """Portable, checksummed cache of deterministic dense chunk records."""
+
+    FORMAT_VERSION = 1
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+
+    def _directory(self, corpus_fingerprint: str, chunker_key: str) -> Path:
+        identity = json.dumps(
+            {
+                "format_version": self.FORMAT_VERSION,
+                "corpus_fingerprint": corpus_fingerprint,
+                "chunker_key": chunker_key,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return self.root / hashlib.sha256(identity.encode()).hexdigest()[:20]
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
+
+    def load(
+        self, *, corpus_fingerprint: str, chunker_key: str
+    ) -> tuple[list[Chunk], dict[str, Any]] | None:
+        directory = self._directory(corpus_fingerprint, chunker_key)
+        metadata_path = directory / "metadata.json"
+        chunks_path = directory / "chunks.jsonl"
+        if not metadata_path.is_file() or not chunks_path.is_file():
+            return None
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if (
+            metadata.get("format_version") != self.FORMAT_VERSION
+            or metadata.get("corpus_fingerprint") != corpus_fingerprint
+            or metadata.get("chunker_key") != chunker_key
+            or metadata.get("chunks_sha256") != self._file_sha256(chunks_path)
+        ):
+            return None
+        chunks: list[Chunk] = []
+        with chunks_path.open(encoding="utf-8") as stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                chunks.append(
+                    Chunk(
+                        chunk_id=str(record["chunk_id"]),
+                        aid=int(record["aid"]),
+                        law_id=str(record["law_id"]),
+                        chunk_index=int(record["chunk_index"]),
+                        chunk_type=str(record["chunk_type"]),
+                        text=str(record["text"]),
+                        char_start=int(record["char_start"]),
+                        char_end=int(record["char_end"]),
+                        token_count=(
+                            int(record["token_count"])
+                            if record.get("token_count") is not None
+                            else None
+                        ),
+                        parse_status=str(record.get("parse_status", "not_applicable")),
+                        structure_path=tuple(str(value) for value in record.get("structure_path", ())),
+                        source_spans=tuple(
+                            (int(span[0]), int(span[1]))
+                            for span in record.get("source_spans", ())
+                        ),
+                    )
+                )
+        if len(chunks) != int(metadata.get("chunk_count", -1)):
+            raise ValueError(f"Invalid dense chunk cache: {directory}")
+        return chunks, dict(metadata.get("chunking_stats", {}))
+
+    def save(
+        self,
+        chunks: Sequence[Chunk],
+        *,
+        corpus_fingerprint: str,
+        chunker_key: str,
+        chunking_stats: dict[str, Any] | None = None,
+    ) -> Path:
+        directory = self._directory(corpus_fingerprint, chunker_key)
+        directory.mkdir(parents=True, exist_ok=True)
+        chunks_path = directory / "chunks.jsonl"
+        temporary_path = directory / "chunks.jsonl.tmp"
+        with temporary_path.open("w", encoding="utf-8") as stream:
+            for chunk in chunks:
+                record = {
+                    "chunk_id": chunk.chunk_id,
+                    "aid": chunk.aid,
+                    "law_id": chunk.law_id,
+                    "chunk_index": chunk.chunk_index,
+                    "chunk_type": chunk.chunk_type,
+                    "text": chunk.text,
+                    "char_start": chunk.char_start,
+                    "char_end": chunk.char_end,
+                    "token_count": chunk.token_count,
+                    "parse_status": chunk.parse_status,
+                    "structure_path": list(chunk.structure_path),
+                    "source_spans": [list(span) for span in chunk.source_spans],
+                }
+                stream.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+                stream.write("\n")
+        os.replace(temporary_path, chunks_path)
+        metadata = {
+            "format_version": self.FORMAT_VERSION,
+            "corpus_fingerprint": corpus_fingerprint,
+            "chunker_key": chunker_key,
+            "chunk_count": len(chunks),
+            "chunks_sha256": self._file_sha256(chunks_path),
+            "chunking_stats": chunking_stats or {},
         }
         (directory / "metadata.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -601,6 +739,7 @@ class DenseRetriever:
         encoder: TextEncoder,
         search: ExactVectorSearch | FaissFlatVectorSearch,
         cache: EmbeddingCache | None = None,
+        chunk_cache: DenseChunkCache | None = None,
         chunker: ArticleChunker | None = None,
         rocchio_enabled: bool = False,
         rocchio_feedback_documents: int = 5,
@@ -626,11 +765,14 @@ class DenseRetriever:
         self.encoder = encoder
         self.search = search
         self.cache = cache
+        self.chunk_cache = chunk_cache
         self.chunker = chunker or ArticleTruncationChunker()
         self._aids: list[int] = []
         self._chunks: list[Chunk] = []
         self._document_embeddings: np.ndarray | None = None
         self.cache_hit = False
+        self.chunk_cache_hit = False
+        self.raw_corpus_fingerprint: str | None = None
         self.corpus_fingerprint: str | None = None
         self.rocchio_enabled = rocchio_enabled
         self.rocchio_feedback_documents = rocchio_feedback_documents
@@ -646,21 +788,51 @@ class DenseRetriever:
         self._cached_query_key: tuple[tuple[int, str], ...] | None = None
         self._cached_query_embeddings: np.ndarray | None = None
 
+    def prepare_chunks(self, articles: Sequence[Article]) -> list[Chunk]:
+        """Load or create deterministic chunks without encoding documents."""
+        if not articles:
+            raise ValueError("Cannot fit dense retrieval on an empty corpus")
+        self.raw_corpus_fingerprint = EmbeddingCache.corpus_fingerprint(articles)
+        cached_chunks = None
+        if self.chunk_cache is not None:
+            cached_chunks = self.chunk_cache.load(
+                corpus_fingerprint=self.raw_corpus_fingerprint,
+                chunker_key=self.chunker.cache_key,
+            )
+        if cached_chunks is not None:
+            self._chunks, chunking_stats = cached_chunks
+            self.chunk_cache_hit = True
+            if hasattr(self.chunker, "last_stats"):
+                self.chunker.last_stats = chunking_stats
+            print("[dense] Chunk cache hit", flush=True)
+        else:
+            self.chunk_cache_hit = False
+            print(
+                f"[dense] Chunking {len(articles):,} articles with "
+                f"{type(self.chunker).__name__}",
+                flush=True,
+            )
+            self._chunks = self.chunker.chunk_articles(articles)
+            if self.chunk_cache is not None:
+                self.chunk_cache.save(
+                    self._chunks,
+                    corpus_fingerprint=self.raw_corpus_fingerprint,
+                    chunker_key=self.chunker.cache_key,
+                    chunking_stats=getattr(self.chunker, "last_stats", {}),
+                )
+                print("[dense] Saved chunk cache", flush=True)
+        if not self._chunks:
+            raise ValueError("Chunker produced no dense representations")
+        print(f"[dense] Prepared {len(self._chunks):,} representations", flush=True)
+        return self._chunks
+
     def fit(self, articles: Sequence[Article]) -> None:
         if not articles:
             raise ValueError("Cannot fit dense retrieval on an empty corpus")
         self._cached_query_key = None
         self._cached_query_embeddings = None
         self._last_feedback = []
-        print(
-            f"[dense] Chunking {len(articles):,} articles with "
-            f"{type(self.chunker).__name__}",
-            flush=True,
-        )
-        self._chunks = self.chunker.chunk_articles(articles)
-        if not self._chunks:
-            raise ValueError("Chunker produced no dense representations")
-        print(f"[dense] Prepared {len(self._chunks):,} representations", flush=True)
+        self.prepare_chunks(articles)
         self._aids = [chunk.aid for chunk in self._chunks]
         representations = [
             Article(aid=chunk.aid, law_id=chunk.law_id, text=chunk.text)
@@ -708,10 +880,13 @@ class DenseRetriever:
         device = getattr(self.encoder, "last_device", None)
         return {
             "encoder_cache_key": self.encoder.cache_key,
+            "raw_corpus_fingerprint": self.raw_corpus_fingerprint,
             "corpus_fingerprint": self.corpus_fingerprint,
             "embedding_shape": shape,
             "embedding_cache_hit": self.cache_hit,
             "embedding_cache_required": self.require_cache_hit,
+            "chunk_cache_enabled": self.chunk_cache is not None,
+            "chunk_cache_hit": self.chunk_cache_hit,
             "search_backend": self.search.backend,
             "search_metric": self.search.metric,
             "search_device": getattr(self.search, "resolved_device", "cpu"),
