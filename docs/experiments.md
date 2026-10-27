@@ -216,6 +216,14 @@ shutdown. The warning is diagnostic evidence of incompletely reclaimed
 multiprocessing resources, not proof that it caused the full-corpus timeout.
 Larger samples and total process-tree memory measurement remain pending.
 
+The active Kaggle multi-dense notebook now enables a diagnostic-only CUDA
+process trace at `multi_dense_selection/cuda_process_trace.jsonl`. From before
+each SentenceTransformer model load until encode returns or raises, it samples
+`nvidia-smi` every 0.5 seconds and records GPU UUID, PID, PPID, command, and
+used device memory. This does not change device placement, batching, retrieval,
+or scoring. Its purpose is to distinguish parent-model residency, duplicate
+worker placement, and batch-time growth before any lifecycle fix is selected.
+
 #### Standalone dense-screening results
 
 On 2026-10-26, the project owner reported completion of all seven standalone

@@ -8,6 +8,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
+import threading
+import time
 from typing import Any, Protocol, Sequence
 
 import numpy as np
@@ -128,18 +131,38 @@ class SentenceTransformerEncoder:
         return [f"cuda:{index}" for index in range(count)]
 
     def _encode(self, texts: Sequence[str], *, prefix: str) -> np.ndarray:
-        model = self._load_model()
-        prefixed = [prefix + text for text in texts]
-        self.last_device = self._resolve_device()
-        embeddings = model.encode(
-            prefixed,
-            batch_size=self.config.batch_size,
-            device=self.last_device,
-            normalize_embeddings=self.config.normalize_embeddings,
-            convert_to_numpy=True,
-            show_progress_bar=True,
-        )
-        return np.asarray(embeddings, dtype=np.float32)
+        trace = _CudaProcessTrace.from_environment(self.config.model_name)
+        trace.start()
+        try:
+            trace.record("before_model_load")
+            model = self._load_model()
+            trace.record(
+                "after_model_load",
+                model_device=str(getattr(model, "device", "unknown")),
+            )
+            prefixed = [prefix + text for text in texts]
+            self.last_device = self._resolve_device()
+            trace.record(
+                "before_encode",
+                resolved_device=self.last_device,
+                texts=len(prefixed),
+                batch_size=self.config.batch_size,
+            )
+            embeddings = model.encode(
+                prefixed,
+                batch_size=self.config.batch_size,
+                device=self.last_device,
+                normalize_embeddings=self.config.normalize_embeddings,
+                convert_to_numpy=True,
+                show_progress_bar=True,
+            )
+            trace.record("after_encode")
+            return np.asarray(embeddings, dtype=np.float32)
+        except BaseException as error:
+            trace.record("encode_error", error_type=type(error).__name__, error=str(error))
+            raise
+        finally:
+            trace.stop()
 
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
         return self._encode(texts, prefix=self.config.document_prefix)
@@ -160,6 +183,122 @@ class SentenceTransformerEncoder:
                 torch.cuda.empty_cache()
         except ImportError:
             pass
+
+
+class _CudaProcessTrace:
+    """Opt-in nvidia-smi process sampler for diagnosing multi-process CUDA use."""
+
+    def __init__(self, path: Path | None, interval_seconds: float, model_name: str) -> None:
+        self.path = path
+        self.interval_seconds = interval_seconds
+        self.model_name = model_name
+        self._stop = threading.Event()
+        self._record_lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    @classmethod
+    def from_environment(cls, model_name: str) -> "_CudaProcessTrace":
+        raw_path = os.environ.get("DRILL_CUDA_TRACE_PATH")
+        raw_interval = os.environ.get("DRILL_CUDA_TRACE_INTERVAL_SECONDS", "0.5")
+        try:
+            interval = float(raw_interval)
+        except ValueError:
+            interval = 0.5
+        return cls(Path(raw_path) if raw_path else None, max(interval, 0.1), model_name)
+
+    @property
+    def enabled(self) -> bool:
+        return self.path is not None
+
+    def start(self) -> None:
+        if not self.enabled:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.record("trace_start")
+        self._thread = threading.Thread(target=self._sample_until_stopped, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if not self.enabled:
+            return
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(2.0, self.interval_seconds * 2))
+        self.record("trace_stop")
+
+    def _sample_until_stopped(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            self.record("sample")
+
+    def record(self, event: str, **details: Any) -> None:
+        if not self.enabled:
+            return
+        with self._record_lock:
+            self._record_unlocked(event, **details)
+
+    def _record_unlocked(self, event: str, **details: Any) -> None:
+        payload: dict[str, Any] = {
+            "time_unix": time.time(),
+            "event": event,
+            "observer_pid": os.getpid(),
+            "observer_ppid": os.getppid(),
+            "model_name": self.model_name,
+            **details,
+        }
+        try:
+            completed = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-compute-apps=gpu_uuid,pid,used_memory",
+                    "--format=csv,noheader,nounits",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            rows = []
+            for line in completed.stdout.splitlines():
+                parts = [part.strip() for part in line.split(",")]
+                if len(parts) != 3 or not parts[1].isdigit():
+                    continue
+                pid = int(parts[1])
+                rows.append(
+                    {
+                        "gpu_uuid": parts[0],
+                        "pid": pid,
+                        "used_memory_mib": _optional_int(parts[2]),
+                        **_process_identity(pid),
+                    }
+                )
+            payload["compute_processes"] = rows
+            if completed.returncode != 0:
+                payload["nvidia_smi_error"] = completed.stderr.strip()
+        except (OSError, subprocess.SubprocessError) as error:
+            payload["nvidia_smi_error"] = f"{type(error).__name__}: {error}"
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _optional_int(value: str) -> int | None:
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _process_identity(pid: int) -> dict[str, Any]:
+    result: dict[str, Any] = {"ppid": None, "command": None}
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+            if line.startswith("PPid:"):
+                result["ppid"] = int(line.split()[1])
+                break
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+        result["command"] = command.decode("utf-8", errors="replace").strip()
+    except (OSError, ValueError):
+        pass
+    return result
 
 
 def _l2_normalize(matrix: np.ndarray) -> np.ndarray:
