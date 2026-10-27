@@ -1464,12 +1464,15 @@ scheduler steps.
 
 For the replacement BCE trainer, the root final model is hard-linked from the
 last epoch checkpoint on filesystems that support hard links, with symbolic
-links as the fallback. Thus the normal Kaggle path stores two physical model
-snapshots (epoch 1 and epoch 2), not three; the root remains a loadable Hugging
-Face model.
-Before optimization, the trainer estimates both checkpoint sizes from parameter
-storage and requires an additional 2 GiB free-space reserve. Artifact ZIPs
-exclude all model snapshots and embedding caches.
+links as the fallback. Every completed epoch remains a loadable Hugging Face
+snapshot. Only the newest checkpoint retains optimizer, scheduler, scaler, and
+per-rank RNG state, bounding resume-state storage while preserving every epoch
+for model selection. Exact epoch-boundary resume validates training data and
+hyperparameters and requires a scheduler horizon declared before the original
+run; otherwise loading an earlier model is explicitly a warm start. Before
+optimization, the trainer estimates all epoch model snapshots plus one Adam
+state and requires an additional 2 GiB reserve. Artifact ZIPs exclude model
+snapshots and embedding caches.
 
 ### Hierarchical Khoản–Điểm representation
 

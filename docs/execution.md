@@ -862,13 +862,50 @@ main fine-tuning decision and retain the article FPT notebook as a control.
 `notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` is the
 controlled longer-training follow-up. It preserves the same seed, mined-pair
 protocol, pointwise-BCE objective, effective batch size, learning rate, and
-inference pipeline, but trains for four epochs. Because the trainer retains the
-last two physical snapshots, this notebook labels and evaluates them as epoch 3
-and epoch 4, alongside the same zero-shot control. Its work directory, result
+inference pipeline, but trains for four epochs. The current trainer retains one
+loadable model snapshot for every completed epoch; this notebook evaluates
+epochs 3 and 4 alongside the same zero-shot control. Its work directory, result
 case names, scoreboard, and small metrics archive are separate from the
 two-epoch run. Do not compare intermediate checkpoints as a single learning
 curve across the two notebooks because their linear schedules have different
 total step counts.
+
+The BCE trainer supports exact epoch-boundary continuation with
+`--resume-from-checkpoint`. Every epoch checkpoint is permanently usable for
+inference, while only the latest keeps the much larger optimizer, scheduler,
+scaler, and per-rank RNG state. Resume validates the dataset SHA-256, world
+size, batch/accumulation settings, optimizer hyperparameters, sequence length,
+seed, steps per epoch, and scheduler horizon before loading state.
+
+To stop after epoch 2 but preserve the exact schedule for a later epoch-4
+continuation, predeclare the horizon on the first run:
+
+```python
+!torchrun --nproc_per_node 2 scripts/train_cross_encoder_bce.py \
+  --model-name-or-path BAAI/bge-reranker-v2-m3 \
+  --train-data /kaggle/working/direct_chunks_bce_train.jsonl \
+  --output-dir /kaggle/working/reranker_training \
+  --max-length 512 --epochs 2 --scheduler-total-epochs 4 \
+  --per-device-batch-size 1 --gradient-accumulation-steps 8 \
+  --learning-rate 2e-5 --seed 42
+```
+
+Then resume from its latest checkpoint, keeping the same output directory when
+writable so all epoch models remain together:
+
+```python
+!torchrun --nproc_per_node 2 scripts/train_cross_encoder_bce.py \
+  --model-name-or-path BAAI/bge-reranker-v2-m3 \
+  --resume-from-checkpoint /kaggle/working/reranker_training/checkpoint-STEP \
+  --train-data /kaggle/working/direct_chunks_bce_train.jsonl \
+  --output-dir /kaggle/working/reranker_training \
+  --max-length 512 --epochs 4 --scheduler-total-epochs 4 \
+  --per-device-batch-size 1 --gradient-accumulation-steps 8 \
+  --learning-rate 2e-5 --seed 42
+```
+
+Without a predeclared longer scheduler horizon, an epoch-2 run cannot be called
+an exact resume to epoch 4; loading its weights is only a warm start.
 
 `notebooks/kaggle_epoch3_lightgbm_submission.ipynb` consumes the selected
 epoch-3 checkpoint from Kaggle Models and the archived epoch-3 development run.
