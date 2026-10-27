@@ -208,6 +208,15 @@ chunks and rankings and therefore does not change the method. A repaired run
 must emit `Releasing retrieval resources before reranker load` before checkpoint
 materialization; completion on Kaggle remains pending.
 
+The same-process handoff additionally reports per-device free, allocated, and
+reserved CUDA memory immediately before and after retrieval release. It drops
+the top-level retriever reference, synchronizes both devices, reclaims CUDA IPC
+allocations left by SentenceTransformers workers, and empties the allocator
+cache before constructing the reranker. Reranker logs distinguish CPU checkpoint
+materialization, transfer to the primary CUDA device, and readiness for
+inference. These are resource-lifecycle and diagnostic changes only; retrieval
+rankings, reranker inputs, model identifiers, batching, and scores are unchanged.
+
 On 2026-10-26, the project owner reported an isolated Kaggle T4 smoke test over
 the same first 128 articles, which produced 505 Khoản–Điểm representations for
 each encoder. BGE-M3 completed in 85.27 seconds on one GPU and 54.79 seconds on

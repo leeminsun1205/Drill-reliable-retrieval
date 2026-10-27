@@ -90,13 +90,20 @@ class HFCrossEncoderScorer:
             trust_remote_code=self.config.trust_remote_code,
             use_fast=True,
         )
+        print(f"[reranker] Loading checkpoint on CPU: {self.config.model_name}", flush=True)
         model = AutoModelForSequenceClassification.from_pretrained(
             self.config.model_name,
             revision=self.config.revision,
             trust_remote_code=self.config.trust_remote_code,
         )
+        print("[reranker] Checkpoint materialized on CPU", flush=True)
         self._resolved_devices = self._resolve_devices(torch)
         self._primary_device = self._resolved_devices[0]
+        print(
+            f"[reranker] Moving checkpoint to {self._primary_device}; "
+            f"resolved_devices={self._resolved_devices}",
+            flush=True,
+        )
         model.to(self._primary_device)
         if len(self._resolved_devices) > 1:
             model = torch.nn.DataParallel(
@@ -105,6 +112,7 @@ class HFCrossEncoderScorer:
             )
         model.eval()
         self._model = model
+        print("[reranker] Checkpoint ready for inference", flush=True)
         return torch, self._tokenizer, self._model
 
     def _positive_scores(self, logits: Any) -> Any:

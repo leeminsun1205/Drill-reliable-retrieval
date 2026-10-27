@@ -1,6 +1,7 @@
 """Inference over official test sets with reproducible submission artifacts."""
 
 from datetime import datetime, timezone
+import gc
 import json
 import math
 from pathlib import Path
@@ -15,6 +16,53 @@ from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
 
 from .submission import package_submission, package_threshold_submission
+
+
+def _cuda_memory_summary() -> str:
+    """Return compact per-device allocator/free-memory diagnostics."""
+    try:
+        import torch
+    except ImportError:
+        return "cuda=unavailable"
+    if not torch.cuda.is_available():
+        return "cuda=unavailable"
+    values = []
+    for index in range(torch.cuda.device_count()):
+        free_bytes, total_bytes = torch.cuda.mem_get_info(index)
+        values.append(
+            f"cuda:{index} free={free_bytes / 2**20:.0f}MiB/"
+            f"{total_bytes / 2**20:.0f}MiB "
+            f"allocated={torch.cuda.memory_allocated(index) / 2**20:.0f}MiB "
+            f"reserved={torch.cuda.memory_reserved(index) / 2**20:.0f}MiB"
+        )
+    return "; ".join(values)
+
+
+def _release_retrieval_resources(retriever: Any) -> None:
+    """Close retrieval state and reclaim CUDA IPC/cache before reranking."""
+    print(f"[inference] CUDA before retrieval release: {_cuda_memory_summary()}", flush=True)
+    close = getattr(retriever, "close", None)
+    if callable(close):
+        close()
+    # Drop the bound method before collection because it retains its owner.
+    close = None
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            for index in range(torch.cuda.device_count()):
+                with torch.cuda.device(index):
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+            gc.collect()
+            for index in range(torch.cuda.device_count()):
+                with torch.cuda.device(index):
+                    torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    print(f"[inference] CUDA after retrieval release: {_cuda_memory_summary()}", flush=True)
 
 
 def _threshold_slug(value: float) -> str:
@@ -130,10 +178,10 @@ def run_submission_inference(
                 for aid in result.aids[:candidate_pool_size]
             }
             retriever_metadata = retriever.run_metadata()
-            close_retriever = getattr(retriever, "close", None)
-            if callable(close_retriever):
-                print("[inference] Releasing retrieval resources before reranker load", flush=True)
-                close_retriever()
+            print("[inference] Releasing retrieval resources before reranker load", flush=True)
+            _release_retrieval_resources(retriever)
+            retriever = None
+            gc.collect()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
             reranker.fit([article for article in articles if article.aid in candidate_aids])
             final_rankings = {
@@ -168,10 +216,10 @@ def run_submission_inference(
             # the cross-encoder lazily loads onto GPU. This avoids returning to
             # dense inference after the larger reranker has occupied GPU memory.
             retriever_metadata = retriever.run_metadata()
-            close_retriever = getattr(retriever, "close", None)
-            if callable(close_retriever):
-                print("[inference] Releasing retrieval resources before reranker load", flush=True)
-                close_retriever()
+            print("[inference] Releasing retrieval resources before reranker load", flush=True)
+            _release_retrieval_resources(retriever)
+            retriever = None
+            gc.collect()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
             final_rankings = {
                 name: reranker.rerank_chunks(named_queries[name], chunk_candidates[name])
