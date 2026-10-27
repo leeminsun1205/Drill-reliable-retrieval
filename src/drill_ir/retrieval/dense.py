@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any, Protocol, Sequence
 
 import numpy as np
@@ -304,6 +305,8 @@ class FaissFlatVectorSearch:
         self._index: Any = None
         self._document_identity: tuple[int, tuple[int, ...], tuple[int, ...]] | None = None
         self._gpu_resources: Any = None
+        self.last_index_seconds = 0.0
+        self.last_search_seconds = 0.0
 
     @staticmethod
     def _faiss() -> Any:
@@ -458,7 +461,10 @@ class FaissFlatVectorSearch:
         queries = self._prepare_queries(query_embeddings)
         if queries.shape[1] != documents.shape[1]:
             raise ValueError("Query and document embedding dimensions do not match")
+        index_started = time.perf_counter()
         index = self._prepare_index(documents)
+        self.last_index_seconds += time.perf_counter() - index_started
+        search_started = time.perf_counter()
         result_k = min(top_k, len(aid_array))
         all_indices: list[np.ndarray] = []
         all_scores: list[np.ndarray] = []
@@ -471,6 +477,7 @@ class FaissFlatVectorSearch:
                 order = np.lexsort((aid_array[row_indices], -row_scores))[:result_k]
                 all_indices.append(row_indices[order])
                 all_scores.append(row_scores[order])
+        self.last_search_seconds += time.perf_counter() - search_started
         return np.stack(all_indices), np.stack(all_scores)
 
     def search_grouped(
@@ -490,7 +497,10 @@ class FaissFlatVectorSearch:
         queries = self._prepare_queries(query_embeddings)
         if queries.shape[1] != documents.shape[1]:
             raise ValueError("Query and document embedding dimensions do not match")
+        index_started = time.perf_counter()
         index = self._prepare_index(documents)
+        self.last_index_seconds += time.perf_counter() - index_started
+        search_started = time.perf_counter()
         result_k = min(top_k, len(np.unique(aid_array)))
         all_aids: list[np.ndarray] = []
         all_scores: list[np.ndarray] = []
@@ -509,6 +519,7 @@ class FaissFlatVectorSearch:
                 ]
                 all_aids.append(np.asarray([aid for aid, _ in selected], dtype=np.int64))
                 all_scores.append(np.asarray([score for _, score in selected], dtype=np.float32))
+        self.last_search_seconds += time.perf_counter() - search_started
         return np.stack(all_aids), np.stack(all_scores)
 
     def close(self) -> None:
@@ -787,11 +798,13 @@ class DenseRetriever:
         self._last_feedback: list[dict[str, object]] = []
         self._cached_query_key: tuple[tuple[int, str], ...] | None = None
         self._cached_query_embeddings: np.ndarray | None = None
+        self._stage_seconds: dict[str, float] = {}
 
     def prepare_chunks(
         self, articles: Sequence[Article], *, require_existing: bool = False
     ) -> list[Chunk]:
         """Load or create deterministic chunks without encoding documents."""
+        started = time.perf_counter()
         if not articles:
             raise ValueError("Cannot fit dense retrieval on an empty corpus")
         self.raw_corpus_fingerprint = EmbeddingCache.corpus_fingerprint(articles)
@@ -828,6 +841,7 @@ class DenseRetriever:
         if not self._chunks:
             raise ValueError("Chunker produced no dense representations")
         print(f"[dense] Prepared {len(self._chunks):,} representations", flush=True)
+        self._stage_seconds["chunk_cache_load_or_build"] = time.perf_counter() - started
         return self._chunks
 
     def fit(self, articles: Sequence[Article]) -> None:
@@ -850,6 +864,7 @@ class DenseRetriever:
             separators=(",", ":"),
         )
         embeddings = None
+        cache_started = time.perf_counter()
         if self.cache is not None:
             embeddings = self.cache.load(
                 corpus_fingerprint=fingerprint,
@@ -861,11 +876,14 @@ class DenseRetriever:
                 f"[dense] Embedding cache {'hit' if self.cache_hit else 'miss'}",
                 flush=True,
             )
+        self._stage_seconds["embedding_cache_load"] = time.perf_counter() - cache_started
         if embeddings is None:
             if self.require_cache_hit:
                 raise RuntimeError("Required dense embedding cache is missing or invalid")
             print("[dense] Encoding corpus representations", flush=True)
+            encode_started = time.perf_counter()
             embeddings = self.encoder.encode_documents([chunk.text for chunk in self._chunks])
+            self._stage_seconds["corpus_encoding"] = time.perf_counter() - encode_started
             if embeddings.ndim != 2 or embeddings.shape[0] != len(self._chunks):
                 raise ValueError("Encoder returned an invalid document embedding matrix")
             if self.cache is not None:
@@ -900,6 +918,11 @@ class DenseRetriever:
             "representations": len(self._chunks),
             "unique_aids": len(set(self._aids)),
             "aggregation": "max",
+            "stage_seconds": {
+                **self._stage_seconds,
+                "faiss_indexing": float(getattr(self.search, "last_index_seconds", 0.0)),
+                "faiss_search": float(getattr(self.search, "last_search_seconds", 0.0)),
+            },
             "feedback": {
                 "enabled": self.rocchio_enabled,
                 "method": "rocchio" if self.rocchio_enabled else "none",
@@ -934,7 +957,12 @@ class DenseRetriever:
         key = tuple((query.qid, query.question) for query in queries)
         if key == self._cached_query_key and self._cached_query_embeddings is not None:
             return self._cached_query_embeddings
+        encode_started = time.perf_counter()
         original = self.encoder.encode_queries([query.question for query in queries])
+        self._stage_seconds["query_encoding"] = (
+            self._stage_seconds.get("query_encoding", 0.0)
+            + time.perf_counter() - encode_started
+        )
         if not self.rocchio_enabled:
             adapted = original
             self._last_feedback = []

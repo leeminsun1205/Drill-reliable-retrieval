@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import time
 from typing import Mapping, Sequence
 
 from drill_ir.data.models import Article, Query, RetrievalResult
@@ -43,6 +44,7 @@ class WeightedRRFRetriever:
         self.dense_top_k = dense_top_k
         self.include_zero_score_sparse = include_zero_score_sparse
         self._component_results: dict[str, list[RetrievalResult]] = {}
+        self._stage_seconds: dict[str, float] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
         self.sparse.fit(articles)
@@ -239,6 +241,7 @@ class MultiDenseWeightedRRFRetriever:
         self.sparse_top_k = sparse_top_k
         self.include_zero_score_sparse = include_zero_score_sparse
         self._component_results: dict[str, list[RetrievalResult]] = {}
+        self._stage_seconds: dict[str, float] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
         self.sparse.fit(articles)
@@ -248,15 +251,17 @@ class MultiDenseWeightedRRFRetriever:
     def retrieve(self, queries: Sequence[Query], top_k: int) -> list[RetrievalResult]:
         if top_k <= 0:
             raise ValueError("top_k must be positive")
-        components = {
-            "sparse": self.sparse.retrieve(queries, top_k=self.sparse_top_k),
-            **{
-                f"dense:{name}": retriever.retrieve(
-                    queries, top_k=self.dense_top_k[name]
-                )
-                for name, retriever in self.dense_retrievers.items()
-            },
-        }
+        started = time.perf_counter()
+        sparse_results = self.sparse.retrieve(queries, top_k=self.sparse_top_k)
+        self._stage_seconds["sparse_retrieval"] = time.perf_counter() - started
+        components = {"sparse": sparse_results}
+        for name, retriever in self.dense_retrievers.items():
+            started = time.perf_counter()
+            components[f"dense:{name}"] = retriever.retrieve(
+                queries, top_k=self.dense_top_k[name]
+            )
+            self._stage_seconds[f"dense_retrieval:{name}"] = time.perf_counter() - started
+        fusion_started = time.perf_counter()
         indexed = {
             name: WeightedRRFRetriever._by_qid(results, component=name)
             for name, results in components.items()
@@ -298,6 +303,7 @@ class MultiDenseWeightedRRFRetriever:
                 )
             )
         self._component_results = components
+        self._stage_seconds["article_fusion"] = time.perf_counter() - fusion_started
         return fused
 
     def component_results(self) -> dict[str, list[RetrievalResult]]:
@@ -402,6 +408,7 @@ class MultiDenseWeightedRRFRetriever:
             "sparse_weight": self.sparse_weight,
             "sparse_top_k": self.sparse_top_k,
             "include_zero_score_sparse": self.include_zero_score_sparse,
+            "stage_seconds": self._stage_seconds,
             "dense_components": {
                 name: {
                     "weight": self.dense_weights[name],

@@ -1007,3 +1007,11 @@ Use `notebooks/kaggle_query_recall50_analysis.ipynb` to inspect those artifacts
 separately. It accepts one compatible `multi_dense_results.tar.gz`, performs no
 model inference, displays only focused tables, and produces the lightweight
 `query_recall50_diagnostics.tar.gz` download.
+
+The same multi-dense archive contains `telemetry_summary.json`. Read
+`development.stage_seconds` and `submission_inference.stage_seconds` for
+pipeline-level wall time; nested retriever metadata separates chunk/embedding
+cache, query encoding, FAISS, and WRRF work, while reranker scorer metadata
+separates checkpoint loading from inference. `resource_peaks` is process-wide:
+peak RSS and CUDA values are not attributed to an individual stage. OOF and
+final LightGBM run in separate processes and therefore retain separate peaks.

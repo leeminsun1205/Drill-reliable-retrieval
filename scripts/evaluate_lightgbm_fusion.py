@@ -5,14 +5,17 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from drill_ir.analysis import build_ltr_examples, evaluate_oof_lightgbm
 from drill_ir.data import load_queries
+from drill_ir.telemetry import resource_peaks
 
 
 def main() -> None:
+    started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--queries", required=True, type=Path)
@@ -56,6 +59,10 @@ def main() -> None:
                 )
                 + "\n"
             )
+    (args.output_dir / "telemetry.json").write_text(
+        json.dumps({"lightgbm_oof_seconds": time.perf_counter() - started,
+                    "resource_peaks": resource_peaks()}, indent=2), encoding="utf-8"
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print(f"Artifacts: {args.output_dir}")
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import asdict, dataclass
+import time
 from typing import Any, Protocol, Sequence
 
 import numpy as np
@@ -46,6 +47,8 @@ class HFCrossEncoderScorer:
         self._model: Any = None
         self._primary_device = "cpu"
         self._resolved_devices: list[str] = []
+        self.model_load_seconds = 0.0
+        self.inference_seconds = 0.0
 
     def _resolve_devices(self, torch: Any) -> list[str]:
         if self.config.device == "cpu":
@@ -84,6 +87,7 @@ class HFCrossEncoderScorer:
                 "Cross-encoder reranking requires dense dependencies. "
                 "Install with: python -m pip install -e '.[dense]'"
             ) from error
+        started = time.perf_counter()
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.config.model_name,
             revision=self.config.revision,
@@ -105,6 +109,7 @@ class HFCrossEncoderScorer:
             )
         model.eval()
         self._model = model
+        self.model_load_seconds = time.perf_counter() - started
         return torch, self._tokenizer, self._model
 
     def _positive_scores(self, logits: Any) -> Any:
@@ -133,6 +138,7 @@ class HFCrossEncoderScorer:
         if not pairs:
             return np.empty((0,), dtype=np.float32)
         torch, tokenizer, model = self._load()
+        inference_started = time.perf_counter()
         scores: list[np.ndarray] = []
         use_fp16 = self.config.fp16 and self._primary_device.startswith("cuda:")
         for start in range(0, len(pairs), batch_size):
@@ -155,6 +161,7 @@ class HFCrossEncoderScorer:
             scores.append(
                 self._positive_scores(logits).detach().float().cpu().numpy()
             )
+        self.inference_seconds += time.perf_counter() - inference_started
         return np.concatenate(scores).astype(np.float32, copy=False)
 
     def metadata(self) -> dict[str, Any]:
@@ -162,6 +169,8 @@ class HFCrossEncoderScorer:
             **asdict(self.config),
             "truncation": "only_second",
             "resolved_devices": self._resolved_devices,
+            "model_load_seconds": self.model_load_seconds,
+            "inference_seconds": self.inference_seconds,
         }
 
 
