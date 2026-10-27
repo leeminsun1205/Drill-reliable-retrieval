@@ -4,8 +4,10 @@ from datetime import datetime, timezone
 import gc
 import json
 import math
+import os
 from pathlib import Path
 import platform
+import sys
 import time
 from typing import Any, Sequence
 
@@ -16,7 +18,84 @@ from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
 from drill_ir.runtime_resources import cuda_snapshot, release_stage_resources
 
+from .run import _read_stage_handoff, _write_stage_handoff
 from .submission import package_submission, package_threshold_submission
+
+
+_SUBMISSION_HANDOFF_ENV = "DRILL_SUBMISSION_RETRIEVAL_HANDOFF"
+
+
+def _write_submission_handoff(
+    directory: Path,
+    *,
+    first_stage: dict[str, Any],
+    chunks: dict[str, Any],
+    components: dict[str, dict[str, Any]],
+    feedback: dict[str, Any],
+    metadata: dict[str, Any],
+) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    split_paths: dict[str, str] = {}
+    for name, rankings in first_stage.items():
+        path = directory / f"retrieval_stage_handoff_{name}.json"
+        _write_stage_handoff(
+            path,
+            first_stage=list(rankings),
+            chunks=list(chunks[name]) if name in chunks else None,
+            components={
+                component: list(values)
+                for component, values in components.get(name, {}).items()
+            },
+            feedback=feedback.get(name, {}),
+            metadata=metadata,
+        )
+        split_paths[name] = str(path)
+    manifest = directory / "retrieval_stage_handoff_manifest.json"
+    temporary = manifest.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps({"schema_version": 1, "splits": split_paths}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    temporary.replace(manifest)
+    return manifest
+
+
+def _read_submission_handoff(
+    manifest_path: Path,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 1 or not manifest.get("splits"):
+        raise ValueError(f"Invalid submission retrieval handoff: {manifest_path}")
+    first_stage: dict[str, Any] = {}
+    chunks: dict[str, Any] = {}
+    components: dict[str, Any] = {}
+    feedback: dict[str, Any] = {}
+    metadata: dict[str, Any] | None = None
+    for name, value in manifest["splits"].items():
+        ranked, split_chunks, split_components, split_feedback, split_metadata = (
+            _read_stage_handoff(Path(value))
+        )
+        first_stage[name] = ranked
+        if split_chunks is not None:
+            chunks[name] = split_chunks
+        components[name] = split_components
+        feedback[name] = split_feedback
+        if metadata is None:
+            metadata = split_metadata
+        elif metadata != split_metadata:
+            raise ValueError("Submission retrieval handoff metadata differs by split")
+    return first_stage, chunks, components, feedback, metadata or {}
+
+
+def _exec_submission_reranking_stage(manifest_path: Path) -> None:
+    environment = dict(os.environ)
+    environment[_SUBMISSION_HANDOFF_ENV] = str(manifest_path)
+    print(
+        "[inference] Retrieval artifacts valid; replacing process before reranking: "
+        f"{manifest_path}",
+        flush=True,
+    )
+    os.execvpe(sys.executable, [sys.executable, *sys.argv], environment)
 
 
 def _threshold_slug(value: float) -> str:
@@ -83,13 +162,14 @@ def run_submission_inference(
     if not articles:
         raise ValueError("Corpus contains no non-blank articles")
 
-    retrieval_method = "hybrid" if method == "hybrid_reranker" else method
-    retriever = build_retriever(
-        retrieval_method, config["retrieval"], config.get("runtime", {})
+    output_dir = Path(output_dir)
+    handoff_value = os.environ.get(_SUBMISSION_HANDOFF_ENV)
+    resumed = bool(handoff_value and Path(handoff_value).is_file())
+    use_process_handoff = bool(
+        config.get("runtime", {}).get("process_handoff_before_reranking", False)
     )
-    cuda_snapshot("submission:after_build_retriever")
-    retriever.fit(articles)
-    cuda_snapshot("submission:after_retriever_fit")
+
+    retrieval_method = "hybrid" if method == "hybrid_reranker" else method
     retrieve_k = int(config["retrieval"]["top_k"])
     output_k = int(config["retrieval"]["output_k"])
     if not 0 < output_k <= retrieve_k:
@@ -101,24 +181,43 @@ def run_submission_inference(
         if isinstance(reranking_config, dict)
         else None
     )
-    # WeightedRRFRetriever.retrieve_chunks() intentionally consumes the sparse
-    # component ranking from its immediately preceding retrieve() call. For the
-    # direct-chunk flow, process each named split sequentially below so public
-    # chunks can never be fused against private sparse qids (or vice versa).
-    first_stage = (
-        {}
-        if candidate_source == "retrieved_chunks"
-        else {
-            name: retriever.retrieve(queries, top_k=retrieve_k)
-            for name, queries in named_queries.items()
-        }
-    )
-    chunk_candidates: dict[str, Any] = {}
-    named_components: dict[str, dict[str, Any]] = {}
-    named_feedback: dict[str, Any] = {}
+    retriever = None
+    retriever_metadata = None
+    if resumed:
+        (
+            first_stage,
+            chunk_candidates,
+            named_components,
+            named_feedback,
+            retriever_metadata,
+        ) = _read_submission_handoff(Path(str(handoff_value)))
+        if set(first_stage) != set(named_queries):
+            raise ValueError("Submission retrieval handoff split coverage is incomplete")
+        cuda_snapshot("submission:reranking_process_start")
+    else:
+        retriever = build_retriever(
+            retrieval_method, config["retrieval"], config.get("runtime", {})
+        )
+        cuda_snapshot("submission:after_build_retriever")
+        retriever.fit(articles)
+        cuda_snapshot("submission:after_retriever_fit")
+        # WeightedRRFRetriever.retrieve_chunks() intentionally consumes the sparse
+        # component ranking from its immediately preceding retrieve() call. For the
+        # direct-chunk flow, process each named split sequentially below so public
+        # chunks can never be fused against private sparse qids (or vice versa).
+        first_stage = (
+            {}
+            if candidate_source == "retrieved_chunks"
+            else {
+                name: retriever.retrieve(queries, top_k=retrieve_k)
+                for name, queries in named_queries.items()
+            }
+        )
+        chunk_candidates = {}
+        named_components = {}
+        named_feedback = {}
     final_rankings = first_stage
     reranker = None
-    retriever_metadata = None
     if method == "hybrid_reranker":
         if not isinstance(reranking_config, dict):
             raise ValueError("hybrid_reranker requires a reranking mapping")
@@ -134,11 +233,22 @@ def run_submission_inference(
                 for result in rankings
                 for aid in result.aids[:candidate_pool_size]
             }
-            retriever_metadata = retriever.run_metadata()
-            print("[inference] Releasing retrieval resources before reranker load", flush=True)
-            release_stage_resources(retriever, stage="submission:retrieval")
-            retriever = None
-            gc.collect()
+            if not resumed:
+                retriever_metadata = retriever.run_metadata()
+                if use_process_handoff:
+                    manifest = _write_submission_handoff(
+                        output_dir,
+                        first_stage=first_stage,
+                        chunks=chunk_candidates,
+                        components=named_components,
+                        feedback=named_feedback,
+                        metadata=retriever_metadata,
+                    )
+                    _exec_submission_reranking_stage(manifest)
+                print("[inference] Releasing retrieval resources before reranker load", flush=True)
+                release_stage_resources(retriever, stage="submission:retrieval")
+                retriever = None
+                gc.collect()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
             reranker.fit([article for article in articles if article.aid in candidate_aids])
             final_rankings = {
@@ -146,37 +256,48 @@ def run_submission_inference(
                 for name, rankings in first_stage.items()
             }
         elif candidate_source == "retrieved_chunks":
-            retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
-            if not callable(retrieve_chunks):
-                raise TypeError("retrieved_chunks requires a retriever with chunk evidence")
-            dense_depth = int(
-                reranking_config.get("retrieved_chunk_depth", candidate_pool_size)
-            )
-            for name, queries in named_queries.items():
-                # Keep this call adjacent to retrieve_chunks(): the hybrid
-                # retriever stores sparse component ranks for the latest query
-                # batch as state used by chunk-level WRRF fusion.
-                first_stage[name] = retriever.retrieve(queries, top_k=retrieve_k)
-                component_results = getattr(retriever, "component_results", None)
-                if callable(component_results):
-                    named_components[name] = {
-                        component: list(values)
-                        for component, values in component_results().items()
-                    }
-                feedback_records = getattr(retriever, "feedback_records", None)
-                if callable(feedback_records):
-                    named_feedback[name] = feedback_records()
-                chunk_candidates[name] = retrieve_chunks(
-                    queries, top_k=candidate_pool_size, dense_depth=dense_depth
+            if not resumed:
+                retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
+                if not callable(retrieve_chunks):
+                    raise TypeError("retrieved_chunks requires a retriever with chunk evidence")
+                dense_depth = int(
+                    reranking_config.get("retrieved_chunk_depth", candidate_pool_size)
                 )
-            # Complete dense/sparse candidate generation for every split before
-            # the cross-encoder lazily loads onto GPU. This avoids returning to
-            # dense inference after the larger reranker has occupied GPU memory.
-            retriever_metadata = retriever.run_metadata()
-            print("[inference] Releasing retrieval resources before reranker load", flush=True)
-            release_stage_resources(retriever, stage="submission:retrieval")
-            retriever = None
-            gc.collect()
+                for name, queries in named_queries.items():
+                    # Keep this call adjacent to retrieve_chunks(): the hybrid
+                    # retriever stores sparse component ranks for the latest query
+                    # batch as state used by chunk-level WRRF fusion.
+                    first_stage[name] = retriever.retrieve(queries, top_k=retrieve_k)
+                    component_results = getattr(retriever, "component_results", None)
+                    if callable(component_results):
+                        named_components[name] = {
+                            component: list(values)
+                            for component, values in component_results().items()
+                        }
+                    feedback_records = getattr(retriever, "feedback_records", None)
+                    if callable(feedback_records):
+                        named_feedback[name] = feedback_records()
+                    chunk_candidates[name] = retrieve_chunks(
+                        queries, top_k=candidate_pool_size, dense_depth=dense_depth
+                    )
+                # Complete dense/sparse candidate generation for every split before
+                # the cross-encoder lazily loads onto GPU. This avoids returning to
+                # dense inference after the larger reranker has occupied GPU memory.
+                retriever_metadata = retriever.run_metadata()
+                if use_process_handoff:
+                    manifest = _write_submission_handoff(
+                        output_dir,
+                        first_stage=first_stage,
+                        chunks=chunk_candidates,
+                        components=named_components,
+                        feedback=named_feedback,
+                        metadata=retriever_metadata,
+                    )
+                    _exec_submission_reranking_stage(manifest)
+                print("[inference] Releasing retrieval resources before reranker load", flush=True)
+                release_stage_resources(retriever, stage="submission:retrieval")
+                retriever = None
+                gc.collect()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
             final_rankings = {
                 name: reranker.rerank_chunks(named_queries[name], chunk_candidates[name])
@@ -187,7 +308,6 @@ def run_submission_inference(
                 "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"
             )
 
-    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / "config.yaml").open("w", encoding="utf-8") as stream:
         yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)

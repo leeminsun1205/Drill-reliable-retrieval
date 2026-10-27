@@ -441,6 +441,14 @@ materialization. If an older revision remains at partial RoBERTa weight loading
 for hours, stop it and rerun with this lifecycle repair; it is not productive
 reranking work.
 
+For the active packed-stream batch-256 run, both development evaluation and
+public/private inference use a validated JSON retrieval handoff followed by
+Python process-image replacement before the cross-encoder is constructed.
+This makes process exit, rather than allocator cleanup alone, the CUDA ownership
+boundary. The inference handoff preserves each named split's first-stage ranks
+and scores, retrieved chunks, component rankings, feedback, and retriever
+metadata; public and private query coverage is validated after restart.
+
 The active multi-dense notebook uses three independent retrieval caches:
 VnCoreNLP BM25, VietLegal-Harrier corpus embeddings, and multilingual-E5-large
 corpus embeddings. A sparse cache stores the ordered `aid` array, retained term

@@ -1145,10 +1145,34 @@ that the strong CUDA/IPC resource barrier had only been connected to submission
 inference; the selected development run uses `run_experiment.py` and still
 called the older close-only path. Subsequent traces still found 11.3 GiB held
 outside PyTorch, so the runner now uses the documented process-image handoff.
-For the first end-to-end validation after that change, the multi-dense config
-deliberately restores the pre-optimization control (`per_query`, batch 8).
-Global streaming and larger batches remain separate follow-up treatments.
-Completion, post-handoff VRAM, and throughput remain pending measurement.
+The first bounded end-to-end validation after that change completed on Kaggle
+T4 x2 over 50 development queries using `packed_stream` and neural batch 128.
+The reranker became ready at 761.0 seconds and reranking completed at 795.4
+seconds (34.4 seconds for this smoke subset); the complete selected stage took
+279.48 seconds. After reranking, the pipeline process occupied 4,306 MiB on GPU
+0 and 5,988 MiB on GPU 1, with 10,603 MiB and 8,921 MiB free respectively.
+This confirms that the former 11.3 GiB retrieval allocation was absent after
+the process-image handoff and that packed batch-128 inference fits on two T4s.
+These are engineering smoke measurements, not full-development throughput or
+research metrics; the 50-query evaluation values must not be compared with the
+fixed 438-query development results.
+The matched batch-256 smoke run also completed over the same 50-query subset.
+Measured reranking time from checkpoint readiness to the post-reranking CUDA
+snapshot fell from approximately 34.4 seconds at batch 128 to 29.0 seconds at
+batch 256 (about 15.7% faster). The complete selected stage fell from 279.48 to
+275.36 seconds. Post-reranking process memory increased from 4,306/5,988 MiB to
+6,460/9,454 MiB on GPU 0/GPU 1, leaving 8,449/5,455 MiB free. All reported
+fixed-k and threshold metrics, including the selected threshold 5.746094, were
+identical at the displayed precision. This establishes metric parity for the
+smoke subset, not yet exact per-pair score or ranking parity; that stronger claim
+requires direct comparison of the two run artifacts.
+The active multi-dense notebook now promotes this measured treatment to a full
+438-query validation: it writes a distinct run identity containing
+`packed_stream_b256`, so no earlier dev, OOF LightGBM, or submission artifact
+can be silently reused. Its comparison table reports deltas against the
+documented 2026-10-27 multi-dense result (`0.663198` pooled score-gap F2 and
+`0.660836` nested-OOF score-gap F2), while preserving the earlier result as a
+reference rather than overwriting it. Full-run parity remains pending execution.
 Candidate sets, token budgets, model weights, and scoring remain unchanged.
 The 1,024-token article-rechunk controls retain their prior safe batches because
 the benchmark does not cover their activation footprint.

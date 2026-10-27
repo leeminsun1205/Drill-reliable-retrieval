@@ -20,9 +20,46 @@ from drill_ir.experiment import (
     package_threshold_submission,
     run_submission_inference,
 )
+from drill_ir.experiment.inference import (
+    _read_submission_handoff,
+    _write_submission_handoff,
+)
 
 
 class ExperimentTest(unittest.TestCase):
+    def test_submission_handoff_preserves_named_split_artifacts(self) -> None:
+        public_chunk = Chunk("10:0", 10, "law", 0, "fake", "public", 0, 6, 1)
+        private_chunk = Chunk("20:0", 20, "law", 0, "fake", "private", 0, 7, 1)
+        first_stage = {
+            "public": [RetrievalResult(1, (10,), (0.9,))],
+            "private": [RetrievalResult(2, (20,), (0.8,))],
+        }
+        chunks = {
+            "public": [ChunkRetrievalResult(1, (public_chunk,), (0.7,))],
+            "private": [ChunkRetrievalResult(2, (private_chunk,), (0.6,))],
+        }
+        components = {
+            "public": {"bm25": [RetrievalResult(1, (10,), (1.0,))]},
+            "private": {"bm25": [RetrievalResult(2, (20,), (1.0,))]},
+        }
+        feedback = {"public": {"1": []}, "private": {"2": []}}
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = _write_submission_handoff(
+                Path(directory),
+                first_stage=first_stage,
+                chunks=chunks,
+                components=components,
+                feedback=feedback,
+                metadata={"cache_hit": True},
+            )
+            loaded = _read_submission_handoff(manifest)
+        loaded_first, loaded_chunks, loaded_components, loaded_feedback, metadata = loaded
+        self.assertEqual(loaded_first, first_stage)
+        self.assertEqual(loaded_chunks, chunks)
+        self.assertEqual(loaded_components, components)
+        self.assertEqual(loaded_feedback, feedback)
+        self.assertEqual(metadata, {"cache_hit": True})
+
     def test_direct_chunk_submission_keeps_sparse_state_aligned_per_split(self) -> None:
         class StatefulRetriever:
             def __init__(self):
