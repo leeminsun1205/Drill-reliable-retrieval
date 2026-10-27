@@ -489,6 +489,16 @@ as a backward-compatible fallback. Only after that implementation and parity
 tests should Harrier and E5 caches be rebuilt; rebuilding them in the current
 format provides no scientific or runtime benefit.
 
+Once BM25S target `0` and shared-chunk target `8` are attached alongside the
+existing seven dense caches, retrieval caching is operationally complete for
+the current protocol. A healthy multi-dense run must show a BM25S cache hit,
+one or more shared chunk-cache hits, and embedding-cache hits for Harrier and
+multilingual-E5. Do not add query, FAISS-index, reranker-score, or LightGBM
+prediction caches without a measured bottleneck. The next useful execution
+boundary is a fingerprinted selected-candidate artifact followed by a separate
+reranking process, because that enables failure recovery and controlled
+reranker ablations without repeating retrieval.
+
 ## Hybrid plus cross-encoder reranking
 
 After fixing the hybrid candidates, run the zero-shot BGE reranker over the top
@@ -972,3 +982,28 @@ batch. All public/private chunk candidates are completed before the
 cross-encoder loads, after which both sets are reranked and every threshold ZIP
 is derived from the persisted rankings. A regression test with disjoint public
 and private qids protects this ordering.
+
+## Query-level retrieval diagnostics
+
+After a labeled development run, generate diagnostics without rerunning any
+retriever or reranker:
+
+```python
+!python scripts/analyze_query_retrieval.py \
+  --result-dir /kaggle/working/multi_dense_selection/selected_dev/RUN_NAME \
+  --queries /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --query-ids /kaggle/working/multi_dense_selection/selected_dev/RUN_NAME/split_dev_qids.json \
+  --ranking lightgbm_oof=/kaggle/working/multi_dense_selection/lightgbm_oof/RUN_ID/oof_predictions.jsonl \
+  --output-dir /kaggle/working/multi_dense_selection/query_analysis
+```
+
+`stage_metrics.csv` compares all discovered components, fusion, actual reranker
+input, epoch-3, and optional later rankings. `hard_queries.csv` orders queries
+by exact contribution to the macro Recall@50 deficit.
+`query_diagnostics.jsonl` retains gold ranks and attribution, and `summary.json`
+contains compact aggregate results. The multi-dense notebook runs this audit
+automatically and packages the outputs and required development rankings.
+Use `notebooks/kaggle_query_recall50_analysis.ipynb` to inspect those artifacts
+separately. It accepts one compatible `multi_dense_results.tar.gz`, performs no
+model inference, displays only focused tables, and produces the lightweight
+`query_recall50_diagnostics.tar.gz` download.

@@ -1536,3 +1536,23 @@ whether top-50 selection occurs after article aggregation or at the fused chunk
 level. Its result is pending execution; report both quality and the exact
 `retrieved_chunk_pairs`/unique-aid coverage rather than assuming that 50 chunks
 represent 50 articles.
+
+### Query-level retrieval-deficit audit
+
+`scripts/analyze_query_retrieval.py` explains first-stage Recall@50 from a
+completed development run. It discovers component names from
+`component_rankings.jsonl`, so adding, removing, or replacing dense models does
+not change the analysis. For every query and gold `aid`, it records ranks in
+each component, fused article retrieval, the unique-article candidate list
+actually passed to reranking, epoch-3, and optional later rankings such as
+LightGBM OOF.
+
+The per-query contribution is `(1 - query Recall@50) / query_count`; therefore
+the contributions sum exactly to `1 - macro Recall@50`. Gold attribution
+separates items missed by all components, items found by a component but fused
+outside top 50, and items present before reranking but demoted later. The union
+of every component's top 50 is an oracle with a budget potentially greater than
+50. Component uniqueness and sparse-rescue counts are descriptive, not causal
+leave-one-out estimates; causal attribution requires re-fusion after removing
+one component with all other settings fixed. Direct chunk candidates are a
+separate stage because 50 chunks can represent fewer than 50 unique articles.

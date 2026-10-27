@@ -40,9 +40,10 @@ The selected strong pipeline for subsequent controlled comparisons is hybrid
 Khoản–Điểm retrieval with 448-token chunks and 64-token overlap, weighted RRF,
 then direct reranking of the top 50 fused retrieved chunks with a 512-token
 cross-encoder pair budget. Reranker scores are max-aggregated to unique `aid`
-values, the thirteen-feature pointwise LightGBM model supplies the final
-ranking scores, and query-adaptive early score-gap selection produces the final
-set. Article-first rechunking remains an ablation, not the default pipeline.
+values, the multi-dense fifteen-feature pointwise LightGBM model supplies the
+final ranking scores, and both threshold/fallback and query-adaptive early
+score-gap policies remain frozen reported controls. Article-first rechunking
+remains an ablation, not the default pipeline.
 Hold this configuration fixed when testing structure or reference components.
 
 The completed multi-dense treatment improves the user-reported matched
@@ -55,10 +56,11 @@ replacement policy.
 
 The completed final-set-selection ablation compared unchanged fixed top-2 and
 global-threshold/fallback-2 policies against query-adaptive early score-gap
-selection using the same saved LightGBM rankings. Score-gap is now selected for
-the strong pipeline because it improved nested-OOF and both reported Codabench
-splits. Keep it independently disableable and retain the older policies as
-controls. This strengthens the baseline but is not itself evidence for the
+selection using the same saved LightGBM rankings. Score-gap improved nested OOF
+and earlier single-dense submissions, but the multi-dense threshold policy led
+on both newly reported leaderboard splits. Keep both independently reproducible
+and do not use private feedback to choose another policy. Final-set selection
+strengthens the baseline but is not itself evidence for the
 structure/reference hypothesis.
 
 ## Organizer baselines
@@ -124,6 +126,132 @@ Hybrid + Reranker + Structure + Cross-reference
 ```
 
 Do not claim that a component helps unless its contribution can be isolated.
+
+## Architecture checkpoint after the multi-dense baseline
+
+As of 2026-10-27, the active strong pipeline is:
+
+```text
+legal corpus
+  -> shared BGE-M3-tokenized Khoản–Điểm 448/64 chunks
+  -> BM25S + VietLegal-Harrier + multilingual-E5-large
+  -> weighted RRF 0.1 / 0.5 / 0.4
+  -> top-50 fused chunks
+  -> epoch-3 cross-encoder, pair length 512, global-stream batch 128
+  -> max score aggregation to aid
+  -> query-grouped OOF LightGBM with 15 features
+  -> threshold/fallback or query-adaptive score-gap final selection
+  -> official qid/relevant_laws submission
+```
+
+This architecture has completed the main engineering stabilization work:
+
+- BM25S exactly matched native BM25 over all 43,800 development top-100
+  positions and was faster on a verified cache hit;
+- all seven screened dense corpus embedding caches remain reusable;
+- Harrier and multilingual-E5 share one checksummed deterministic chunk cache;
+- dense matrices load read-only through memory mapping and exact cosine search
+  uses FAISS Flat rather than an approximate index;
+- dense encoders, matrices, query caches, chunk objects, and search indexes are
+  released before the cross-encoder loads;
+- cross-encoder pairs are scored as one bounded global stream; the two-T4
+  benchmark selected batch 128 with about 3.08 times batch-8 throughput,
+  sampled top-1/top-3 parity, and ample memory headroom; and
+- LightGBM training and evaluation remain query-grouped, with nested OOF used
+  when estimating an adaptive final-set policy.
+
+The remaining system bottlenecks are orchestration rather than model compute.
+Implement them in this order when more reliability work is required:
+
+1. Persist the exact selected top-50 chunk candidates, including query, chunk
+   text/identity, parent `aid`, component ranks/scores, and fused score, before
+   the reranker starts.
+2. Run retrieval and reranking in separate processes. Retrieval writes an
+   immutable, fingerprinted candidate artifact and exits; reranking consumes
+   only that artifact. A reranker failure must not repeat retrieval.
+3. Persist per-model top-depth chunk rankings so WRRF weights, component
+   ablations, and selected candidate reconstruction can run offline without
+   loading dense models or rebuilding FAISS indexes.
+4. Record stage wall time, pairs/second, process-tree RSS, peak CUDA
+   allocated/reserved memory, and resident model/matrix counts in provenance.
+5. Pin exact Hugging Face model and tokenizer revisions when producing the next
+   cache generation. Current caches remain usable, but a future cache must not
+   pair old corpus vectors with query encoding from a silently updated model.
+
+Do not prioritize query-embedding caches, serialized FAISS Flat indexes,
+float16 corpus caches, ANN/HNSW/IVF search, or reranking 100 candidates. Query
+encoding and exact-index construction are not the dominant costs; float16 and
+ANN introduce ranking risk; and moving from top 50 to 100 doubles cross-encoder
+pairs for only about `0.02957` additional first-stage macro recall in the
+measured multi-dense run.
+
+### Current F2 diagnosis
+
+The main quality bottleneck is after candidate generation. Multi-dense
+candidate Recall@50 is about `0.92208`, whereas the measured LightGBM threshold
+recall is `0.73752` and pooled score-gap recall is `0.69460`. The deployable
+nested-OOF score-gap estimate is F2 `0.660836`, while the non-deployable
+best-prefix-through-5 oracle is F2 `0.767165`. This gap indicates substantially
+more headroom in within-pool ranking and output-cardinality selection than in
+simply retrieving deeper candidates.
+
+The multi-dense final-policy ordering is also distribution-sensitive. Pooled
+development score-gap F2 (`0.663198`) exceeds threshold/fallback-2
+(`0.647531`), but the reported threshold submissions exceed score-gap on both
+public (`0.6384` versus `0.6260`) and private (`0.5952` versus `0.5920`). Keep
+nested OOF as the scientific estimate, report frozen leaderboard policies
+separately, and never use the private reversal to tune another selector.
+
+Before introducing another model, produce a query-level error audit with these
+mutually interpretable categories:
+
+- gold absent from the top-50 candidate pool;
+- gold present but demoted by the cross-encoder;
+- cross-encoder ordering improved or damaged by LightGBM;
+- ranking adequate but final selection returned too few articles;
+- final selection returned avoidable false positives;
+- multi-gold queries; and
+- queries containing explicit or likely cross-provision dependencies.
+
+Report counts, macro-F2 contribution, output-size distributions, and paired
+query IDs. This audit decides whether the next treatment belongs in retrieval,
+reranking, learned fusion, or final selection.
+
+### Prioritized F2 roadmap
+
+1. **Final-set calibration and cardinality.** On the same saved LightGBM
+   rankings, test fold-safe Platt or isotonic calibration and a small predictor
+   for output cardinality `k in {1,2,3}`. Candidate features may include early
+   score gaps, score entropy/slope, component agreement, legal-citation cues,
+   query length, and multi-provision language. Evaluate every choice with
+   nested query folds; the pooled development optimum is diagnostic only.
+2. **Deterministic reference-expansion recall gate.** Extract only explicit,
+   auditable provision references; expand from fixed baseline candidates; and
+   first measure newly recovered gold articles, Recall@50, precision loss, and
+   affected query subsets. Send expanded candidates to the expensive reranker
+   only if the recall gate succeeds.
+3. **Deterministic structure enrichment.** Add recoverable law/article titles
+   and hierarchy paths (`law -> chapter -> section -> article -> clause ->
+   point`) while keeping candidates, models, budgets, and final policy fixed.
+   Generated titles are a separate later ablation.
+4. **Reranker supervision.** If error analysis shows gold candidates are being
+   demoted, mine hard negatives from the frozen multi-dense top-50 flow, label
+   only evidence-bearing gold chunks as positives, and compare pointwise with
+   pairwise/listwise objectives. Near-positive same-law or same-article chunks
+   must be treated explicitly rather than silently mislabeled.
+5. **Query-adaptive fusion.** After the fixed-weight baseline, predict a small
+   sparse/dense weight policy from deterministic query and component-agreement
+   features using query-fold-safe tuning. Do not reopen an unconstrained weight
+   grid.
+6. **Groupwise learned ranking.** Compare the current pointwise LightGBM model
+   with a LambdaRank/LambdaMART treatment using the same 15 features, `qid`
+   groups, candidates, folds, and final selector. This is a later ranking
+   ablation, not a simultaneous architecture replacement.
+
+The mandatory controlled matrix remains baseline, structure only, references
+only, and structure plus references. The engineering baseline is now strong
+enough that the next scientific priority is query-level error analysis followed
+by the reference and structure treatments, not another broad model search.
 
 ## Dense-model benchmark and ensemble staging
 
@@ -251,7 +379,9 @@ implementation order for further reliability work:
    weight sweeps and selected reranker runs do not reload dense encoders.
 4. Reuse one immutable BGE-M3-tokenized Khoản–Điểm chunk store across dense
    models that intentionally share boundaries, instead of constructing and
-   retaining duplicate Python chunk objects.
+   retaining duplicate Python chunk objects. This item is implemented with a
+   checksummed shared chunk cache; a full-corpus cache-hit run remains the
+   operational confirmation.
 5. Consider normalized memory-mapped corpus embeddings and blockwise exact
    search only after the process boundary is stable; verify that normalization
    does not create full in-memory copies.
@@ -269,10 +399,9 @@ resource-hardening list. It scores one deterministic global pair stream in
 bounded outer groups and preserves `per_query` as a parity control, without
 changing candidates, scores, max aggregation, or tie-breaking. Synthetic
 article-rechunk and direct-chunk tests are exact. A matched Kaggle T4 benchmark
-of neural batch sizes 8, 64, and 128 is still pending; compare wall time,
-pairs/second, peak CUDA memory, and exact output parity, and retain 8 when a
-larger batch is unstable. This is an engineering treatment, not a retrieval or
-quality treatment.
+of neural batch sizes 8, 64, and 128 is complete; it compared wall time,
+pairs/second, peak CUDA memory, and sampled ranking parity and selected batch
+128. This is an engineering treatment, not a retrieval or quality treatment.
 
 The first decision gate is the reranker-only notebook comparing batch 8, 64,
 and 128 on 500 deterministic real legal pairs arranged as ten query-specific
@@ -362,3 +491,10 @@ persisted before comparing methods.
 Domain-wise analysis is currently blocked because the supplied Parquet files do
 not contain organizer domain labels. Do not substitute undocumented model-
 generated labels for official annotations.
+
+The implemented query-level retrieval audit is the first diagnostic gate for
+the current multi-dense baseline. It must report per-query Recall@50 deficit,
+component complementarity, fusion exclusions, actual unique-article reranker
+coverage, and later-stage demotions before another retriever is introduced.
+Component names are discovered from artifacts rather than fixed to the current
+Harrier/E5 pair, preserving the same analysis for future dense replacements.
