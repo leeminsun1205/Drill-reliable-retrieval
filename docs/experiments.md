@@ -1559,21 +1559,3 @@ of every component's top 50 is an oracle with a budget potentially greater than
 leave-one-out estimates; causal attribution requires re-fusion after removing
 one component with all other settings fixed. Direct chunk candidates are a
 separate stage because 50 chunks can represent fewer than 50 unique articles.
-
-### Stage timing and resource telemetry
-
-Experiment and submission runs persist timing rather than relying on notebook
-timestamps. `run_info.json` records corpus/query loading, retriever fit and
-cache loading, first-stage retrieval, chunk-candidate fusion, reranker
-preparation, and total scoring. Dense component metadata further separates
-chunk-cache work, embedding-cache load, optional corpus encoding, query
-encoding, FAISS index preparation, FAISS search, and WRRF fusion. Cross-encoder
-metadata separates lazy checkpoint load from neural inference.
-
-Each process also records peak RSS and per-device peak CUDA allocated/reserved
-memory. LightGBM OOF and final fitting write separate `telemetry.json` files,
-because process-local memory peaks cannot be combined safely. The multi-dense
-archive includes `telemetry_summary.json` with all process reports. This is
-observational instrumentation and does not change candidates, scores, ordering,
-or model precision. CUDA peak counters are best-effort: an unsupported
-process-local CUDA counter is marked unavailable and must never abort a run.

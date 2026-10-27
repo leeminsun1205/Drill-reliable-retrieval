@@ -20,7 +20,6 @@ from drill_ir.evaluation import (
 )
 from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
-from drill_ir.telemetry import reset_cuda_peaks, resource_peaks
 
 
 def _git_info() -> dict[str, Any]:
@@ -52,22 +51,14 @@ def deterministic_split(items: list[Any], *, dev_fraction: float, seed: int) -> 
 
 def run_experiment(config: dict[str, Any]) -> Path:
     started = time.perf_counter()
-    reset_cuda_peaks()
-    stage_seconds: dict[str, float] = {}
     seed = int(config["seed"])
     data = config["data"]
-    stage_started = time.perf_counter()
     report = validate_dataset(data["corpus_path"], data["train_path"])
-    stage_seconds["dataset_validation"] = time.perf_counter() - stage_started
     if report.duplicate_aids or report.duplicate_qids or report.missing_gold_aids:
         raise ValueError(f"Fatal dataset validation failure: {report.to_dict()}")
 
-    stage_started = time.perf_counter()
     articles = list(iter_articles(data["corpus_path"], include_blank=False))
-    stage_seconds["corpus_loading"] = time.perf_counter() - stage_started
-    stage_started = time.perf_counter()
     queries = load_queries(data["train_path"])
-    stage_seconds["query_loading"] = time.perf_counter() - stage_started
     _, dev_queries = deterministic_split(
         queries, dev_fraction=float(data["dev_fraction"]), seed=seed
     )
@@ -86,16 +77,12 @@ def run_experiment(config: dict[str, Any]) -> Path:
         config.get("runtime", {}),
     )
 
-    stage_started = time.perf_counter()
     retriever.fit(articles)
-    stage_seconds["retriever_fit_and_cache_load"] = time.perf_counter() - stage_started
     retrieve_k = int(config["retrieval"]["top_k"])
     output_k = int(config["retrieval"]["output_k"])
     if output_k > retrieve_k:
         raise ValueError("retrieval.output_k cannot exceed retrieval.top_k")
-    stage_started = time.perf_counter()
     first_stage_ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
-    stage_seconds["first_stage_retrieval"] = time.perf_counter() - stage_started
     ranked = first_stage_ranked
     reranker = None
     retrieved_chunk_candidates = None
@@ -122,36 +109,26 @@ def run_experiment(config: dict[str, Any]) -> Path:
             if callable(close_retriever):
                 print("[experiment] Releasing retrieval resources before reranker load", flush=True)
                 close_retriever()
-            stage_started = time.perf_counter()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
             reranker.fit(candidate_articles)
-            stage_seconds["reranker_prepare"] = time.perf_counter() - stage_started
-            stage_started = time.perf_counter()
             ranked = reranker.rerank(dev_queries, first_stage_ranked)
-            stage_seconds["reranker_total_scoring"] = time.perf_counter() - stage_started
         elif candidate_source == "retrieved_chunks":
             dense_depth = int(reranking_config.get("retrieved_chunk_depth", candidate_pool_size))
             retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
             if not callable(retrieve_chunks):
                 raise TypeError("retrieved_chunks requires a retriever with chunk evidence")
-            stage_started = time.perf_counter()
             retrieved_chunk_candidates = retrieve_chunks(
                 dev_queries,
                 top_k=candidate_pool_size,
                 dense_depth=dense_depth,
             )
-            stage_seconds["chunk_candidate_fusion"] = time.perf_counter() - stage_started
             retriever_metadata = retriever.run_metadata()
             close_retriever = getattr(retriever, "close", None)
             if callable(close_retriever):
                 print("[experiment] Releasing retrieval resources before reranker load", flush=True)
                 close_retriever()
-            stage_started = time.perf_counter()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
-            stage_seconds["reranker_prepare"] = time.perf_counter() - stage_started
-            stage_started = time.perf_counter()
             ranked = reranker.rerank_chunks(dev_queries, retrieved_chunk_candidates)
-            stage_seconds["reranker_total_scoring"] = time.perf_counter() - stage_started
         else:
             raise ValueError(
                 "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"
@@ -304,8 +281,6 @@ def run_experiment(config: dict[str, Any]) -> Path:
         "python": platform.python_version(),
         "platform": platform.platform(),
         "runtime_seconds": time.perf_counter() - started,
-        "stage_seconds": stage_seconds,
-        "resource_peaks": resource_peaks(),
         "dataset_validation": report.to_dict(),
         "indexed_articles": len(articles),
         "dev_queries": len(dev_queries),

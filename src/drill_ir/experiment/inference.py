@@ -13,7 +13,6 @@ import yaml
 from drill_ir.data import iter_articles, load_queries
 from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
-from drill_ir.telemetry import reset_cuda_peaks, resource_peaks
 
 from .submission import package_submission, package_threshold_submission
 
@@ -50,8 +49,6 @@ def run_submission_inference(
 ) -> Path:
     """Fit once, infer each named test set, and create one ZIP per test set."""
     started = time.perf_counter()
-    reset_cuda_peaks()
-    stage_seconds: dict[str, float] = {}
     if score_threshold is not None and score_thresholds is not None:
         raise ValueError("Use either score_threshold or score_thresholds, not both")
     threshold_values = (
@@ -76,14 +73,10 @@ def run_submission_inference(
     if method == "organizer_two_stage":
         raise NotImplementedError("organizer_two_stage is not implemented for inference")
 
-    stage_started = time.perf_counter()
     named_queries = {name: load_queries(path) for name, path in test_paths.items()}
-    stage_seconds["query_loading"] = time.perf_counter() - stage_started
     if any(not queries for queries in named_queries.values()):
         raise ValueError("Test query files must not be empty")
-    stage_started = time.perf_counter()
     articles = list(iter_articles(config["data"]["corpus_path"], include_blank=False))
-    stage_seconds["corpus_loading"] = time.perf_counter() - stage_started
     if not articles:
         raise ValueError("Corpus contains no non-blank articles")
 
@@ -91,9 +84,7 @@ def run_submission_inference(
     retriever = build_retriever(
         retrieval_method, config["retrieval"], config.get("runtime", {})
     )
-    stage_started = time.perf_counter()
     retriever.fit(articles)
-    stage_seconds["retriever_fit_and_cache_load"] = time.perf_counter() - stage_started
     retrieve_k = int(config["retrieval"]["top_k"])
     output_k = int(config["retrieval"]["output_k"])
     if not 0 < output_k <= retrieve_k:
@@ -156,7 +147,6 @@ def run_submission_inference(
             dense_depth = int(
                 reranking_config.get("retrieved_chunk_depth", candidate_pool_size)
             )
-            retrieval_started = time.perf_counter()
             for name, queries in named_queries.items():
                 # Keep this call adjacent to retrieve_chunks(): the hybrid
                 # retriever stores sparse component ranks for the latest query
@@ -174,7 +164,6 @@ def run_submission_inference(
                 chunk_candidates[name] = retrieve_chunks(
                     queries, top_k=candidate_pool_size, dense_depth=dense_depth
                 )
-            stage_seconds["first_stage_and_chunk_fusion"] = time.perf_counter() - retrieval_started
             # Complete dense/sparse candidate generation for every split before
             # the cross-encoder lazily loads onto GPU. This avoids returning to
             # dense inference after the larger reranker has occupied GPU memory.
@@ -183,15 +172,11 @@ def run_submission_inference(
             if callable(close_retriever):
                 print("[inference] Releasing retrieval resources before reranker load", flush=True)
                 close_retriever()
-            stage_started = time.perf_counter()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
-            stage_seconds["reranker_prepare"] = time.perf_counter() - stage_started
-            stage_started = time.perf_counter()
             final_rankings = {
                 name: reranker.rerank_chunks(named_queries[name], chunk_candidates[name])
                 for name in named_queries
             }
-            stage_seconds["reranker_total_scoring"] = time.perf_counter() - stage_started
         else:
             raise ValueError(
                 "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"
@@ -324,8 +309,6 @@ def run_submission_inference(
         "python": platform.python_version(),
         "platform": platform.platform(),
         "runtime_seconds": time.perf_counter() - started,
-        "stage_seconds": stage_seconds,
-        "resource_peaks": resource_peaks(),
         "corpus_path": str(config["data"]["corpus_path"]),
         "indexed_articles": len(articles),
         "test_sets": {

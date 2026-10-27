@@ -1045,10 +1045,10 @@ separately. It accepts one compatible `multi_dense_results.tar.gz`, performs no
 model inference, displays only focused tables, and produces the lightweight
 `query_recall50_diagnostics.tar.gz` download.
 
-The same multi-dense archive contains `telemetry_summary.json`. Read
-`development.stage_seconds` and `submission_inference.stage_seconds` for
-pipeline-level wall time; nested retriever metadata separates chunk/embedding
-cache, query encoding, FAISS, and WRRF work, while reranker scorer metadata
-separates checkpoint loading from inference. `resource_peaks` is process-wide:
-peak RSS and CUDA values are not attributed to an individual stage. OOF and
-final LightGBM run in separate processes and therefore retain separate peaks.
+The multi-dense notebook also writes `wall_times.json` using only notebook-level
+`time.perf_counter()` calls around subprocesses. It reports coarse wall time for
+cache preparation when needed, first-stage retrieval, selected dev retrieval
+plus reranking, LightGBM, query analysis, and public/private inference. It does
+not import or inspect CUDA, RAM, models, or retrieval internals and therefore
+cannot affect model execution. The file is included in
+`multi_dense_results.tar.gz`.

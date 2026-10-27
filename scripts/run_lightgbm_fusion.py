@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 import platform
 import sys
-import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -19,7 +18,6 @@ from drill_ir.analysis import (
     fit_lightgbm_and_rank,
 )
 from drill_ir.data import load_queries
-from drill_ir.telemetry import resource_peaks
 from drill_ir.experiment import (
     package_score_gap_submission,
     package_submission,
@@ -43,7 +41,6 @@ def _write_rankings(path: Path, rankings: dict[int, tuple[list[int], list[float]
 
 
 def main() -> None:
-    started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dev-run-dir", required=True, type=Path)
     parser.add_argument("--test-run-dir", required=True, type=Path)
@@ -164,10 +161,6 @@ def main() -> None:
     }
     (output / "provenance.json").write_text(
         json.dumps(provenance, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (output / "telemetry.json").write_text(
-        json.dumps({"lightgbm_final_seconds": time.perf_counter() - started,
-                    "resource_peaks": resource_peaks()}, indent=2), encoding="utf-8"
     )
     print(json.dumps({"oof": oof, "provenance": provenance}, ensure_ascii=False, indent=2))
     print(f"Artifacts: {output}")
