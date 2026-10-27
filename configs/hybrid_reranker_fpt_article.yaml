@@ -80,6 +80,8 @@ retrieval:
 
 reranking:
   enabled: true
+  batching: global_stream
+  outer_pair_batch_size: 1024
   candidate_source: article_rechunk
   retrieved_chunk_depth: 100
   backend: hf_sequence_classification

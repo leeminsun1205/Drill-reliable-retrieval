@@ -45,6 +45,19 @@ implementations without fixing `rrf_k`, one- versus zero-based rank, weights,
 deduplication key, per-component depth, missing-document behavior, zero-score
 handling, and tie-breaking.
 
+Sparse zero-score exclusion is a pipeline policy, not a theorem or mandatory
+part of RRF. The native retriever pads with deterministic zero-score articles
+only when fewer than the requested `top_k` documents receive a positive BM25
+score; treating those placeholders as retrieved lexical matches would give
+arbitrary articles an RRF contribution. Standard Lucene-formula BM25 in this
+project has positive IDF and term-frequency contributions, so an exact zero
+means no retained query-term contribution. The policy is configurable through
+`include_zero_score_sparse`. In the measured 438-query seed-42 development run,
+both native and bm25s had 100 positive scores in every saved top-100 ranking,
+so zero-score exclusion affected zero development queries and cannot explain
+any metric difference in that comparison. Re-audit this fact for other query
+sets or scoring variants rather than assuming it universally.
+
 Standard BM25 uses the `bm25s` backend after the replacement gate reported
 below passed. It receives the
 same project-generated VnCoreNLP tokens and vocabulary-frequency pruning, uses
@@ -985,6 +998,20 @@ devices. FP16 autocast is enabled by config on CUDA only. Run metadata records
 the reranker model/revision, resolved devices, pair and document budgets,
 representation counts, structure parser statistics, aggregation, and candidate
 pool size. This is zero-shot inference, not a fine-tuned DRiLL reranker.
+
+Cross-encoder inference now defaults to `reranking.batching=global_stream`.
+Query–representation pairs are assembled in deterministic query and candidate
+order, scored in bounded outer groups, and then sliced back to their original
+queries before the unchanged max-by-`aid` aggregation and tie-breaking rules.
+This removes query boundaries from neural mini-batching: a short final batch for
+one query can be filled by pairs from the next query. The legacy
+`batching=per_query` path remains available as an exact parity control. The
+outer grouping is an orchestration bound, not the GPU mini-batch;
+`outer_pair_batch_size=1024` feeds multiple calls of the configured neural
+`batch_size=8`. Metadata records both settings plus total scored pairs and
+scorer-call count. Unit tests verify identical article rankings and scores for
+both article-rechunk and direct retrieved-chunk paths. No T4 speedup is reported
+yet; throughput and peak-memory measurements remain a separate benchmark.
 
 Every current config evaluates fixed final cutoffs 1 through 5 from the same
 saved ranking and writes `metrics_by_output_k.json`; this does not rerun

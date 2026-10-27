@@ -483,6 +483,40 @@ query–representation pair. If T4 memory is insufficient, lower only
   --set reranking.batch_size=4
 ```
 
+The active reranker configs use continuous pair batching:
+
+```yaml
+reranking:
+  batching: global_stream
+  outer_pair_batch_size: 1024
+  batch_size: 8
+```
+
+`outer_pair_batch_size` bounds each group passed to the scorer, while
+`batch_size` is the actual Hugging Face/GPU mini-batch. Keeping the outer size a
+multiple of the neural batch size avoids introducing a partially filled batch
+at every outer boundary. `global_stream` may combine the tail of one query with
+the beginning of the next mini-batch, but restores every score to its original
+query before aggregation. Use `--set reranking.batching=per_query` only as a
+parity/debug control. The selected batch size remains 8 until a matched T4
+benchmark establishes the largest safe value; do not interpret this code change
+alone as a measured runtime improvement. `run_info.json` records batching mode,
+outer size, neural size, scored-pair count, and scorer-call count.
+
+For the smallest useful batch-size decision, run
+`notebooks/kaggle_reranker_batch_benchmark.ipynb`. It loads the selected
+checkpoint once, builds 256 real Vietnamese legal query–Khoản/Điểm pairs from
+development gold articles, warms up both batch sizes, and alternates batch 8
+and 16 for at least three repeats. It automatically stops once each treatment
+has accumulated at least 30 measured seconds, capped at five repeats. The
+artifact reports median pairs/second, coefficient of variation, peak allocated
+CUDA memory, score drift, and a reranker-only extrapolation to the 21,900-pair
+upper bound (`438 * 50`). The extrapolation excludes checkpoint loading,
+retrieval, fusion, chunk preparation, and evaluation. Treat it as sufficient
+for choosing the neural batch size when throughput CV is at most 10%, score
+drift is at most `1e-3`, and batch 16 has safe memory headroom; otherwise extend
+the repeats or retain batch 8.
+
 The result directory contains reranked `predictions.jsonl`, frozen
 `first_stage_predictions.jsonl`, component rankings, resolved config, metrics,
 split IDs, and both retriever and reranker metadata in `run_info.json`.

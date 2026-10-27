@@ -68,4 +68,6 @@ def build_reranker(
         candidate_pool_size=int(config.get("candidate_pool_size", 50)),
         representation=representation,
         candidate_source=str(config.get("candidate_source", "article_rechunk")),
+        batching=str(config.get("batching", "global_stream")),
+        outer_pair_batch_size=int(config.get("outer_pair_batch_size", 1024)),
     )

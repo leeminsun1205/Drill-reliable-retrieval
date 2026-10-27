@@ -7,6 +7,8 @@ from drill_ir.data import Article, Query, RetrievalResult
 from drill_ir.preprocessing import Chunk
 from drill_ir.reranking import (
     CrossEncoderReranker,
+    HFCrossEncoderConfig,
+    HFCrossEncoderScorer,
     prefilter_representations,
     select_fpt_semi_hard_negatives,
     select_best_passages,
@@ -41,8 +43,10 @@ class FakeScorer:
     def __init__(self, scores):
         self.scores = scores
         self.seen_pairs = []
+        self.call_sizes = []
 
     def score(self, pairs):
+        self.call_sizes.append(len(pairs))
         self.seen_pairs.extend(pairs)
         return np.asarray([self.scores[pair] for pair in pairs], dtype=np.float32)
 
@@ -51,6 +55,111 @@ class FakeScorer:
 
 
 class CrossEncoderRerankerTest(unittest.TestCase):
+    def test_hf_scorer_batch_override_validates_without_loading_model(self) -> None:
+        scorer = HFCrossEncoderScorer(HFCrossEncoderConfig(model_name="unused"))
+        self.assertEqual(scorer.score_with_batch_size([], batch_size=16).shape, (0,))
+        with self.assertRaisesRegex(ValueError, "batch_size"):
+            scorer.score_with_batch_size([], batch_size=0)
+
+    def test_global_stream_matches_per_query_and_fills_outer_batches(self) -> None:
+        articles = [
+            Article(10, "law", "a|b"),
+            Article(20, "law", "c"),
+        ]
+        queries = [Query(1, "q1", ()), Query(2, "q2", ())]
+        candidates = [
+            RetrievalResult(1, (10, 20), (2.0, 1.0)),
+            RetrievalResult(2, (20, 10), (2.0, 1.0)),
+        ]
+        scores = {
+            ("q1", "a"): 0.1,
+            ("q1", "b"): 0.9,
+            ("q1", "c"): 0.5,
+            ("q2", "a"): 0.8,
+            ("q2", "b"): 0.2,
+            ("q2", "c"): 0.6,
+        }
+        per_query_scorer = FakeScorer(scores)
+        per_query = CrossEncoderReranker(
+            scorer=per_query_scorer,
+            chunker=FakeChunker(),
+            candidate_pool_size=2,
+            representation="diem",
+            batching="per_query",
+        )
+        global_scorer = FakeScorer(scores)
+        global_stream = CrossEncoderReranker(
+            scorer=global_scorer,
+            chunker=FakeChunker(),
+            candidate_pool_size=2,
+            representation="diem",
+            batching="global_stream",
+            outer_pair_batch_size=4,
+        )
+        per_query.fit(articles)
+        global_stream.fit(articles)
+        expected = per_query.rerank(queries, candidates)
+        actual = global_stream.rerank(queries, candidates)
+        self.assertEqual(actual, expected)
+        self.assertEqual(per_query_scorer.call_sizes, [3, 3])
+        self.assertEqual(global_scorer.call_sizes, [4, 2])
+        self.assertEqual(global_stream.run_metadata()["scored_pairs"], 6)
+        self.assertEqual(global_stream.run_metadata()["scorer_calls"], 2)
+
+    def test_global_chunk_stream_matches_per_query(self) -> None:
+        queries = [Query(1, "q1", ()), Query(2, "q2", ())]
+        chunks_a = (
+            Chunk("10:0", 10, "L", 0, "diem", "a", 0, 1, 1),
+            Chunk("20:0", 20, "L", 0, "diem", "b", 0, 1, 1),
+            Chunk("10:1", 10, "L", 1, "diem", "c", 1, 2, 1),
+        )
+        chunks_b = (
+            Chunk("20:0", 20, "L", 0, "diem", "b", 0, 1, 1),
+            Chunk("10:0", 10, "L", 0, "diem", "a", 0, 1, 1),
+        )
+        candidates = [
+            ChunkRetrievalResult(1, chunks_a, (3.0, 2.0, 1.0)),
+            ChunkRetrievalResult(2, chunks_b, (2.0, 1.0)),
+        ]
+        scores = {
+            ("q1", "a"): 0.1,
+            ("q1", "b"): 0.5,
+            ("q1", "c"): 0.9,
+            ("q2", "a"): 0.8,
+            ("q2", "b"): 0.6,
+        }
+        controls = []
+        for batching in ("per_query", "global_stream"):
+            reranker = CrossEncoderReranker(
+                scorer=FakeScorer(scores),
+                chunker=FakeChunker(),
+                candidate_pool_size=3,
+                representation="retrieved",
+                candidate_source="retrieved_chunks",
+                batching=batching,
+                outer_pair_batch_size=4,
+            )
+            controls.append(reranker.rerank_chunks(queries, candidates))
+        self.assertEqual(controls[1], controls[0])
+
+    def test_rejects_invalid_batching_configuration(self) -> None:
+        with self.assertRaisesRegex(ValueError, "batching"):
+            CrossEncoderReranker(
+                scorer=FakeScorer({}),
+                chunker=FakeChunker(),
+                candidate_pool_size=1,
+                representation="article",
+                batching="unknown",
+            )
+        with self.assertRaisesRegex(ValueError, "outer_pair_batch_size"):
+            CrossEncoderReranker(
+                scorer=FakeScorer({}),
+                chunker=FakeChunker(),
+                candidate_pool_size=1,
+                representation="article",
+                outer_pair_batch_size=0,
+            )
+
     def test_fpt_negatives_exclude_gold_overlength_and_top_five(self) -> None:
         selected = select_fpt_semi_hard_negatives(
             tuple(range(1, 16)),

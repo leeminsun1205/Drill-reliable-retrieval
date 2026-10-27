@@ -256,6 +256,22 @@ Persisted rankings and candidates must be fingerprinted by corpus, split,
 chunking, model/revision/prefix, depth, and component name so reuse cannot
 silently change an experiment.
 
+The cross-encoder batching optimization is implemented independently of this
+resource-hardening list. It scores one deterministic global pair stream in
+bounded outer groups and preserves `per_query` as a parity control, without
+changing candidates, scores, max aggregation, or tie-breaking. Synthetic
+article-rechunk and direct-chunk tests are exact. A matched Kaggle T4 benchmark
+of neural batch sizes 8, 16, 24, and 32 is still pending; compare wall time,
+pairs/second, peak CUDA memory, and exact output parity, and retain 8 when a
+larger batch is unstable. This is an engineering treatment, not a retrieval or
+quality treatment.
+
+The first decision gate is the minimal reranker-only notebook comparing batch
+8 with 16 on 256 deterministic real legal pairs, adaptive to at least three
+repeats and 30 measured seconds per treatment. Its full-run time is an
+inference-only projection, not a measured end-to-end runtime. Test 24 and 32
+only if 16 is both materially faster and comfortably below the T4 memory limit.
+
 ### Deferred participant-inspired methods
 
 The current phase may reuse participant lessons about complementary candidate

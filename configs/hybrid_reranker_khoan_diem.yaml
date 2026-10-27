@@ -83,6 +83,8 @@ retrieval:
 
 reranking:
   enabled: true
+  batching: global_stream
+  outer_pair_batch_size: 1024
   # Selected main pipeline: preserve and rerank fused retrieval evidence directly.
   candidate_source: retrieved_chunks
   retrieved_chunk_depth: 100
