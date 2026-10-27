@@ -1127,6 +1127,13 @@ queries before the unchanged max-by-`aid` aggregation and tie-breaking rules.
 This removes query boundaries from neural mini-batching: a short final batch for
 one query can be filled by pairs from the next query. The legacy
 `batching=per_query` path remains available as an exact parity control. The
+`batching=packed_stream` path implements the same cross-query filling with a
+rolling buffer bounded by the configured neural `batch_size`: queries and
+candidates are visited sequentially, each scored item retains its query/rank
+reference, and no corpus-wide pair list or outer group is materialized. It is
+the preferred bounded-memory treatment for the 50-query, batch-128 smoke test;
+parity with `per_query` is covered for article and retrieved-chunk candidates.
+The
 outer grouping is an orchestration bound, not the GPU mini-batch;
 `outer_pair_batch_size=1024` feeds multiple calls of the configured neural
 batch size. The reusable single-dense 512-token direct-chunk config retains

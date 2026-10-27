@@ -96,13 +96,25 @@ class CrossEncoderRerankerTest(unittest.TestCase):
             batching="global_stream",
             outer_pair_batch_size=4,
         )
+        packed_scorer = FakeScorer(scores)
+        packed_stream = CrossEncoderReranker(
+            scorer=packed_scorer,
+            chunker=FakeChunker(),
+            candidate_pool_size=2,
+            representation="diem",
+            batching="packed_stream",
+            neural_batch_size=4,
+        )
         per_query.fit(articles)
         global_stream.fit(articles)
+        packed_stream.fit(articles)
         expected = per_query.rerank(queries, candidates)
         actual = global_stream.rerank(queries, candidates)
         self.assertEqual(actual, expected)
+        self.assertEqual(packed_stream.rerank(queries, candidates), expected)
         self.assertEqual(per_query_scorer.call_sizes, [3, 3])
         self.assertEqual(global_scorer.call_sizes, [4, 2])
+        self.assertEqual(packed_scorer.call_sizes, [4, 2])
         self.assertEqual(global_stream.run_metadata()["scored_pairs"], 6)
         self.assertEqual(global_stream.run_metadata()["scorer_calls"], 2)
 
@@ -129,7 +141,7 @@ class CrossEncoderRerankerTest(unittest.TestCase):
             ("q2", "b"): 0.6,
         }
         controls = []
-        for batching in ("per_query", "global_stream"):
+        for batching in ("per_query", "global_stream", "packed_stream"):
             reranker = CrossEncoderReranker(
                 scorer=FakeScorer(scores),
                 chunker=FakeChunker(),
@@ -138,9 +150,11 @@ class CrossEncoderRerankerTest(unittest.TestCase):
                 candidate_source="retrieved_chunks",
                 batching=batching,
                 outer_pair_batch_size=4,
+                neural_batch_size=4,
             )
             controls.append(reranker.rerank_chunks(queries, candidates))
         self.assertEqual(controls[1], controls[0])
+        self.assertEqual(controls[2], controls[0])
 
     def test_rejects_invalid_batching_configuration(self) -> None:
         with self.assertRaisesRegex(ValueError, "batching"):

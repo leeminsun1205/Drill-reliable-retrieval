@@ -207,13 +207,18 @@ class CrossEncoderReranker:
         candidate_source: str = "article_rechunk",
         batching: str = "global_stream",
         outer_pair_batch_size: int = 1024,
+        neural_batch_size: int = 8,
     ) -> None:
         if candidate_pool_size <= 0:
             raise ValueError("reranking.candidate_pool_size must be positive")
-        if batching not in {"global_stream", "per_query"}:
-            raise ValueError("reranking.batching must be 'global_stream' or 'per_query'")
+        if batching not in {"global_stream", "packed_stream", "per_query"}:
+            raise ValueError(
+                "reranking.batching must be 'global_stream', 'packed_stream', or 'per_query'"
+            )
         if outer_pair_batch_size <= 0:
             raise ValueError("reranking.outer_pair_batch_size must be positive")
+        if neural_batch_size <= 0:
+            raise ValueError("reranking.batch_size must be positive")
         self.scorer = scorer
         self.chunker = chunker
         self.candidate_pool_size = candidate_pool_size
@@ -221,6 +226,7 @@ class CrossEncoderReranker:
         self.candidate_source = candidate_source
         self.batching = batching
         self.outer_pair_batch_size = outer_pair_batch_size
+        self.neural_batch_size = neural_batch_size
         self._chunks_by_aid: dict[int, list[Chunk]] = {}
         self._representation_count = 0
         self._retrieved_chunk_pairs = 0
@@ -287,6 +293,8 @@ class CrossEncoderReranker:
             raise ValueError("First-stage candidates contain duplicate query IDs")
         if self.batching == "global_stream":
             return self._rerank_global(queries, by_qid)
+        if self.batching == "packed_stream":
+            return self._rerank_packed(queries, by_qid)
         reranked = []
         try:
             from tqdm.auto import tqdm
@@ -329,6 +337,62 @@ class CrossEncoderReranker:
                 )
             )
         return reranked
+
+    def _rerank_packed(
+        self,
+        queries: Sequence[Query],
+        by_qid: dict[int, RetrievalResult],
+    ) -> list[RetrievalResult]:
+        """Fill each neural batch sequentially across query boundaries."""
+        plans: list[tuple[Query, dict[int, int], dict[int, float]]] = []
+        pairs: list[tuple[str, str]] = []
+        refs: list[tuple[int, int]] = []
+
+        def flush() -> None:
+            if not pairs:
+                return
+            scores = np.asarray(self.scorer.score(pairs), dtype=np.float32)
+            if len(scores) != len(refs):
+                raise ValueError("Reranker returned an unexpected number of pair scores")
+            for (plan_index, aid), score in zip(refs, scores):
+                aid_scores = plans[plan_index][2]
+                aid_scores[aid] = max(aid_scores.get(aid, -float("inf")), float(score))
+            self._scored_pairs += len(pairs)
+            self._scorer_calls += 1
+            pairs.clear()
+            refs.clear()
+
+        for query in queries:
+            candidate = by_qid.get(query.qid)
+            if candidate is None:
+                raise ValueError(f"Missing first-stage candidates for qid={query.qid}")
+            candidate_aids = candidate.aids[: self.candidate_pool_size]
+            plans.append((query, {aid: rank for rank, aid in enumerate(candidate_aids)}, {}))
+            plan_index = len(plans) - 1
+            for aid in candidate_aids:
+                chunks = self._chunks_by_aid.get(aid)
+                if not chunks:
+                    raise ValueError(f"No reranking representation for candidate aid={aid}")
+                for chunk in chunks:
+                    pairs.append((query.question, chunk.text))
+                    refs.append((plan_index, aid))
+                    if len(pairs) == self.neural_batch_size:
+                        flush()
+        flush()
+        return [
+            RetrievalResult(
+                qid=query.qid,
+                aids=tuple(aid for aid, _ in ordered),
+                scores=tuple(score for _, score in ordered),
+            )
+            for query, first_stage_rank, aid_scores in plans
+            for ordered in [
+                sorted(
+                    aid_scores.items(),
+                    key=lambda item: (-item[1], first_stage_rank[item[0]], item[0]),
+                )
+            ]
+        ]
 
     def _rerank_global(
         self,
@@ -383,6 +447,8 @@ class CrossEncoderReranker:
             raise ValueError("Retrieved chunk candidates contain duplicate query IDs")
         if self.batching == "global_stream":
             return self._rerank_chunks_global(queries, by_qid)
+        if self.batching == "packed_stream":
+            return self._rerank_chunks_packed(queries, by_qid)
         reranked = []
         try:
             from tqdm.auto import tqdm
@@ -421,6 +487,61 @@ class CrossEncoderReranker:
             )
             self._retrieved_chunk_pairs += len(chunks)
         return reranked
+
+    def _rerank_chunks_packed(
+        self,
+        queries: Sequence[Query],
+        by_qid: dict[int, ChunkRetrievalResult],
+    ) -> list[RetrievalResult]:
+        plans: list[tuple[Query, tuple[Chunk, ...], dict[int, float], dict[int, int]]] = []
+        pairs: list[tuple[str, str]] = []
+        refs: list[tuple[int, int, Chunk]] = []
+
+        def flush() -> None:
+            if not pairs:
+                return
+            scores = np.asarray(self.scorer.score(pairs), dtype=np.float32)
+            if len(scores) != len(refs):
+                raise ValueError("Reranker returned an unexpected number of pair scores")
+            for (plan_index, rank, chunk), score in zip(refs, scores):
+                aid_scores, best_ranks = plans[plan_index][2:]
+                value = float(score)
+                if value > aid_scores.get(chunk.aid, -float("inf")):
+                    aid_scores[chunk.aid] = value
+                    best_ranks[chunk.aid] = rank
+            self._scored_pairs += len(pairs)
+            self._scorer_calls += 1
+            pairs.clear()
+            refs.clear()
+
+        for query in queries:
+            candidate = by_qid.get(query.qid)
+            if candidate is None:
+                raise ValueError(f"Missing retrieved chunks for qid={query.qid}")
+            chunks = candidate.chunks[: self.candidate_pool_size]
+            plans.append((query, chunks, {}, {}))
+            plan_index = len(plans) - 1
+            for rank, chunk in enumerate(chunks):
+                pairs.append((query.question, chunk.text))
+                refs.append((plan_index, rank, chunk))
+                if len(pairs) == self.neural_batch_size:
+                    flush()
+            self._retrieved_chunk_pairs += len(chunks)
+        flush()
+        return [
+            RetrievalResult(
+                qid=query.qid,
+                aids=tuple(aid for aid, _ in ordered),
+                scores=tuple(score for _, score in ordered),
+            )
+            for query, _chunks, aid_scores, best_ranks in plans
+            for ordered in [
+                sorted(
+                    aid_scores.items(),
+                    key=lambda item: (-item[1], best_ranks[item[0]], item[0]),
+                )
+            ]
+        ]
 
     def _rerank_chunks_global(
         self,
