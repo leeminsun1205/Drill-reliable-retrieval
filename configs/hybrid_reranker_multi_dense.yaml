@@ -132,9 +132,10 @@ reranking:
   document_max_tokens: 448
   overlap_tokens: 64
   max_length: 512
-  # Two-T4 benchmark winner at max_length 512: 3.08x batch-8 throughput with
-  # exact sampled top-1/top-3 parity and ample memory headroom.
-  batch_size: 128
+  # The isolated reranker benchmark supported 128, but the complete multi-dense
+  # process failed on its first forward after checkpoint load. Keep the method
+  # fixed and use the safer operational mini-batch for the end-to-end run.
+  batch_size: 64
   positive_label_index: 1
   trust_remote_code: false
   fp16: true

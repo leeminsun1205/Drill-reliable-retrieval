@@ -154,12 +154,33 @@ class HFCrossEncoderScorer:
                 return_tensors="pt",
             )
             encoded = {key: value.to(self._primary_device) for key, value in encoded.items()}
-            with torch.inference_mode(), torch.autocast(
-                device_type="cuda",
-                dtype=torch.float16,
-                enabled=use_fp16,
-            ):
-                logits = model(**encoded).logits
+            try:
+                with torch.inference_mode(), torch.autocast(
+                    device_type="cuda",
+                    dtype=torch.float16,
+                    enabled=use_fp16,
+                ):
+                    logits = model(**encoded).logits
+            except BaseException as error:
+                memory = ""
+                if torch.cuda.is_available():
+                    parts = []
+                    for index in range(torch.cuda.device_count()):
+                        free_bytes, total_bytes = torch.cuda.mem_get_info(index)
+                        parts.append(
+                            f"cuda:{index} free={free_bytes / 2**20:.0f}MiB/"
+                            f"{total_bytes / 2**20:.0f}MiB "
+                            f"allocated={torch.cuda.memory_allocated(index) / 2**20:.0f}MiB "
+                            f"reserved={torch.cuda.memory_reserved(index) / 2**20:.0f}MiB"
+                        )
+                    memory = "; ".join(parts)
+                print(
+                    "[reranker] Forward failed: "
+                    f"start={start} batch_size={len(batch)} "
+                    f"error_type={type(error).__name__} error={error} cuda={memory}",
+                    flush=True,
+                )
+                raise
             scores.append(
                 self._positive_scores(logits).detach().float().cpu().numpy()
             )

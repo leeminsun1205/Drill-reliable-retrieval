@@ -1092,9 +1092,16 @@ one query can be filled by pairs from the next query. The legacy
 `batching=per_query` path remains available as an exact parity control. The
 outer grouping is an orchestration bound, not the GPU mini-batch;
 `outer_pair_batch_size=1024` feeds multiple calls of the configured neural
-batch size. The selected 512-token direct-chunk configs now use
-`batch_size=128`; 1,024-token article-rechunk controls retain their prior safe
-batches because the benchmark does not cover their activation footprint.
+batch size. The reusable single-dense 512-token direct-chunk config retains
+`batch_size=128`. The multi-dense end-to-end config uses `batch_size=64`: its
+first full run materialized and transferred the reranker successfully, then
+failed immediately after the `Checkpoint ready for inference` marker, before
+producing reranker artifacts. This localizes the operational failure to the
+first neural forward; the available Papermill log did not preserve the inner
+exception, so batch 64 is a conservative rerun setting rather than a measured
+OOM threshold. Candidate sets, token budgets, and scoring remain unchanged.
+The 1,024-token article-rechunk controls retain their prior safe batches because
+the benchmark does not cover their activation footprint.
 Metadata records both settings plus total scored pairs and
 scorer-call count. Unit tests verify identical article rankings and scores for
 both article-rechunk and direct retrieved-chunk paths. The following isolated

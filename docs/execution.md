@@ -533,7 +533,7 @@ The active reranker configs use continuous pair batching:
 reranking:
   batching: global_stream
   outer_pair_batch_size: 1024
-  batch_size: 128
+  batch_size: 128  # multi-dense end-to-end config currently uses 64
 ```
 
 `outer_pair_batch_size` bounds each group passed to the scorer, while
