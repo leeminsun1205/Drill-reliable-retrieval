@@ -243,6 +243,30 @@ class DenseRetrieverTest(unittest.TestCase):
 
         self.assertEqual(calls[0]["device"], "cuda:0")
 
+    def test_multi_gpu_encode_uses_disposable_owner_process_path(self) -> None:
+        encoder = SentenceTransformerEncoder(
+            SentenceTransformerEncoderConfig(
+                model_name="example/model",
+                query_prefix="query: ",
+                device=["cuda:0", "cuda:1"],
+            )
+        )
+        expected = np.asarray([[1.0, 2.0]], dtype=np.float32)
+        with (
+            patch.object(encoder, "_resolve_device", return_value=["cuda:0", "cuda:1"]),
+            patch.object(
+                encoder, "_encode_multi_gpu_isolated", return_value=expected
+            ) as isolated,
+            patch.object(encoder, "_load_model") as parent_load,
+        ):
+            actual = encoder.encode_queries(["question"])
+
+        np.testing.assert_array_equal(actual, expected)
+        isolated.assert_called_once_with(
+            ["query: question"], ["cuda:0", "cuda:1"]
+        )
+        parent_load.assert_not_called()
+
     def test_required_cache_rejects_miss_without_encoding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             encoder = FakeEncoder(self.vectors)

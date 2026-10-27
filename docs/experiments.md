@@ -229,9 +229,19 @@ process's PyTorch allocated/reserved memory at process start, retriever build,
 each sparse/dense fit, each dense cache load, component query retrieval, worker
 completion, candidate completion, before/after retrieval close, before reranker
 construction, and after reranking. The multi-dense notebook packages this trace.
-This code-level integration cause is verified; whether it fully explains the
-measured 11.3 GiB non-PyTorch allocation requires the next T4x2 trace and must
-not be reported as resolved before that measurement.
+The subsequent T4x2 trace showed that the barrier did run but NVML stayed at
+11,300 MiB on GPU 0 before and after it. The allocation belonged to the
+experiment PID while that PID's PyTorch allocator reported zero allocated and
+reserved bytes; shutdown also reported four leaked multiprocessing semaphores.
+The repeated three checkpoint loads match a SentenceTransformers source model
+plus its two multi-device encoding workers. This localizes the remaining leak
+to native CUDA state from the internal multi-device encoding lifecycle rather
+than live tensors reachable by the experiment runner. Multi-GPU dense query
+encoding now runs below a disposable owner process that is joined before
+retrieval continues. Process exit provides the CUDA resource boundary while
+the returned NumPy embeddings and all ranking/scoring logic remain unchanged.
+The next T4x2 run must still measure the expected VRAM drop before this runtime
+fix is considered hardware-validated.
 
 On 2026-10-26, the project owner reported an isolated Kaggle T4 smoke test over
 the same first 128 articles, which produced 505 Khoản–Điểm representations for

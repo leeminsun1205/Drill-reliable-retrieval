@@ -6,11 +6,14 @@ from dataclasses import dataclass
 import gc
 import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import threading
 import time
+import traceback
 from typing import Any, Protocol, Sequence
 
 import numpy as np
@@ -51,6 +54,39 @@ class SentenceTransformerEncoderConfig:
     normalize_embeddings: bool = False
     trust_remote_code: bool = False
     device: str | list[str] = "auto"
+
+
+def _isolated_sentence_transformer_encode(
+    config: SentenceTransformerEncoderConfig,
+    texts: list[str],
+    devices: list[str],
+    output_path: str,
+    error_path: str,
+) -> None:
+    """Encode in a disposable owner process so native CUDA state cannot leak."""
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        model = SentenceTransformer(
+            config.model_name,
+            revision=config.revision,
+            trust_remote_code=config.trust_remote_code,
+            device="cpu",
+        )
+        if config.max_seq_length is not None:
+            model.max_seq_length = config.max_seq_length
+        embeddings = model.encode(
+            texts,
+            batch_size=config.batch_size,
+            device=devices,
+            normalize_embeddings=config.normalize_embeddings,
+            convert_to_numpy=True,
+            show_progress_bar=True,
+        )
+        np.save(output_path, np.asarray(embeddings, dtype=np.float32), allow_pickle=False)
+    except BaseException:
+        Path(error_path).write_text(traceback.format_exc(), encoding="utf-8")
+        raise
 
 
 class SentenceTransformerEncoder:
@@ -143,14 +179,24 @@ class SentenceTransformerEncoder:
         trace = _CudaProcessTrace.from_environment(self.config.model_name)
         trace.start()
         try:
+            prefixed = [prefix + text for text in texts]
+            self.last_device = self._resolve_device()
+            if isinstance(self.last_device, list):
+                trace.record(
+                    "before_isolated_encode",
+                    resolved_device=self.last_device,
+                    texts=len(prefixed),
+                    batch_size=self.config.batch_size,
+                )
+                result = self._encode_multi_gpu_isolated(prefixed, self.last_device)
+                trace.record("after_isolated_process_exit")
+                return result
             trace.record("before_model_load")
             model = self._load_model()
             trace.record(
                 "after_model_load",
                 model_device=str(getattr(model, "device", "unknown")),
             )
-            prefixed = [prefix + text for text in texts]
-            self.last_device = self._resolve_device()
             trace.record(
                 "before_encode",
                 resolved_device=self.last_device,
@@ -172,6 +218,34 @@ class SentenceTransformerEncoder:
             raise
         finally:
             trace.stop()
+
+    def _encode_multi_gpu_isolated(
+        self, texts: list[str], devices: list[str]
+    ) -> np.ndarray:
+        """Run SentenceTransformers' worker pool under a process we can join."""
+        context = multiprocessing.get_context("spawn")
+        with tempfile.TemporaryDirectory(prefix="drill-dense-encode-") as directory:
+            output_path = str(Path(directory) / "embeddings.npy")
+            error_path = str(Path(directory) / "error.txt")
+            process = context.Process(
+                target=_isolated_sentence_transformer_encode,
+                args=(self.config, texts, devices, output_path, error_path),
+                name=f"drill-encode-{Path(self.config.model_name).name}",
+            )
+            process.start()
+            process.join()
+            exit_code = process.exitcode
+            process.close()
+            if exit_code != 0 or not Path(output_path).is_file():
+                detail = (
+                    Path(error_path).read_text(encoding="utf-8")
+                    if Path(error_path).is_file()
+                    else "worker produced no error report"
+                )
+                raise RuntimeError(
+                    f"Isolated multi-GPU encoding failed with exit code {exit_code}:\n{detail}"
+                )
+            return np.load(output_path, allow_pickle=False)
 
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
         return self._encode(texts, prefix=self.config.document_prefix)

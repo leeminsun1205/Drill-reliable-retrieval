@@ -104,9 +104,14 @@ def cuda_snapshot(label: str, **details: Any) -> dict[str, Any]:
     own = [
         row for row in payload.get("compute_processes", []) if row["pid"] == os.getpid()
     ]
+    all_processes = [
+        (row["gpu_uuid"], row["pid"], row["used_memory_mib"], row["ppid"])
+        for row in payload.get("compute_processes", [])
+    ]
     print(
         f"[cuda-lifecycle] {label} pid={os.getpid()} "
         f"process_vram={[(row['gpu_uuid'], row['used_memory_mib']) for row in own]} "
+        f"all_processes={all_processes} "
         f"torch={payload['torch_cuda']}",
         flush=True,
     )
