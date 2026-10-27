@@ -1572,4 +1572,5 @@ memory. LightGBM OOF and final fitting write separate `telemetry.json` files,
 because process-local memory peaks cannot be combined safely. The multi-dense
 archive includes `telemetry_summary.json` with all process reports. This is
 observational instrumentation and does not change candidates, scores, ordering,
-or model precision.
+or model precision. CUDA peak counters are best-effort: an unsupported
+process-local CUDA counter is marked unavailable and must never abort a run.
