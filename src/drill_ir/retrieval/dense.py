@@ -17,6 +17,7 @@ import numpy as np
 
 from drill_ir.data.models import Article, Query, RetrievalResult
 from drill_ir.preprocessing import ArticleChunker, ArticleTruncationChunker, Chunk
+from drill_ir.runtime_resources import cuda_snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -996,14 +997,25 @@ class DenseRetriever:
             sort_keys=True,
             separators=(",", ":"),
         )
+        diagnostic_model_name = str(
+            getattr(getattr(self.encoder, "config", None), "model_name", type(self.encoder).__name__)
+        )
         embeddings = None
         if self.cache is not None:
+            cuda_snapshot(
+                "dense_cache:before_load", model_name=diagnostic_model_name
+            )
             embeddings = self.cache.load(
                 corpus_fingerprint=fingerprint,
                 encoder_key=representation_key,
                 aids=self._aids,
             )
             self.cache_hit = embeddings is not None
+            cuda_snapshot(
+                "dense_cache:after_load",
+                model_name=diagnostic_model_name,
+                cache_hit=self.cache_hit,
+            )
             print(
                 f"[dense] Embedding cache {'hit' if self.cache_hit else 'miss'}",
                 flush=True,
@@ -1024,6 +1036,11 @@ class DenseRetriever:
                 )
                 print("[dense] Saved corpus embedding cache", flush=True)
         self._document_embeddings = embeddings
+        cuda_snapshot(
+            "dense_fit:ready",
+            model_name=diagnostic_model_name,
+            embedding_shape=list(embeddings.shape),
+        )
         print(f"[dense] Index ready with shape {list(embeddings.shape)}", flush=True)
 
     def run_metadata(self) -> dict[str, Any]:

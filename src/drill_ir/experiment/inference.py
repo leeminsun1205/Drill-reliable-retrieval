@@ -14,55 +14,9 @@ import yaml
 from drill_ir.data import iter_articles, load_queries
 from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
+from drill_ir.runtime_resources import cuda_snapshot, release_stage_resources
 
 from .submission import package_submission, package_threshold_submission
-
-
-def _cuda_memory_summary() -> str:
-    """Return compact per-device allocator/free-memory diagnostics."""
-    try:
-        import torch
-    except ImportError:
-        return "cuda=unavailable"
-    if not torch.cuda.is_available():
-        return "cuda=unavailable"
-    values = []
-    for index in range(torch.cuda.device_count()):
-        free_bytes, total_bytes = torch.cuda.mem_get_info(index)
-        values.append(
-            f"cuda:{index} free={free_bytes / 2**20:.0f}MiB/"
-            f"{total_bytes / 2**20:.0f}MiB "
-            f"allocated={torch.cuda.memory_allocated(index) / 2**20:.0f}MiB "
-            f"reserved={torch.cuda.memory_reserved(index) / 2**20:.0f}MiB"
-        )
-    return "; ".join(values)
-
-
-def _release_retrieval_resources(retriever: Any) -> None:
-    """Close retrieval state and reclaim CUDA IPC/cache before reranking."""
-    print(f"[inference] CUDA before retrieval release: {_cuda_memory_summary()}", flush=True)
-    close = getattr(retriever, "close", None)
-    if callable(close):
-        close()
-    # Drop the bound method before collection because it retains its owner.
-    close = None
-    gc.collect()
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            for index in range(torch.cuda.device_count()):
-                with torch.cuda.device(index):
-                    torch.cuda.synchronize()
-                    torch.cuda.empty_cache()
-                    torch.cuda.ipc_collect()
-            gc.collect()
-            for index in range(torch.cuda.device_count()):
-                with torch.cuda.device(index):
-                    torch.cuda.empty_cache()
-    except ImportError:
-        pass
-    print(f"[inference] CUDA after retrieval release: {_cuda_memory_summary()}", flush=True)
 
 
 def _threshold_slug(value: float) -> str:
@@ -97,6 +51,7 @@ def run_submission_inference(
 ) -> Path:
     """Fit once, infer each named test set, and create one ZIP per test set."""
     started = time.perf_counter()
+    cuda_snapshot("submission:process_start")
     if score_threshold is not None and score_thresholds is not None:
         raise ValueError("Use either score_threshold or score_thresholds, not both")
     threshold_values = (
@@ -132,7 +87,9 @@ def run_submission_inference(
     retriever = build_retriever(
         retrieval_method, config["retrieval"], config.get("runtime", {})
     )
+    cuda_snapshot("submission:after_build_retriever")
     retriever.fit(articles)
+    cuda_snapshot("submission:after_retriever_fit")
     retrieve_k = int(config["retrieval"]["top_k"])
     output_k = int(config["retrieval"]["output_k"])
     if not 0 < output_k <= retrieve_k:
@@ -179,7 +136,7 @@ def run_submission_inference(
             }
             retriever_metadata = retriever.run_metadata()
             print("[inference] Releasing retrieval resources before reranker load", flush=True)
-            _release_retrieval_resources(retriever)
+            release_stage_resources(retriever, stage="submission:retrieval")
             retriever = None
             gc.collect()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
@@ -217,7 +174,7 @@ def run_submission_inference(
             # dense inference after the larger reranker has occupied GPU memory.
             retriever_metadata = retriever.run_metadata()
             print("[inference] Releasing retrieval resources before reranker load", flush=True)
-            _release_retrieval_resources(retriever)
+            release_stage_resources(retriever, stage="submission:retrieval")
             retriever = None
             gc.collect()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))

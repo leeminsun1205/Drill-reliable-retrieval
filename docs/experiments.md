@@ -215,7 +215,23 @@ allocations left by SentenceTransformers workers, and empties the allocator
 cache before constructing the reranker. Reranker logs distinguish CPU checkpoint
 materialization, transfer to the primary CUDA device, and readiness for
 inference. These are resource-lifecycle and diagnostic changes only; retrieval
-rankings, reranker inputs, model identifiers, batching, and scores are unchanged.
+rankings, reranker inputs, model identifiers, and scoring semantics are
+unchanged. The operational reranker mini-batch is explicitly configured at 64
+for the current T4x2 verification run.
+
+The 2026-10-27 lifecycle audit found an integration error in that correction:
+submission inference used the strong barrier, but the failing selected
+development command invokes `scripts/run_experiment.py`, whose experiment
+runner still used only each retriever's local `close()` method. The experiment
+and submission runners now call one shared barrier implementation. A separate
+`cuda_lifecycle_trace.jsonl` records global NVML process memory plus this
+process's PyTorch allocated/reserved memory at process start, retriever build,
+each sparse/dense fit, each dense cache load, component query retrieval, worker
+completion, candidate completion, before/after retrieval close, before reranker
+construction, and after reranking. The multi-dense notebook packages this trace.
+This code-level integration cause is verified; whether it fully explains the
+measured 11.3 GiB non-PyTorch allocation requires the next T4x2 trace and must
+not be reported as resolved before that measurement.
 
 On 2026-10-26, the project owner reported an isolated Kaggle T4 smoke test over
 the same first 128 articles, which produced 505 Khoản–Điểm representations for
@@ -1093,13 +1109,16 @@ one query can be filled by pairs from the next query. The legacy
 outer grouping is an orchestration bound, not the GPU mini-batch;
 `outer_pair_batch_size=1024` feeds multiple calls of the configured neural
 batch size. The reusable single-dense 512-token direct-chunk config retains
-`batch_size=128`. The multi-dense end-to-end config uses `batch_size=64`: its
-first full run materialized and transferred the reranker successfully, then
-failed immediately after the `Checkpoint ready for inference` marker, before
-producing reranker artifacts. This localizes the operational failure to the
-first neural forward; the available Papermill log did not preserve the inner
-exception, so batch 64 is a conservative rerun setting rather than a measured
-OOM threshold. Candidate sets, token budgets, and scoring remain unchanged.
+`batch_size=128`. A diagnostic multi-dense batch-64 run materialized and
+transferred the reranker, then measured an OOM at the second neural mini-batch
+(`start=64`). GPU 0 had only 355 MiB free and 14.21 GiB in use, predominantly
+reported as non-PyTorch memory, while GPU 1 had 11.78 GiB free. Audit then found
+that the strong CUDA/IPC resource barrier had only been connected to submission
+inference; the selected development run uses `run_experiment.py` and still
+called the older close-only path. Both runners now share the same barrier and
+the multi-dense verification config again targets T4x2 at batch 64. Completion,
+post-cleanup VRAM, and throughput remain pending measurement. Candidate sets,
+token budgets, model weights, and scoring remain unchanged.
 The 1,024-token article-rechunk controls retain their prior safe batches because
 the benchmark does not cover their activation footprint.
 Metadata records both settings plus total scored pairs and

@@ -149,6 +149,7 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(config["retrieval"]["bm25"]["backend"], "bm25s")
         self.assertEqual(config["reranking"]["batching"], "global_stream")
         self.assertEqual(config["reranking"]["outer_pair_batch_size"], 1024)
+        self.assertNotIn("device", config["reranking"])
         self.assertEqual(config["reranking"]["batch_size"], 64)
 
     def test_sparse_screening_config_fixes_matched_bm25_protocol(self) -> None:

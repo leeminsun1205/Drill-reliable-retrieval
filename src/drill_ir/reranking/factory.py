@@ -50,6 +50,9 @@ def build_reranker(
             "reranking.representation must be 'article', 'token_window', 'khoan', "
             "'diem', or 'khoan_diem'"
         )
+    reranker_device = config.get("device", _dense_device(runtime_config or {}))
+    if not isinstance(reranker_device, (str, list)):
+        raise ValueError("reranking.device must be a device string or list of device strings")
     scorer = HFCrossEncoderScorer(
         HFCrossEncoderConfig(
             model_name=model_name,
@@ -59,7 +62,7 @@ def build_reranker(
             trust_remote_code=common.trust_remote_code,
             positive_label_index=int(config.get("positive_label_index", 1)),
             fp16=bool(config.get("fp16", True)),
-            device=_dense_device(runtime_config or {}),
+            device=reranker_device,
         )
     )
     return CrossEncoderReranker(

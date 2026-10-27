@@ -137,7 +137,8 @@ legal corpus
   -> BM25S + VietLegal-Harrier + multilingual-E5-large
   -> weighted RRF 0.1 / 0.5 / 0.4
   -> top-50 fused chunks
-  -> epoch-3 cross-encoder, pair length 512, global-stream batch 128
+  -> epoch-3 cross-encoder, pair length 512, global-stream (batch 64 for the
+     active T4x2 lifecycle verification; batch 128 remains the isolated winner)
   -> max score aggregation to aid
   -> query-grouped OOF LightGBM with 15 features
   -> threshold/fallback or query-adaptive score-gap final selection
@@ -154,9 +155,10 @@ This architecture has completed the main engineering stabilization work:
   uses FAISS Flat rather than an approximate index;
 - dense encoders, matrices, query caches, chunk objects, and search indexes are
   released before the cross-encoder loads;
-- cross-encoder pairs are scored as one bounded global stream; the two-T4
-  benchmark selected batch 128 with about 3.08 times batch-8 throughput,
-  sampled top-1/top-3 parity, and ample memory headroom; and
+- cross-encoder pairs are scored as one bounded global stream; the isolated
+  two-T4 benchmark selected batch 128 with about 3.08 times batch-8 throughput
+  and sampled top-1/top-3 parity, while the current end-to-end lifecycle
+  verification conservatively uses batch 64; and
 - LightGBM training and evaluation remain query-grouped, with nested OOF used
   when estimating an adaptive final-set policy.
 

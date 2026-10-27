@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Mapping, Sequence
 
 from drill_ir.data.models import Article, Query, RetrievalResult
+from drill_ir.runtime_resources import cuda_snapshot
 
 from .base import Retriever
 from .dense import ChunkRetrievalResult
@@ -45,8 +46,12 @@ class WeightedRRFRetriever:
         self._component_results: dict[str, list[RetrievalResult]] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
+        cuda_snapshot("retrieval_fit:sparse:before")
         self.sparse.fit(articles)
+        cuda_snapshot("retrieval_fit:sparse:after")
+        cuda_snapshot("retrieval_fit:dense:before")
         self.dense.fit(articles)
+        cuda_snapshot("retrieval_fit:dense:after")
 
     @staticmethod
     def _by_qid(
@@ -63,7 +68,9 @@ class WeightedRRFRetriever:
         if top_k <= 0:
             raise ValueError("top_k must be positive")
         sparse_results = self.sparse.retrieve(queries, top_k=self.sparse_top_k)
+        cuda_snapshot("retrieval_query:sparse:after")
         dense_results = self.dense.retrieve(queries, top_k=self.dense_top_k)
+        cuda_snapshot("retrieval_query:dense:after")
         sparse_by_qid = self._by_qid(sparse_results, component="sparse")
         dense_by_qid = self._by_qid(dense_results, component="dense")
         expected_qids = {query.qid for query in queries}
@@ -241,22 +248,24 @@ class MultiDenseWeightedRRFRetriever:
         self._component_results: dict[str, list[RetrievalResult]] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
+        cuda_snapshot("retrieval_fit:sparse:before")
         self.sparse.fit(articles)
-        for retriever in self.dense_retrievers.values():
+        cuda_snapshot("retrieval_fit:sparse:after")
+        for name, retriever in self.dense_retrievers.items():
+            cuda_snapshot(f"retrieval_fit:dense:{name}:before")
             retriever.fit(articles)
+            cuda_snapshot(f"retrieval_fit:dense:{name}:after")
 
     def retrieve(self, queries: Sequence[Query], top_k: int) -> list[RetrievalResult]:
         if top_k <= 0:
             raise ValueError("top_k must be positive")
-        components = {
-            "sparse": self.sparse.retrieve(queries, top_k=self.sparse_top_k),
-            **{
-                f"dense:{name}": retriever.retrieve(
-                    queries, top_k=self.dense_top_k[name]
-                )
-                for name, retriever in self.dense_retrievers.items()
-            },
-        }
+        components = {"sparse": self.sparse.retrieve(queries, top_k=self.sparse_top_k)}
+        cuda_snapshot("retrieval_query:sparse:after")
+        for name, retriever in self.dense_retrievers.items():
+            components[f"dense:{name}"] = retriever.retrieve(
+                queries, top_k=self.dense_top_k[name]
+            )
+            cuda_snapshot(f"retrieval_query:dense:{name}:after")
         indexed = {
             name: WeightedRRFRetriever._by_qid(results, component=name)
             for name, results in components.items()

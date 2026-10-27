@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import json
+import gc
 from pathlib import Path
 import platform
 import random
@@ -20,6 +21,7 @@ from drill_ir.evaluation import (
 )
 from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
+from drill_ir.runtime_resources import cuda_snapshot, release_stage_resources
 
 
 def _git_info() -> dict[str, Any]:
@@ -49,8 +51,21 @@ def deterministic_split(items: list[Any], *, dev_fraction: float, seed: int) -> 
     return train, dev
 
 
+def _retrieval_artifacts(retriever: Any) -> tuple[dict[str, list[Any]], dict[str, Any]]:
+    component_getter = getattr(retriever, "component_results", None)
+    components = (
+        {name: list(values) for name, values in component_getter().items()}
+        if callable(component_getter)
+        else {}
+    )
+    feedback_getter = getattr(retriever, "feedback_records", None)
+    feedback = feedback_getter() if callable(feedback_getter) else {}
+    return components, feedback
+
+
 def run_experiment(config: dict[str, Any]) -> Path:
     started = time.perf_counter()
+    cuda_snapshot("experiment:process_start")
     seed = int(config["seed"])
     data = config["data"]
     report = validate_dataset(data["corpus_path"], data["train_path"])
@@ -76,13 +91,18 @@ def run_experiment(config: dict[str, Any]) -> Path:
         config["retrieval"],
         config.get("runtime", {}),
     )
+    cuda_snapshot("experiment:after_build_retriever")
 
+    cuda_snapshot("experiment:before_retriever_fit")
     retriever.fit(articles)
+    cuda_snapshot("experiment:after_retriever_fit")
     retrieve_k = int(config["retrieval"]["top_k"])
     output_k = int(config["retrieval"]["output_k"])
     if output_k > retrieve_k:
         raise ValueError("retrieval.output_k cannot exceed retrieval.top_k")
     first_stage_ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
+    cuda_snapshot("experiment:after_first_stage_retrieve")
+    component_results_data, feedback_data = _retrieval_artifacts(retriever)
     ranked = first_stage_ranked
     reranker = None
     retrieved_chunk_candidates = None
@@ -105,13 +125,16 @@ def run_experiment(config: dict[str, Any]) -> Path:
             }
             candidate_articles = [article for article in articles if article.aid in candidate_aids]
             retriever_metadata = retriever.run_metadata()
-            close_retriever = getattr(retriever, "close", None)
-            if callable(close_retriever):
-                print("[experiment] Releasing retrieval resources before reranker load", flush=True)
-                close_retriever()
+            component_results_data, feedback_data = _retrieval_artifacts(retriever)
+            print("[experiment] Releasing retrieval resources before reranker load", flush=True)
+            release_stage_resources(retriever, stage="experiment:retrieval")
+            retriever = None
+            gc.collect()
+            cuda_snapshot("experiment:before_reranker_build")
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
             reranker.fit(candidate_articles)
             ranked = reranker.rerank(dev_queries, first_stage_ranked)
+            cuda_snapshot("experiment:after_reranking")
         elif candidate_source == "retrieved_chunks":
             dense_depth = int(reranking_config.get("retrieved_chunk_depth", candidate_pool_size))
             retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
@@ -122,13 +145,17 @@ def run_experiment(config: dict[str, Any]) -> Path:
                 top_k=candidate_pool_size,
                 dense_depth=dense_depth,
             )
+            cuda_snapshot("experiment:after_chunk_candidate_retrieve")
             retriever_metadata = retriever.run_metadata()
-            close_retriever = getattr(retriever, "close", None)
-            if callable(close_retriever):
-                print("[experiment] Releasing retrieval resources before reranker load", flush=True)
-                close_retriever()
+            component_results_data, feedback_data = _retrieval_artifacts(retriever)
+            print("[experiment] Releasing retrieval resources before reranker load", flush=True)
+            release_stage_resources(retriever, stage="experiment:retrieval")
+            retriever = None
+            gc.collect()
+            cuda_snapshot("experiment:before_reranker_build")
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
             ranked = reranker.rerank_chunks(dev_queries, retrieved_chunk_candidates)
+            cuda_snapshot("experiment:after_reranking")
         else:
             raise ValueError(
                 "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"
@@ -246,9 +273,8 @@ def run_experiment(config: dict[str, Any]) -> Path:
                     ],
                 }
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
-    component_results = getattr(retriever, "component_results", None)
-    if callable(component_results):
-        components = component_results()
+    if component_results_data:
+        components = component_results_data
         indexed_components = {
             name: {result.qid: result for result in results}
             for name, results in components.items()
@@ -263,13 +289,10 @@ def run_experiment(config: dict[str, Any]) -> Path:
                         "scores": list(result.scores),
                     }
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
-    feedback_records = getattr(retriever, "feedback_records", None)
-    if callable(feedback_records):
-        feedback = feedback_records()
-        if feedback:
-            (run_dir / "retrieval_feedback.json").write_text(
-                json.dumps(feedback, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+    if feedback_data:
+        (run_dir / "retrieval_feedback.json").write_text(
+            json.dumps(feedback_data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     (run_dir / "split_dev_qids.json").write_text(
         json.dumps([query.qid for query in dev_queries], indent=2), encoding="utf-8"
     )
