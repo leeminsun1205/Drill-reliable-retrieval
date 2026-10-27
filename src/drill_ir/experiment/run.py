@@ -1,12 +1,14 @@
 """Config-driven experiment orchestration."""
 
 from datetime import datetime, timezone
+from dataclasses import asdict
 import json
-import gc
+import os
 from pathlib import Path
 import platform
 import random
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -20,8 +22,10 @@ from drill_ir.evaluation import (
     tune_score_thresholds,
 )
 from drill_ir.reranking import build_reranker
-from drill_ir.retrieval import build_retriever
-from drill_ir.runtime_resources import cuda_snapshot, release_stage_resources
+from drill_ir.retrieval import build_retriever, ChunkRetrievalResult
+from drill_ir.data.models import RetrievalResult
+from drill_ir.preprocessing import Chunk
+from drill_ir.runtime_resources import cuda_snapshot
 
 
 def _git_info() -> dict[str, Any]:
@@ -63,6 +67,106 @@ def _retrieval_artifacts(retriever: Any) -> tuple[dict[str, list[Any]], dict[str
     return components, feedback
 
 
+def _write_stage_handoff(
+    path: Path,
+    *,
+    first_stage: list[RetrievalResult],
+    chunks: list[ChunkRetrievalResult] | None,
+    components: dict[str, list[RetrievalResult]],
+    feedback: dict[str, Any],
+    metadata: dict[str, Any],
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "first_stage": [asdict(value) for value in first_stage],
+        "chunks": (
+            [
+                {
+                    "qid": value.qid,
+                    "chunks": [asdict(chunk) for chunk in value.chunks],
+                    "scores": list(value.scores),
+                }
+                for value in chunks
+            ]
+            if chunks is not None
+            else None
+        ),
+        "components": {
+            name: [asdict(value) for value in values]
+            for name, values in components.items()
+        },
+        "feedback": feedback,
+        "retriever_metadata": metadata,
+    }
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _read_stage_handoff(path: Path) -> tuple[
+    list[RetrievalResult],
+    list[ChunkRetrievalResult] | None,
+    dict[str, list[RetrievalResult]],
+    dict[str, Any],
+    dict[str, Any],
+]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != 1:
+        raise ValueError(f"Unsupported retrieval handoff schema: {path}")
+    first_stage = [
+        RetrievalResult(row["qid"], tuple(row["aids"]), tuple(row["scores"]))
+        for row in payload["first_stage"]
+    ]
+    chunks = None
+    if payload["chunks"] is not None:
+        chunks = [
+            ChunkRetrievalResult(
+                row["qid"],
+                tuple(
+                    Chunk(
+                        **{
+                            **chunk,
+                            "structure_path": tuple(chunk.get("structure_path", ())),
+                            "source_spans": tuple(
+                                tuple(span) for span in chunk.get("source_spans", ())
+                            ),
+                        }
+                    )
+                    for chunk in row["chunks"]
+                ),
+                tuple(row["scores"]),
+            )
+            for row in payload["chunks"]
+        ]
+    components = {
+        name: [
+            RetrievalResult(row["qid"], tuple(row["aids"]), tuple(row["scores"]))
+            for row in values
+        ]
+        for name, values in payload["components"].items()
+    }
+    qids = [value.qid for value in first_stage]
+    if len(qids) != len(set(qids)):
+        raise ValueError("Retrieval handoff contains duplicate query IDs")
+    if any(len(value.aids) != len(value.scores) for value in first_stage):
+        raise ValueError("Retrieval handoff has mismatched first-stage IDs and scores")
+    if chunks is not None:
+        if {value.qid for value in chunks} != set(qids):
+            raise ValueError("Retrieval handoff chunk/query coverage is incomplete")
+        if any(len(value.chunks) != len(value.scores) for value in chunks):
+            raise ValueError("Retrieval handoff has mismatched chunks and scores")
+    if any({value.qid for value in values} != set(qids) for values in components.values()):
+        raise ValueError("Retrieval handoff component/query coverage is incomplete")
+    return first_stage, chunks, components, payload["feedback"], payload["retriever_metadata"]
+
+
+def _exec_reranking_stage(handoff_path: Path) -> None:
+    environment = dict(os.environ)
+    environment["DRILL_RETRIEVAL_HANDOFF"] = str(handoff_path)
+    print(f"[experiment] Retrieval artifact valid; replacing process before reranking: {handoff_path}", flush=True)
+    os.execvpe(sys.executable, [sys.executable, *sys.argv], environment)
+
+
 def run_experiment(config: dict[str, Any]) -> Path:
     started = time.perf_counter()
     cuda_snapshot("experiment:process_start")
@@ -85,28 +189,40 @@ def run_experiment(config: dict[str, Any]) -> Path:
             "BM25 candidate depth, training hyperparameters, or any score threshold. "
             "Set these explicitly and implement the reranker before running this config."
         )
-    retrieval_method = "hybrid" if method == "hybrid_reranker" else method
-    retriever = build_retriever(
-        retrieval_method,
-        config["retrieval"],
-        config.get("runtime", {}),
-    )
-    cuda_snapshot("experiment:after_build_retriever")
-
-    cuda_snapshot("experiment:before_retriever_fit")
-    retriever.fit(articles)
-    cuda_snapshot("experiment:after_retriever_fit")
     retrieve_k = int(config["retrieval"]["top_k"])
     output_k = int(config["retrieval"]["output_k"])
     if output_k > retrieve_k:
         raise ValueError("retrieval.output_k cannot exceed retrieval.top_k")
-    first_stage_ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
-    cuda_snapshot("experiment:after_first_stage_retrieve")
-    component_results_data, feedback_data = _retrieval_artifacts(retriever)
-    ranked = first_stage_ranked
-    reranker = None
+    handoff_value = os.environ.get("DRILL_RETRIEVAL_HANDOFF")
+    resumed = bool(handoff_value and Path(handoff_value).is_file())
+    retriever = None
     retrieved_chunk_candidates = None
     retriever_metadata = None
+    if resumed:
+        (
+            first_stage_ranked,
+            retrieved_chunk_candidates,
+            component_results_data,
+            feedback_data,
+            retriever_metadata,
+        ) = _read_stage_handoff(Path(str(handoff_value)))
+        cuda_snapshot("experiment:reranking_process_start")
+    else:
+        retrieval_method = "hybrid" if method == "hybrid_reranker" else method
+        retriever = build_retriever(
+            retrieval_method,
+            config["retrieval"],
+            config.get("runtime", {}),
+        )
+        cuda_snapshot("experiment:after_build_retriever")
+        cuda_snapshot("experiment:before_retriever_fit")
+        retriever.fit(articles)
+        cuda_snapshot("experiment:after_retriever_fit")
+        first_stage_ranked = retriever.retrieve(dev_queries, top_k=retrieve_k)
+        cuda_snapshot("experiment:after_first_stage_retrieve")
+        component_results_data, feedback_data = _retrieval_artifacts(retriever)
+    ranked = first_stage_ranked
+    reranker = None
     if method == "hybrid_reranker":
         reranking_config = config.get("reranking")
         if not isinstance(reranking_config, dict):
@@ -117,7 +233,23 @@ def run_experiment(config: dict[str, Any]) -> Path:
                 "reranking.candidate_pool_size must be between output_k and retrieval.top_k"
             )
         candidate_source = str(reranking_config.get("candidate_source", "article_rechunk"))
-        if candidate_source == "article_rechunk":
+        if resumed:
+            cuda_snapshot("experiment:before_reranker_build")
+            reranker = build_reranker(reranking_config, config.get("runtime", {}))
+            if candidate_source == "article_rechunk":
+                candidate_aids = {
+                    aid
+                    for result in first_stage_ranked
+                    for aid in result.aids[:candidate_pool_size]
+                }
+                reranker.fit([article for article in articles if article.aid in candidate_aids])
+                ranked = reranker.rerank(dev_queries, first_stage_ranked)
+            elif candidate_source == "retrieved_chunks" and retrieved_chunk_candidates is not None:
+                ranked = reranker.rerank_chunks(dev_queries, retrieved_chunk_candidates)
+            else:
+                raise ValueError("Retrieval handoff is missing required chunk candidates")
+            cuda_snapshot("experiment:after_reranking")
+        elif candidate_source == "article_rechunk":
             candidate_aids = {
                 aid
                 for result in first_stage_ranked
@@ -126,15 +258,11 @@ def run_experiment(config: dict[str, Any]) -> Path:
             candidate_articles = [article for article in articles if article.aid in candidate_aids]
             retriever_metadata = retriever.run_metadata()
             component_results_data, feedback_data = _retrieval_artifacts(retriever)
-            print("[experiment] Releasing retrieval resources before reranker load", flush=True)
-            release_stage_resources(retriever, stage="experiment:retrieval")
-            retriever = None
-            gc.collect()
-            cuda_snapshot("experiment:before_reranker_build")
-            reranker = build_reranker(reranking_config, config.get("runtime", {}))
-            reranker.fit(candidate_articles)
-            ranked = reranker.rerank(dev_queries, first_stage_ranked)
-            cuda_snapshot("experiment:after_reranking")
+            run_dir = Path(config["output"]["root_dir"]) / str(config["experiment_name"])
+            run_dir.mkdir(parents=True, exist_ok=True)
+            handoff_path = run_dir / "retrieval_stage_handoff.json"
+            _write_stage_handoff(handoff_path, first_stage=first_stage_ranked, chunks=None, components=component_results_data, feedback=feedback_data, metadata=retriever_metadata)
+            _exec_reranking_stage(handoff_path)
         elif candidate_source == "retrieved_chunks":
             dense_depth = int(reranking_config.get("retrieved_chunk_depth", candidate_pool_size))
             retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
@@ -148,14 +276,11 @@ def run_experiment(config: dict[str, Any]) -> Path:
             cuda_snapshot("experiment:after_chunk_candidate_retrieve")
             retriever_metadata = retriever.run_metadata()
             component_results_data, feedback_data = _retrieval_artifacts(retriever)
-            print("[experiment] Releasing retrieval resources before reranker load", flush=True)
-            release_stage_resources(retriever, stage="experiment:retrieval")
-            retriever = None
-            gc.collect()
-            cuda_snapshot("experiment:before_reranker_build")
-            reranker = build_reranker(reranking_config, config.get("runtime", {}))
-            ranked = reranker.rerank_chunks(dev_queries, retrieved_chunk_candidates)
-            cuda_snapshot("experiment:after_reranking")
+            run_dir = Path(config["output"]["root_dir"]) / str(config["experiment_name"])
+            run_dir.mkdir(parents=True, exist_ok=True)
+            handoff_path = run_dir / "retrieval_stage_handoff.json"
+            _write_stage_handoff(handoff_path, first_stage=first_stage_ranked, chunks=retrieved_chunk_candidates, components=component_results_data, feedback=feedback_data, metadata=retriever_metadata)
+            _exec_reranking_stage(handoff_path)
         else:
             raise ValueError(
                 "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"

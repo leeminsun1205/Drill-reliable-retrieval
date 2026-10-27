@@ -120,7 +120,9 @@ retrieval:
 
 reranking:
   enabled: true
-  batching: global_stream
+  # Conservative end-to-end control matching the pre-optimization execution
+  # mode. Re-enable global_stream only after this full pipeline passes on T4x2.
+  batching: per_query
   outer_pair_batch_size: 1024
   candidate_source: retrieved_chunks
   retrieved_chunk_depth: 100
@@ -132,9 +134,9 @@ reranking:
   document_max_tokens: 448
   overlap_tokens: 64
   max_length: 512
-  # End-to-end T4x2 verification target after the shared retrieval resource
-  # barrier. The lifecycle trace must show both devices reclaimed before load.
-  batch_size: 64
+  # Restore the last known conservative pipeline batch. Batch 128 was validated
+  # only in an isolated reranker benchmark, not beside multi-dense retrieval.
+  batch_size: 8
   positive_label_index: 1
   trust_remote_code: false
   fp16: true

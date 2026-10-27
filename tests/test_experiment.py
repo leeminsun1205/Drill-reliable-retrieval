@@ -147,10 +147,10 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(config["retrieval"]["dense"]["search"]["backend"], "faiss_flat")
         self.assertEqual(config["retrieval"]["dense"]["search"]["device"], "cpu")
         self.assertEqual(config["retrieval"]["bm25"]["backend"], "bm25s")
-        self.assertEqual(config["reranking"]["batching"], "global_stream")
+        self.assertEqual(config["reranking"]["batching"], "per_query")
         self.assertEqual(config["reranking"]["outer_pair_batch_size"], 1024)
         self.assertNotIn("device", config["reranking"])
-        self.assertEqual(config["reranking"]["batch_size"], 64)
+        self.assertEqual(config["reranking"]["batch_size"], 8)
 
     def test_sparse_screening_config_fixes_matched_bm25_protocol(self) -> None:
         config = load_config(

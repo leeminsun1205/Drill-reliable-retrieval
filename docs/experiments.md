@@ -243,6 +243,17 @@ the returned NumPy embeddings and all ranking/scoring logic remain unchanged.
 The next T4x2 run must still measure the expected VRAM drop before this runtime
 fix is considered hardware-validated.
 
+That validation still showed 11,300 MiB attached to the retrieval experiment
+PID after the isolated encoder returned. The selected-dev runner therefore now
+uses a hard retrieval-to-reranking process-image boundary: it atomically writes
+`retrieval_stage_handoff.json`, containing first-stage ranks and scores, complete
+chunk records and mappings, component ranks, feedback records, and retriever
+metadata, then replaces itself with a fresh Python image via `exec`. The resumed
+image validates the handoff schema and performs only reranking and downstream
+evaluation. Unlike allocator cleanup, process-image replacement closes every
+CUDA driver resource owned by retrieval while preserving the original command,
+exit status, artifact directory, candidates, and ranking semantics.
+
 On 2026-10-26, the project owner reported an isolated Kaggle T4 smoke test over
 the same first 128 articles, which produced 505 Khoản–Điểm representations for
 each encoder. BGE-M3 completed in 85.27 seconds on one GPU and 54.79 seconds on
@@ -1125,10 +1136,13 @@ transferred the reranker, then measured an OOM at the second neural mini-batch
 reported as non-PyTorch memory, while GPU 1 had 11.78 GiB free. Audit then found
 that the strong CUDA/IPC resource barrier had only been connected to submission
 inference; the selected development run uses `run_experiment.py` and still
-called the older close-only path. Both runners now share the same barrier and
-the multi-dense verification config again targets T4x2 at batch 64. Completion,
-post-cleanup VRAM, and throughput remain pending measurement. Candidate sets,
-token budgets, model weights, and scoring remain unchanged.
+called the older close-only path. Subsequent traces still found 11.3 GiB held
+outside PyTorch, so the runner now uses the documented process-image handoff.
+For the first end-to-end validation after that change, the multi-dense config
+deliberately restores the pre-optimization control (`per_query`, batch 8).
+Global streaming and larger batches remain separate follow-up treatments.
+Completion, post-handoff VRAM, and throughput remain pending measurement.
+Candidate sets, token budgets, model weights, and scoring remain unchanged.
 The 1,024-token article-rechunk controls retain their prior safe batches because
 the benchmark does not cover their activation footprint.
 Metadata records both settings plus total scored pairs and

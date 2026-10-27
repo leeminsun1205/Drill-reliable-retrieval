@@ -527,16 +527,19 @@ query–representation pair. If T4 memory is insufficient, lower only
   --set reranking.batch_size=4
 ```
 
-The active reranker configs use continuous pair batching:
+Most optimized reranker configs use continuous pair batching:
 
 ```yaml
 reranking:
   batching: global_stream
   outer_pair_batch_size: 1024
-  batch_size: 128  # multi-dense T4x2 lifecycle verification currently uses 64
+  batch_size: 128
 ```
 
-`outer_pair_batch_size` bounds each group passed to the scorer, while
+The active multi-dense end-to-end recovery control is intentionally
+`batching: per_query` with `batch_size: 8`; this matches the conservative
+pre-optimization execution mode while validating the retrieval-to-reranking
+process handoff. `outer_pair_batch_size` bounds each group passed to the scorer, while
 `batch_size` is the actual Hugging Face/GPU mini-batch. Keeping the outer size a
 multiple of the neural batch size avoids introducing a partially filled batch
 at every outer boundary. `global_stream` may combine the tail of one query with
