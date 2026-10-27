@@ -57,7 +57,7 @@ def prepare_retrieval_cache(
         retriever = build_retriever("dense", config, runtime_config)
         if not isinstance(retriever, DenseRetriever) or retriever.chunk_cache is None:
             raise ValueError("Component 'chunks' requires enabled retrieval.dense.chunk_cache")
-        chunks = retriever.prepare_chunks(articles)
+        chunks = retriever.prepare_chunks(articles, require_existing=require_existing)
         return {
             "component": component,
             "chunk_cache": {

@@ -788,7 +788,9 @@ class DenseRetriever:
         self._cached_query_key: tuple[tuple[int, str], ...] | None = None
         self._cached_query_embeddings: np.ndarray | None = None
 
-    def prepare_chunks(self, articles: Sequence[Article]) -> list[Chunk]:
+    def prepare_chunks(
+        self, articles: Sequence[Article], *, require_existing: bool = False
+    ) -> list[Chunk]:
         """Load or create deterministic chunks without encoding documents."""
         if not articles:
             raise ValueError("Cannot fit dense retrieval on an empty corpus")
@@ -807,6 +809,8 @@ class DenseRetriever:
             print("[dense] Chunk cache hit", flush=True)
         else:
             self.chunk_cache_hit = False
+            if require_existing:
+                raise RuntimeError("Required dense chunk cache is missing or invalid")
             print(
                 f"[dense] Chunking {len(articles):,} articles with "
                 f"{type(self.chunker).__name__}",

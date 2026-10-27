@@ -168,6 +168,21 @@ class DenseRetrieverTest(unittest.TestCase):
                 cache.load(corpus_fingerprint="corpus", chunker_key="chunker")
             )
 
+    def test_required_chunk_cache_rejects_miss_before_chunking(self) -> None:
+        class FailingChunker:
+            cache_key = "unused"
+
+            def chunk_articles(self, articles):
+                raise AssertionError("chunker must not run on a required cache miss")
+
+        with tempfile.TemporaryDirectory() as directory:
+            retriever = DenseRetriever(
+                encoder=FakeEncoder(self.vectors), search=ExactVectorSearch(),
+                chunker=FailingChunker(), chunk_cache=DenseChunkCache(directory),
+            )
+            with self.assertRaisesRegex(RuntimeError, "Required dense chunk"):
+                retriever.prepare_chunks(self.articles, require_existing=True)
+
     def test_close_releases_dense_state_and_encoder(self) -> None:
         encoder = FakeEncoder(self.vectors)
         retriever = DenseRetriever(encoder=encoder, search=ExactVectorSearch())
