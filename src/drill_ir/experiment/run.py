@@ -206,6 +206,31 @@ def run_experiment(config: dict[str, Any]) -> Path:
             feedback_data,
             retriever_metadata,
         ) = _read_stage_handoff(Path(str(handoff_value)))
+        reranking_config = config.get("reranking", {})
+        smoke_limit = reranking_config.get("smoke_query_limit")
+        if smoke_limit is not None:
+            smoke_limit = int(smoke_limit)
+            if smoke_limit <= 0:
+                raise ValueError("reranking.smoke_query_limit must be positive")
+            selected_qids = {query.qid for query in dev_queries[:smoke_limit]}
+            dev_queries = [query for query in dev_queries if query.qid in selected_qids]
+            first_stage_ranked = [
+                value for value in first_stage_ranked if value.qid in selected_qids
+            ]
+            if retrieved_chunk_candidates is not None:
+                retrieved_chunk_candidates = [
+                    value
+                    for value in retrieved_chunk_candidates
+                    if value.qid in selected_qids
+                ]
+            component_results_data = {
+                name: [value for value in values if value.qid in selected_qids]
+                for name, values in component_results_data.items()
+            }
+            print(
+                f"[experiment] Reranker smoke subset: {len(dev_queries)} queries",
+                flush=True,
+            )
         cuda_snapshot("experiment:reranking_process_start")
     else:
         retrieval_method = "hybrid" if method == "hybrid_reranker" else method
