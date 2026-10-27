@@ -4,11 +4,74 @@ import tempfile
 from pathlib import Path
 
 from drill_ir.data import Article, Query
-from drill_ir.retrieval import BM25IndexCache, BM25Retriever, tokenize
+from drill_ir.retrieval import (
+    BM25IndexCache,
+    BM25Retriever,
+    BM25SIndexCache,
+    BM25SRetriever,
+    build_retriever,
+    tokenize,
+)
 from drill_ir.preprocessing import build_token_processor
 
 
 class BM25Test(unittest.TestCase):
+    def test_bm25s_matches_native_standard_bm25_ranking_and_ties(self) -> None:
+        articles = [
+            Article(30, "law-c", "alpha alpha beta"),
+            Article(10, "law-a", "alpha gamma"),
+            Article(20, "law-b", "beta gamma"),
+            Article(40, "law-d", "unrelated"),
+        ]
+        queries = [
+            Query(1, "alpha beta", ()),
+            Query(2, "missing", ()),
+            Query(3, "gamma", ()),
+        ]
+        native = BM25Retriever(k1=1.2, b=0.75)
+        optimized = BM25SRetriever(k1=1.2, b=0.75)
+        native.fit(articles)
+        optimized.fit(articles)
+        native_results = native.retrieve(queries, top_k=4)
+        optimized_results = optimized.retrieve(queries, top_k=4)
+        self.assertEqual(
+            [result.aids for result in optimized_results],
+            [result.aids for result in native_results],
+        )
+
+    def test_bm25s_cache_restores_identical_results(self) -> None:
+        articles = [
+            Article(10, "law-a", "alpha alpha beta"),
+            Article(20, "law-b", "beta gamma"),
+        ]
+        query = Query(1, "alpha", ())
+        with tempfile.TemporaryDirectory() as directory:
+            cache = BM25SIndexCache(Path(directory))
+            first = BM25SRetriever(cache=cache)
+            first.fit(articles)
+            expected = first.retrieve([query], top_k=2)
+            self.assertFalse(first.cache_hit)
+
+            second = BM25SRetriever(cache=cache, require_cache_hit=True)
+            second.fit(articles)
+            self.assertTrue(second.cache_hit)
+            actual = second.retrieve([query], top_k=2)
+            self.assertEqual(actual[0].aids, expected[0].aids)
+            self.assertEqual(actual[0].scores, expected[0].scores)
+
+    def test_factory_selects_bm25s_backend(self) -> None:
+        retriever = build_retriever(
+            "bm25",
+            {
+                "bm25": {
+                    "backend": "bm25s",
+                    "cache": {"enabled": False},
+                    "feedback": {"enabled": False, "method": "none"},
+                }
+            },
+        )
+        self.assertIsInstance(retriever, BM25SRetriever)
+
     def test_unicode_tokenization_is_normalized_and_lowercase(self) -> None:
         self.assertEqual(tokenize("KẾT hôn!"), ["kết", "hôn"])
 

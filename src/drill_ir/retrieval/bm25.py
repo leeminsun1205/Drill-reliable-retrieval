@@ -6,7 +6,7 @@ import heapq
 import json
 import math
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -135,6 +135,81 @@ class BM25IndexCache:
             "documents": len(aids),
             "terms": len(terms),
             "postings": len(positions),
+        }
+        (directory / "metadata.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return directory
+
+
+class BM25SIndexCache:
+    """Validated cache around bm25s' non-pickle sparse index format."""
+
+    VERSION = 1
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
+
+    def _directory(self, corpus_fingerprint: str, index_key: str) -> Path:
+        digest = hashlib.sha256(
+            f"bm25s\0{corpus_fingerprint}\0{index_key}".encode()
+        ).hexdigest()[:20]
+        return self.root / digest
+
+    def load(
+        self, *, corpus_fingerprint: str, index_key: str
+    ) -> tuple[Any, list[int], dict[str, int | float | None], Path] | None:
+        directory = self._directory(corpus_fingerprint, index_key)
+        metadata_path = directory / "metadata.json"
+        aids_path = directory / "aids.npy"
+        index_directory = directory / "bm25s_index"
+        if not metadata_path.is_file() or not aids_path.is_file() or not index_directory.is_dir():
+            return None
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if (
+            metadata.get("version") != self.VERSION
+            or metadata.get("corpus_fingerprint") != corpus_fingerprint
+            or metadata.get("index_key") != index_key
+        ):
+            return None
+        aids = np.load(aids_path, allow_pickle=False)
+        if aids.ndim != 1 or len(aids) != int(metadata.get("documents", -1)):
+            raise ValueError(f"Invalid BM25S cache: {directory}")
+        try:
+            import bm25s
+        except ImportError as error:
+            raise RuntimeError(
+                "BM25S retrieval requires the sparse dependency. "
+                "Install with: python -m pip install -e '.[sparse]'"
+            ) from error
+        retriever = bm25s.BM25.load(index_directory, load_corpus=False, mmap=True)
+        return (
+            retriever,
+            aids.astype(int).tolist(),
+            dict(metadata.get("vocabulary_stats", {})),
+            directory,
+        )
+
+    def save(
+        self,
+        retriever: Any,
+        *,
+        corpus_fingerprint: str,
+        index_key: str,
+        aids: Sequence[int],
+        vocabulary_stats: dict[str, int | float | None],
+    ) -> Path:
+        directory = self._directory(corpus_fingerprint, index_key)
+        directory.mkdir(parents=True, exist_ok=True)
+        retriever.save(directory / "bm25s_index")
+        np.save(directory / "aids.npy", np.asarray(aids, dtype=np.int64), allow_pickle=False)
+        metadata = {
+            "version": self.VERSION,
+            "backend": "bm25s",
+            "corpus_fingerprint": corpus_fingerprint,
+            "index_key": index_key,
+            "documents": len(aids),
+            "vocabulary_stats": vocabulary_stats,
         }
         (directory / "metadata.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -468,6 +543,7 @@ class BM25Retriever:
     def run_metadata(self) -> dict[str, object]:
         metadata = getattr(self.text_processor, "metadata", None)
         return {
+            "backend": "native",
             "variant": self.variant,
             "k1": self.k1,
             "b": self.b,
@@ -482,6 +558,276 @@ class BM25Retriever:
                 "original_query_weight": self.rm3_original_query_weight,
                 "dirichlet_mu": self.rm3_dirichlet_mu,
             },
+            "cache": {
+                "enabled": self.cache is not None,
+                "hit": self.cache_hit,
+                "required": self.require_cache_hit,
+                "directory": self.cache_directory,
+                "corpus_fingerprint": self.corpus_fingerprint,
+            },
+        }
+
+
+class BM25SRetriever:
+    """bm25s sparse-matrix backend with project-controlled preprocessing.
+
+    Standard BM25 uses bm25s' Lucene term-frequency and IDF definitions. The
+    native implementation remains the reference oracle for ranking parity.
+    """
+
+    def __init__(
+        self,
+        *,
+        k1: float = 1.2,
+        b: float = 0.75,
+        variant: str = "bm25",
+        delta: float = 1.0,
+        text_processor: TokenProcessor | None = None,
+        min_document_frequency: int = 1,
+        max_document_frequency: int | None = None,
+        max_document_frequency_ratio: float = 1.0,
+        cache: BM25SIndexCache | None = None,
+        require_cache_hit: bool = False,
+    ) -> None:
+        if k1 <= 0 or not 0 <= b <= 1:
+            raise ValueError("BM25 requires k1 > 0 and 0 <= b <= 1")
+        if variant not in {"bm25", "bm25_plus"}:
+            raise ValueError("BM25 variant must be 'bm25' or 'bm25_plus'")
+        if delta < 0:
+            raise ValueError("BM25+ delta must be non-negative")
+        if min_document_frequency <= 0:
+            raise ValueError("BM25 min_document_frequency must be positive")
+        if max_document_frequency is not None and max_document_frequency <= 0:
+            raise ValueError("BM25 max_document_frequency must be null or positive")
+        if not 0 < max_document_frequency_ratio <= 1:
+            raise ValueError("BM25 max_document_frequency_ratio must be in (0, 1]")
+        if require_cache_hit and cache is None:
+            raise ValueError("require_cache_hit requires an enabled BM25S cache")
+        self.k1 = k1
+        self.b = b
+        self.variant = variant
+        self.delta = delta
+        self.text_processor = text_processor or build_token_processor()
+        self.min_document_frequency = min_document_frequency
+        self.max_document_frequency = max_document_frequency
+        self.max_document_frequency_ratio = max_document_frequency_ratio
+        self.cache = cache
+        self.require_cache_hit = require_cache_hit
+        self.cache_hit = False
+        self.cache_directory: str | None = None
+        self.corpus_fingerprint: str | None = None
+        self._aids: list[int] = []
+        self._retriever: Any = None
+        self._vocabulary_stats: dict[str, int | float | None] = {}
+
+    @staticmethod
+    def _corpus_fingerprint(articles: Sequence[Article]) -> str:
+        return BM25Retriever._corpus_fingerprint(articles)
+
+    @property
+    def cache_key(self) -> str:
+        metadata = getattr(self.text_processor, "metadata", None)
+        payload = {
+            "backend": "bm25s",
+            "bm25s_method": "lucene" if self.variant == "bm25" else "bm25+",
+            "idf_method": "lucene",
+            "dtype": "float64",
+            "k1": self.k1,
+            "b": self.b,
+            "delta": self.delta if self.variant == "bm25_plus" else None,
+            "preprocessing": metadata() if callable(metadata) else None,
+            "min_document_frequency": self.min_document_frequency,
+            "max_document_frequency": self.max_document_frequency,
+            "max_document_frequency_ratio": self.max_document_frequency_ratio,
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+    @staticmethod
+    def _bm25s_module() -> Any:
+        try:
+            import bm25s
+        except ImportError as error:
+            raise RuntimeError(
+                "BM25S retrieval requires the sparse dependency. "
+                "Install with: python -m pip install -e '.[sparse]'"
+            ) from error
+        return bm25s
+
+    def fit(self, articles: Sequence[Article]) -> None:
+        if not articles:
+            raise ValueError("Cannot fit BM25S on an empty corpus")
+        self.corpus_fingerprint = self._corpus_fingerprint(articles)
+        self.cache_hit = False
+        self.cache_directory = None
+        if self.cache is not None:
+            cached = self.cache.load(
+                corpus_fingerprint=self.corpus_fingerprint,
+                index_key=self.cache_key,
+            )
+            if cached is not None:
+                self._retriever, self._aids, self._vocabulary_stats, directory = cached
+                self.cache_hit = True
+                self.cache_directory = str(directory)
+                print("[bm25s] Index cache hit", flush=True)
+                return
+            print("[bm25s] Index cache miss", flush=True)
+            if self.require_cache_hit:
+                raise RuntimeError("Required BM25S index cache is missing or invalid")
+
+        tokenized = [self.text_processor(article.text) for article in articles]
+        document_frequency: Counter[str] = Counter()
+        for tokens in tokenized:
+            document_frequency.update(set(tokens))
+        document_count = len(articles)
+        maximum_df = int(document_count * self.max_document_frequency_ratio)
+        if self.max_document_frequency is not None:
+            maximum_df = min(maximum_df, self.max_document_frequency)
+        retained = {
+            term
+            for term, frequency in document_frequency.items()
+            if self.min_document_frequency <= frequency <= maximum_df
+        }
+        tokenized = [[term for term in tokens if term in retained] for tokens in tokenized]
+        self._vocabulary_stats = {
+            "original_terms": len(document_frequency),
+            "retained_terms": len(retained),
+            "pruned_terms": len(document_frequency) - len(retained),
+            "min_document_frequency": self.min_document_frequency,
+            "max_document_frequency": self.max_document_frequency,
+            "max_document_frequency_ratio": self.max_document_frequency_ratio,
+            "effective_max_document_frequency": maximum_df,
+        }
+        bm25s = self._bm25s_module()
+        method = "lucene" if self.variant == "bm25" else "bm25+"
+        self._retriever = bm25s.BM25(
+            k1=self.k1,
+            b=self.b,
+            delta=self.delta,
+            method=method,
+            idf_method="lucene",
+            dtype="float64",
+            backend="numpy",
+        )
+        self._retriever.index(tokenized, show_progress=True, leave_progress=False)
+        self._aids = [article.aid for article in articles]
+        if self.cache is not None:
+            directory = self.cache.save(
+                self._retriever,
+                corpus_fingerprint=self.corpus_fingerprint,
+                index_key=self.cache_key,
+                aids=self._aids,
+                vocabulary_stats=self._vocabulary_stats,
+            )
+            self.cache_directory = str(directory)
+            print("[bm25s] Saved index cache", flush=True)
+
+    def _resolve_candidates(
+        self,
+        row_positions: np.ndarray,
+        row_scores: np.ndarray,
+        *,
+        result_k: int,
+        searched_k: int,
+    ) -> tuple[list[int], list[float]] | None:
+        positive = row_scores > 0
+        positive_positions = row_positions[positive]
+        positive_scores = row_scores[positive]
+        aid_array = np.asarray(self._aids, dtype=np.int64)
+        order = np.lexsort((aid_array[positive_positions], -positive_scores))
+        positive_positions = positive_positions[order]
+        positive_scores = positive_scores[order]
+        if len(positive_positions) < result_k:
+            selected = set(positive_positions.astype(int).tolist())
+            zeros = sorted(
+                (position for position in range(len(self._aids)) if position not in selected),
+                key=lambda position: self._aids[position],
+            )[: result_k - len(positive_positions)]
+            return (
+                positive_positions.astype(int).tolist() + zeros,
+                positive_scores.astype(float).tolist() + [0.0] * len(zeros),
+            )
+        boundary = float(positive_scores[result_k - 1])
+        if searched_k >= len(self._aids) or float(row_scores[-1]) < boundary:
+            return (
+                positive_positions[:result_k].astype(int).tolist(),
+                positive_scores[:result_k].astype(float).tolist(),
+            )
+        return None
+
+    def _retrieve_one(self, query_tokens: list[str], top_k: int) -> tuple[list[int], list[float]]:
+        result_k = min(top_k, len(self._aids))
+        tokens = list(dict.fromkeys(query_tokens))
+        depth = min(len(self._aids), max(result_k + 64, result_k * 2))
+        while True:
+            positions, scores = self._retriever.retrieve(
+                [tokens], k=depth, sorted=True, show_progress=False, n_threads=0
+            )
+            resolved = self._resolve_candidates(
+                np.asarray(positions[0], dtype=np.int64),
+                np.asarray(scores[0], dtype=np.float64),
+                result_k=result_k,
+                searched_k=depth,
+            )
+            if resolved is not None:
+                return resolved
+            depth = min(len(self._aids), depth * 2)
+
+    def retrieve(self, queries: Sequence[Query], top_k: int) -> list[RetrievalResult]:
+        if self._retriever is None or not self._aids:
+            raise RuntimeError("fit() must be called before retrieve()")
+        if top_k <= 0:
+            raise ValueError("top_k must be positive")
+        if not queries:
+            return []
+        result_k = min(top_k, len(self._aids))
+        tokenized = [
+            list(dict.fromkeys(self.text_processor(query.question))) for query in queries
+        ]
+        depth = min(len(self._aids), max(result_k + 64, result_k * 2))
+        batch_positions, batch_scores = self._retriever.retrieve(
+            tokenized, k=depth, sorted=True, show_progress=True, n_threads=0
+        )
+        results: list[RetrievalResult] = []
+        for query, tokens, row_positions, row_scores in zip(
+            queries, tokenized, batch_positions, batch_scores
+        ):
+            resolved = self._resolve_candidates(
+                np.asarray(row_positions, dtype=np.int64),
+                np.asarray(row_scores, dtype=np.float64),
+                result_k=result_k,
+                searched_k=depth,
+            )
+            positions, scores = (
+                resolved if resolved is not None else self._retrieve_one(tokens, top_k)
+            )
+            results.append(
+                RetrievalResult(
+                    qid=query.qid,
+                    aids=tuple(self._aids[position] for position in positions),
+                    scores=tuple(scores),
+                )
+            )
+        return results
+
+    def feedback_records(self) -> list[dict[str, object]]:
+        return []
+
+    def run_metadata(self) -> dict[str, object]:
+        metadata = getattr(self.text_processor, "metadata", None)
+        bm25s = self._bm25s_module()
+        return {
+            "backend": "bm25s",
+            "backend_version": getattr(bm25s, "__version__", "unknown"),
+            "variant": self.variant,
+            "bm25s_method": "lucene" if self.variant == "bm25" else "bm25+",
+            "idf_method": "lucene",
+            "dtype": "float64",
+            "k1": self.k1,
+            "b": self.b,
+            "delta": self.delta if self.variant == "bm25_plus" else None,
+            "preprocessing": metadata() if callable(metadata) else None,
+            "vocabulary": self._vocabulary_stats,
+            "feedback": {"enabled": False, "method": "none"},
             "cache": {
                 "enabled": self.cache is not None,
                 "hit": self.cache_hit,

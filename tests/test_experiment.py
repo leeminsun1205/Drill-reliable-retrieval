@@ -144,6 +144,9 @@ class ExperimentTest(unittest.TestCase):
             config["retrieval"]["dense"]["chunking"]["tokenizer_model_name"],
             "BAAI/bge-m3",
         )
+        self.assertEqual(config["retrieval"]["dense"]["search"]["backend"], "faiss_flat")
+        self.assertEqual(config["retrieval"]["dense"]["search"]["device"], "cpu")
+        self.assertEqual(config["retrieval"]["bm25"]["backend"], "bm25s")
 
     def test_sparse_screening_config_fixes_matched_bm25_protocol(self) -> None:
         config = load_config(

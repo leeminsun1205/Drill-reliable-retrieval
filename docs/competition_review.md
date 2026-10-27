@@ -237,6 +237,21 @@ Qwen2.5-32B KEEP/DROP filtering.
 
 Source: [Vietnamese Legal Document Retrieval repository](https://github.com/chisngooo/Vietnamese-Legal-Document-Retrieval).
 
+### Public-code fusion audit
+
+Public DRiLL implementations do not establish one shared fusion-library
+convention. Engineers used Pyserini for BM25 but implemented normalized linear
+score fusion (`0.3 * sparse + 0.7 * dense`), not RRF. The public top-11
+repository used `rank_bm25` and its own selectable `sum`, `product`, and
+`product_rank` ensemble script, again not a standard RRF library. ViDRILL's
+public description identifies hybrid scoring and repository-level combination
+scripts, but does not document use of a standard RRF package closely enough to
+claim library equivalence. The strongest EDM, FPT IS, and CUDO descriptions
+also do not publish a reusable RRF-library configuration. Consequently, this
+project must compare exact fusion arithmetic and policy rather than infer
+equivalence from the word "hybrid" or "RRF". This is a public-code audit, not a
+claim about unreleased leaderboard code.
+
 ## Confirmed public code
 
 The following repositories contain code and explicitly identify themselves as

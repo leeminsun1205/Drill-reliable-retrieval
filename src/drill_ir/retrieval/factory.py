@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from .base import Retriever
-from .bm25 import BM25IndexCache, BM25Retriever
+from .bm25 import BM25IndexCache, BM25Retriever, BM25SIndexCache, BM25SRetriever
 from .dense import (
     DenseRetriever,
     EmbeddingCache,
     ExactVectorSearch,
+    FaissFlatVectorSearch,
     SentenceTransformerEncoder,
     SentenceTransformerEncoderConfig,
 )
@@ -120,6 +121,9 @@ def build_retriever(
         )
     if method == "bm25":
         params = retrieval_config.get("bm25", {})
+        backend = str(params.get("backend", "native"))
+        if backend not in {"native", "bm25s"}:
+            raise ValueError("retrieval.bm25.backend must be 'native' or 'bm25s'")
         cache_config = params.get("cache", {})
         if not isinstance(cache_config, dict):
             raise ValueError("retrieval.bm25.cache must be a YAML mapping")
@@ -131,7 +135,9 @@ def build_retriever(
             raise ValueError("BM25 feedback.method must be 'none' or 'rm3'")
         if bool(feedback.get("enabled", False)) and feedback_method != "rm3":
             raise ValueError("Enabled BM25 feedback requires method='rm3'")
-        return BM25Retriever(
+        if backend == "bm25s" and bool(feedback.get("enabled", False)):
+            raise ValueError("BM25S backend does not currently support RM3 feedback")
+        common_parameters = dict(
             k1=float(params.get("k1", 1.2)),
             b=float(params.get("b", 0.75)),
             variant=str(params.get("variant", "bm25")),
@@ -146,6 +152,19 @@ def build_retriever(
             max_document_frequency_ratio=float(
                 params.get("max_document_frequency_ratio", 1.0)
             ),
+        )
+        if backend == "bm25s":
+            return BM25SRetriever(
+                **common_parameters,
+                cache=(
+                    BM25SIndexCache(Path(str(cache_config.get("directory", "indexes/bm25s"))))
+                    if bool(cache_config.get("enabled", False))
+                    else None
+                ),
+                require_cache_hit=bool(cache_config.get("require_hit", False)),
+            )
+        return BM25Retriever(
+            **common_parameters,
             rm3_enabled=bool(feedback.get("enabled", False)),
             rm3_feedback_documents=int(feedback.get("feedback_documents", 5)),
             rm3_feedback_terms=int(feedback.get("feedback_terms", 10)),
@@ -184,8 +203,12 @@ def build_retriever(
         raise ValueError("Enabled dense feedback requires method='rocchio'")
     if encoder_config.get("backend") != "sentence_transformers":
         raise ValueError("Only dense encoder backend='sentence_transformers' is supported")
-    if search_config.get("backend") != "exact":
-        raise ValueError("Only dense search backend='exact' is currently supported")
+    search_backend = str(search_config.get("backend", "exact_numpy"))
+    if search_backend not in {"exact", "exact_numpy", "faiss_flat"}:
+        raise ValueError(
+            "Dense search backend must be 'exact_numpy' (legacy alias 'exact') "
+            "or 'faiss_flat'"
+        )
 
     encoder = SentenceTransformerEncoder(
         SentenceTransformerEncoderConfig(
@@ -208,9 +231,17 @@ def build_retriever(
             device=_dense_device(runtime),
         )
     )
-    search = ExactVectorSearch(
-        metric=str(search_config.get("metric", "cosine")),
-        query_batch_size=int(search_config.get("query_batch_size", 64)),
+    search_parameters = {
+        "metric": str(search_config.get("metric", "cosine")),
+        "query_batch_size": int(search_config.get("query_batch_size", 64)),
+    }
+    search = (
+        FaissFlatVectorSearch(
+            **search_parameters,
+            device=str(search_config.get("device", "cpu")),
+        )
+        if search_backend == "faiss_flat"
+        else ExactVectorSearch(**search_parameters)
     )
     cache = None
     if bool(cache_config.get("enabled", True)):

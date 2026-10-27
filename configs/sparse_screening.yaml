@@ -11,6 +11,7 @@ retrieval:
   top_k: 100
   output_k: 3
   bm25:
+    backend: native
     variant: bm25
     delta: 1.0
     k1: 1.2

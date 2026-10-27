@@ -59,6 +59,26 @@ Dense experiments require the optional model stack:
   --output-root /kaggle/working/results
 ```
 
+The `dense` extra includes `faiss-cpu`. Active dense configs use
+`search.backend: faiss_flat`, `metric: cosine`, and `device: cpu`. This is exact
+FAISS Flat search, not ANN. Environments with FAISS GPU bindings may select a
+specific `cuda:N`, but CPU is the controlled default to preserve GPU capacity
+for encoding and reranking. The legacy `exact` name remains an alias for the
+NumPy reference backend `exact_numpy`.
+
+`bm25s` is a core dependency because it is the selected execution backend for
+standard BM25. To reproduce its comparison with the native oracle, run
+`notebooks/archive/kaggle_bm25_native_vs_bm25s.ipynb`. It builds and verifies separate caches, evaluates both
+backends on the same persisted seed-42 split, reports exact ranking overlap at
+1/5/10/20/50/100, and emits:
+
+- `/kaggle/working/retrieval_cache_bm25s_vncorenlp.tar`
+- `/kaggle/working/bm25_native_vs_bm25s_results.tar.gz`
+
+The notebook marks replacement safe only if all development top-100 rankings
+and all metrics match. This gate passed locally on 2026-10-27; rerunning it on
+Kaggle verifies portability. A faster runtime by itself is insufficient.
+
 ## Retrieval cache preparation
 
 Build expensive retrieval state independently from evaluation. Each invocation
@@ -112,7 +132,7 @@ dense float arrays generally gain little from gzip while compression adds a
 large CPU and wall-time cost.
 
 For sparse tuning and the matched BM25+ control, run
-`notebooks/kaggle_sparse_bm25_plus_screening.ipynb`. It builds and verifies two
+`notebooks/archive/kaggle_sparse_bm25_plus_screening.ipynb`. It builds and verifies two
 VnCoreNLP index caches, evaluates a predefined 12-case BM25 grid
 (`k1` in `0.6/0.9/1.2/1.5`, `b` in `0.4/0.6/0.75`) plus the fixed BM25+ control
 on the same persisted seed-42 development split, and writes two portable
@@ -348,7 +368,7 @@ candidate depths, epoch-3 checkpoint, and output policy fixed.
 terms. Do not reuse a LightGBM model or threshold across feedback treatments;
 feedback changes sparse/dense ranks and the downstream feature distribution.
 
-`notebooks/kaggle_rm3_rocchio_ablation.ipynb` is retained as a deferred
+`notebooks/archive/kaggle_rm3_rocchio_ablation.ipynb` is retained as a deferred
 Rocchio-only screen, not an active recommended run. It defines a controlled
 2-by-3 grid: 3 or 5 positive feedback aids and beta 0.10, 0.25, or 0.50, with
 alpha 1, gamma 0, no negative feedback, and first-pass depth 20. If profiling
@@ -543,7 +563,7 @@ builds `overnight_scoreboard.csv` and archives the full
 results directory as `/kaggle/working/drill_overnight_results.tar.gz`.
 
 The independent hierarchical structure suite is
-`notebooks/kaggle_khoan_diem_experiments.ipynb`. It mirrors the same controls,
+`notebooks/archive/kaggle_khoan_diem_experiments.ipynb`. It mirrors the same controls,
 split, models, WRRF parameters, output-k sweep, reranker budgets, direct-evidence
 case, and optional token-window reranker control, but selects `khoan_diem` for
 the structure-aware dense and reranker stages. Its reranker base configuration
@@ -659,7 +679,7 @@ corpus cache. Each run records cache hit/miss and embedding shape in
 ## Reranker fine-tuning on Kaggle
 
 Before committing GPU hours to the full corpus, run
-`notebooks/kaggle_smoke_finetune_reranker.ipynb`. It uses one synthetic query,
+`notebooks/archive/kaggle_smoke_finetune_reranker.ipynb`. It uses one synthetic query,
 one positive, five negatives, one GPU, and one optimizer step. Passing verifies
 the FlagEmbedding/CUDA/tokenization/backpropagation/model-save path only; it
 does not exercise retrieval, hard-negative mining, two-GPU DDP, or provide a
@@ -711,7 +731,7 @@ separate validation cell checks the ZIP member name, payload keys, complete and
 unique query-ID coverage, non-empty predictions, and integer article IDs before
 the artifacts are archived.
 
-`notebooks/kaggle_finetune_fpt_article_bce.ipynb` is the false-negative-aware
+`notebooks/archive/kaggle_finetune_fpt_article_bce.ipynb` is the false-negative-aware
 recovery experiment. It calls `scripts/prepare_fpt_reranker_training.py` to
 mine full-article labelled pairs using the published FPT.AI top-30, skip-first-5,
 random-semi-hard policy, then calls `scripts/train_cross_encoder_bce.py` through
@@ -743,7 +763,7 @@ The FPT notebook's final ZIP contains only metrics, predictions, scoreboard,
 provenance, and mining metadata/audit; it excludes checkpoints, model caches,
 dense embeddings, and the large optimization JSONL.
 
-`notebooks/kaggle_finetune_main_retrieved_chunks_bce.ipynb` is aligned with the
+`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce.ipynb` is aligned with the
 selected main pipeline. It calls `scripts/prepare_direct_chunk_bce_training.py`,
 trains pointwise BCE at pair length 512, and compares matched zero-shot,
 epoch-1, and epoch-2 checkpoints on the same direct top-50 retrieved chunks.
@@ -753,7 +773,7 @@ JSONL. Its final archive contains only results, metadata, and audit records—no
 embedding caches or duplicate model checkpoints. Use this notebook for the
 main fine-tuning decision and retain the article FPT notebook as a control.
 
-`notebooks/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` is the
+`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` is the
 controlled longer-training follow-up. It preserves the same seed, mined-pair
 protocol, pointwise-BCE objective, effective batch size, learning rate, and
 inference pipeline, but trains for four epochs. Because the trainer retains the
@@ -797,7 +817,8 @@ checkpoint directories.
 
 ## Standalone dense-model screening
 
-Use `notebooks/kaggle_dense_standalone_screening.ipynb` after building or
+The completed dense screen can be reproduced with
+`notebooks/archive/kaggle_dense_standalone_screening.ipynb` after building or
 uploading a verified dense cache archive. Set only `DENSE_TARGET` from 1 through
 7 according to the notebook's model table. The notebook discovers either an
 expanded cache dataset or `retrieval_cache_<slug>.tar`, extracts archives under

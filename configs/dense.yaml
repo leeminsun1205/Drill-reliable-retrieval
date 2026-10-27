@@ -42,9 +42,10 @@ retrieval:
       normalize_embeddings: false
       trust_remote_code: false
     search:
-      # Exact cosine search is the correctness baseline before FAISS/ANN.
-      backend: exact
+      # FAISS Flat accelerates exhaustive exact cosine search; this is not ANN.
+      backend: faiss_flat
       metric: cosine
+      device: cpu
       query_batch_size: 64
     cache:
       enabled: true

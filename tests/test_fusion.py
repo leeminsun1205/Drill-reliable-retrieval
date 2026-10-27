@@ -1,4 +1,5 @@
 import unittest
+import math
 from unittest.mock import patch
 
 from drill_ir.data import Article, Query, RetrievalResult
@@ -41,6 +42,24 @@ class FakeChunkRetriever(FakeRetriever):
 
 
 class WeightedRRFTest(unittest.TestCase):
+    def test_weighted_rrf_matches_standard_one_based_formula(self) -> None:
+        sparse = FakeRetriever([RetrievalResult(1, (10, 20), (9.0, 8.0))])
+        dense = FakeRetriever([RetrievalResult(1, (20, 30), (0.9, 0.8))])
+        retriever = WeightedRRFRetriever(
+            sparse=sparse,
+            dense=dense,
+            sparse_weight=0.25,
+            dense_weight=0.75,
+            rrf_k=60,
+            sparse_top_k=2,
+            dense_top_k=2,
+        )
+        result = retriever.retrieve([Query(1, "q", ())], top_k=3)[0]
+        scores = dict(zip(result.aids, result.scores))
+        self.assertTrue(math.isclose(scores[10], 0.25 / 61))
+        self.assertTrue(math.isclose(scores[20], 0.25 / 62 + 0.75 / 61))
+        self.assertTrue(math.isclose(scores[30], 0.75 / 62))
+
     def test_fuses_ranks_and_preserves_component_depths(self) -> None:
         sparse = FakeRetriever([RetrievalResult(1, (10, 20), (9.0, 8.0))])
         dense = FakeRetriever([RetrievalResult(1, (20, 30), (0.9, 0.8))])

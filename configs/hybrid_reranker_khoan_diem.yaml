@@ -19,6 +19,7 @@ retrieval:
     dense_top_k: 100
     include_zero_score_sparse: false
   bm25:
+    backend: bm25s
     # Set variant=bm25_plus for the isolated sparse-scoring ablation.
     variant: bm25
     delta: 1.0
@@ -72,8 +73,9 @@ retrieval:
       normalize_embeddings: false
       trust_remote_code: false
     search:
-      backend: exact
+      backend: faiss_flat
       metric: cosine
+      device: cpu
       query_batch_size: 64
     cache:
       enabled: true

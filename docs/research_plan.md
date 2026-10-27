@@ -152,7 +152,7 @@ was required. The primary comparison uses full embedding dimensions; Matryoshka
 dimension reduction and context lengths above 512 are later ablations.
 
 The standalone screening control uses `configs/dense_screening.yaml` and
-`notebooks/kaggle_dense_standalone_screening.ipynb`. It evaluates exactly one
+`notebooks/archive/kaggle_dense_standalone_screening.ipynb`. It evaluates exactly one
 of the seven registered dense encoders per run, with no BM25, fusion, or
 reranker. It requires a verified corpus embedding cache hit and holds seed-42
 development IDs, BGE-M3-tokenized Khoản–Điểm 448/64 representations, encoder
@@ -211,6 +211,13 @@ of the seven-model screen, is:
    `1.5/0.75` had slightly higher Recall@50 and F2@3 but slightly lower
    Recall@100; do not overinterpret this small dev-only trade-off or report the
    grid winner as an unbiased evaluation result.
+7. The local `bm25s` replacement gate passed on 2026-10-27: all ordered
+   top-100 rankings for 438 development queries and every reported metric
+   matched native standard BM25 exactly. A verified-cache evaluation was 4.09x
+   faster and its cache was 25.1% smaller locally. `bm25s` is therefore approved
+   as the execution backend for standard BM25. Retain native as the oracle and
+   keep native BM25+/RM3 separate because their semantics or support are not
+   implementation-equivalent.
 
 Two later inexpensive treatments are allowed after the fixed-weight control:
 query-adaptive sparse/dense weights from deterministic query features, and

@@ -16,9 +16,64 @@ Dense retrieval must encode corpus and queries independently, retain the mapping
 from vector positions to `aid`, support batching, and avoid unnecessary corpus
 re-encoding.
 
+The active exact-search implementation uses FAISS `IndexFlatIP` over float32
+vectors, with explicit L2 normalization for cosine similarity. This remains
+exhaustive exact KNN, not ANN. `exact_numpy` is retained as the reference
+backend. FAISS search adaptively expands chunk depth until article-level max
+aggregation has enough unique aids and every score tie at the selected boundary
+is covered, then applies the same deterministic ascending-`aid` tie-break.
+Parity tests require identical chunk/article IDs and float32 scores within
+`rtol=1e-5`, `atol=1e-6`. A local 50,000-vector, 128-dimensional, 64-query
+diagnostic measured 0.089 seconds for FAISS CPU versus 0.181 seconds for the
+NumPy reference; this is a synthetic implementation diagnostic, not a DRiLL
+runtime result. Active configs use FAISS CPU so vector search does not compete
+with dense encoders or the reranker for GPU memory.
+
 Fusion must be explicit. Reciprocal Rank Fusion is suitable for rank-based
 fusion. Direct weighted fusion of BM25 scores and cosine similarities requires a
 documented normalization strategy.
+
+The repository's weighted RRF uses one-based ranks and contributes
+`weight / (rrf_k + rank)` once per unique `aid` in each component. This matches
+the standard weighted-RRF arithmetic used by LangChain's ensemble retriever.
+The repository intentionally differs in surrounding policy: identity is always
+the legal article `aid` (or exact `(aid, chunk text)` for multi-dense chunk
+fusion), sparse zero-score fillers are excluded by default, component depths are
+explicit, and final score ties use ascending `aid`. These details can change a
+ranking even when two systems cite the same RRF formula. Do not compare RRF
+implementations without fixing `rrf_k`, one- versus zero-based rank, weights,
+deduplication key, per-component depth, missing-document behavior, zero-score
+handling, and tie-breaking.
+
+Standard BM25 uses the `bm25s` backend after the replacement gate reported
+below passed. It receives the
+same project-generated VnCoreNLP tokens and vocabulary-frequency pruning, uses
+`method: lucene` plus Lucene IDF, and retains deterministic ascending-`aid`
+ties. The native backend remains the correctness oracle, and
+`notebooks/archive/kaggle_bm25_native_vs_bm25s.ipynb` reproduces the complete parity
+check on Kaggle. Raw scores are not a parity criterion because bm25s may omit a
+positive rank-invariant scale factor; rank-based fusion is unaffected by that
+factor.
+BM25+ is outside this replacement gate because native and library conventions
+for the non-occurrence delta term differ.
+
+The standard-BM25 replacement gate was executed locally on 2026-10-27 with the
+59,628-article local corpus, all 438 seed-42 development queries, VnCoreNLP,
+`k1=1.2`, `b=0.75`, and candidate depth 100. Native and bm25s produced
+identical ordered rankings for 438/438 queries at every checked cutoff
+1/2/3/5/10/20/50/100; therefore all 43,800 positions in the saved top-100
+rankings matched. Precision, recall, F2, and Recall@1/5/10/20/50/100 were
+identical, including F2@3 `0.3799077303` and Recall@100 `0.8774516199`.
+
+On the same local Linux/Python 3.12.9 environment, uncached end-to-end runtime
+was 341.36 seconds for native and 295.43 seconds for bm25s; this measurement is
+dominated by repeated VnCoreNLP corpus segmentation. With verified cache hits,
+runtime was 37.49 versus 9.16 seconds, a 4.09x end-to-end speedup for the sparse
+evaluation run. Cache size was 73.78 MiB versus 55.26 MiB, a 25.1% reduction.
+These are measured local implementation results, not Kaggle runtime claims.
+The evidence qualifies bm25s to become the execution backend for standard BM25;
+retain native as a reproducibility oracle and for currently native-only RM3 and
+BM25+ semantics until those treatments receive separate parity definitions.
 
 For controlled multi-dense experiments, the factory accepts a base
 `retrieval.dense` mapping, named partial overrides under
@@ -196,9 +251,10 @@ archives or recorded separately before the screen is considered fully verified.
 The dense baseline is decomposed into encoder, cache, and search components in
 `configs/dense.yaml`. It uses `intfloat/multilingual-e5-base`, explicit E5 query
 and passage prefixes, a recorded maximum sequence length, and exact cosine
-search. Exact search is the correctness reference before adding FAISS or another
-approximate backend. Corpus embeddings are cached only after validating the
-corpus fingerprint, ordered aid mapping, and document-encoder configuration.
+search. The FAISS Flat implementation is checked against the NumPy exact
+reference before any future approximate backend is considered. Corpus
+embeddings are cached only after validating the corpus fingerprint, ordered aid
+mapping, and document-encoder configuration.
 
 Model trials reuse `configs/dense.yaml` and override experiment leaves through
 CLI flags. Common dense fields have readable flags such as `--model-name`, while
@@ -396,7 +452,7 @@ comparing the variants. BM25+ changes sparse ranks and therefore may change the 
 direct-chunk candidate set; report candidate Recall@k as well as final F2.
 
 `configs/sparse_screening.yaml` and
-`notebooks/kaggle_sparse_bm25_plus_screening.ipynb` implement sparse tuning and
+`notebooks/archive/kaggle_sparse_bm25_plus_screening.ipynb` implement sparse tuning and
 the matched BM25+ control. The predefined BM25 grid crosses `k1` values
 `0.6/0.9/1.2/1.5` with `b` values `0.4/0.6/0.75`; BM25+ remains fixed at
 `k1=1.2`, `b=0.75`, and delta `1.0`. Every case uses the same seed-42 split,
@@ -1160,7 +1216,7 @@ diagnostic and must not be described as an unbiased test estimate.
 
 On 2026-10-02, the project owner reported completion of the aligned
 direct-retrieved-chunk pointwise-BCE run from
-`notebooks/kaggle_finetune_main_retrieved_chunks_bce.ipynb`. The selected
+`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce.ipynb`. The selected
 epoch-2 snapshot was `checkpoint-2484`. It used the unchanged Khoản–Điểm
 448/64 hybrid first stage, direct reranking of 50 fused chunks at pair length
 512, and max aggregation by `aid`. The matched 438-query development results
@@ -1205,7 +1261,7 @@ reporting, retain `1.576171875` as the development-selected primary policy and
 label threshold 3.0 as private-leaderboard-tuned sensitivity analysis.
 
 The subsequent four-epoch run from
-`notebooks/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` retained
+`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` retained
 and evaluated epochs 3 and 4. The project owner reported the following matched
 development results on 2026-10-03:
 
@@ -1331,7 +1387,7 @@ ablation. `configs/hybrid_reranker_khoan_diem.yaml` and the dedicated Kaggle
 notebook freeze this representation without changing the earlier Điểm suite.
 
 The project owner reported the completed
-`kaggle_khoan_diem_experiments.ipynb` scoreboard on 2026-10-01. These values use
+`notebooks/archive/kaggle_khoan_diem_experiments.ipynb` scoreboard on 2026-10-01. These values use
 the same 438-query seed-42 development split and remain user-reported pending
 inspection of the archived configs, predictions, candidate rankings, and run
 metadata.

@@ -12,6 +12,7 @@ retrieval:
   # Selected on the persisted seed-42 dev split from a k sweep, not private test.
   output_k: 3
   bm25:
+    backend: bm25s
     k1: 1.2
     b: 0.75
     # Document-frequency vocabulary pruning; disabled by these defaults.

@@ -14,6 +14,7 @@ retrieval:
   # The BM25 candidate depth passed to the reranker remains unpublished.
   output_k: 2
   bm25:
+    backend: bm25s
     k1: 1.2
     b: 0.75
 

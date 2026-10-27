@@ -19,6 +19,7 @@ retrieval:
     dense_top_k: 100
     include_zero_score_sparse: false
   bm25:
+    backend: bm25s
     k1: 1.2
     b: 0.75
     min_document_frequency: 1
@@ -69,8 +70,9 @@ retrieval:
       normalize_embeddings: false
       trust_remote_code: false
     search:
-      backend: exact
+      backend: faiss_flat
       metric: cosine
+      device: cpu
       query_batch_size: 64
     cache:
       enabled: true

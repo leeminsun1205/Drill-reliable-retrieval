@@ -171,6 +171,8 @@ def _l2_normalize(matrix: np.ndarray) -> np.ndarray:
 class ExactVectorSearch:
     """Exact batched inner-product or cosine search with deterministic ties."""
 
+    backend = "exact_numpy"
+
     def __init__(self, *, metric: str = "cosine", query_batch_size: int = 64) -> None:
         if metric not in {"cosine", "dot_product"}:
             raise ValueError("Dense search metric must be 'cosine' or 'dot_product'")
@@ -216,7 +218,7 @@ class ExactVectorSearch:
             scores = queries[start : start + self.query_batch_size] @ documents.T
             for row in scores:
                 # Full lexicographic ordering is the exact, deterministic
-                # baseline. FAISS/ANN can be introduced as a separate backend.
+                # reference used to verify optimized search backends.
                 selected = np.lexsort((aid_array, -row))[:result_k]
                 all_indices.append(selected)
                 all_scores.append(row[selected])
@@ -266,6 +268,260 @@ class ExactVectorSearch:
                 all_aids.append(unique_aids[selected])
                 all_scores.append(grouped[selected])
         return np.stack(all_aids), np.stack(all_scores)
+
+
+class FaissFlatVectorSearch:
+    """Exact FAISS flat search with deterministic aid tie-breaking.
+
+    FAISS performs exhaustive inner-product search. Cosine search is implemented
+    by L2-normalizing copied float32 vectors before they enter the index. Search
+    depth expands when needed so article-level max aggregation remains exact and
+    score ties at the requested boundary are available for deterministic sorting.
+    """
+
+    backend = "faiss_flat"
+
+    def __init__(
+        self,
+        *,
+        metric: str = "cosine",
+        query_batch_size: int = 64,
+        device: str = "cpu",
+    ) -> None:
+        if metric not in {"cosine", "dot_product"}:
+            raise ValueError("FAISS search metric must be 'cosine' or 'dot_product'")
+        if query_batch_size <= 0:
+            raise ValueError("FAISS query_batch_size must be positive")
+        if device != "auto" and device != "cpu" and not (
+            device.startswith("cuda:") and device.removeprefix("cuda:").isdigit()
+        ):
+            raise ValueError("FAISS device must be 'auto', 'cpu', or 'cuda:N'")
+        self.metric = metric
+        self.query_batch_size = query_batch_size
+        self.device = device
+        self.resolved_device = "uninitialized"
+        self._index: Any = None
+        self._document_identity: tuple[int, tuple[int, ...], tuple[int, ...]] | None = None
+        self._gpu_resources: Any = None
+
+    @staticmethod
+    def _faiss() -> Any:
+        try:
+            import faiss
+        except ImportError as error:
+            raise RuntimeError(
+                "FAISS search requires the dense dependency 'faiss-cpu'. "
+                "Install with: python -m pip install -e '.[dense]'"
+            ) from error
+        return faiss
+
+    def _resolve_device(self, faiss: Any) -> str:
+        gpu_available = bool(
+            hasattr(faiss, "StandardGpuResources")
+            and hasattr(faiss, "get_num_gpus")
+            and faiss.get_num_gpus() > 0
+        )
+        if self.device == "auto":
+            return "cuda:0" if gpu_available else "cpu"
+        if self.device.startswith("cuda:") and not gpu_available:
+            raise RuntimeError(
+                f"Requested FAISS device {self.device}, but installed FAISS has no GPU support"
+            )
+        if self.device.startswith("cuda:"):
+            gpu_id = int(self.device.removeprefix("cuda:"))
+            if gpu_id >= faiss.get_num_gpus():
+                raise RuntimeError(
+                    f"Requested FAISS device {self.device}, but only {faiss.get_num_gpus()} GPU(s) exist"
+                )
+        return self.device
+
+    def _prepare_index(self, document_embeddings: np.ndarray) -> Any:
+        documents = np.asarray(document_embeddings, dtype=np.float32)
+        if documents.ndim != 2:
+            raise ValueError("Dense embeddings must be two-dimensional matrices")
+        identity = (id(document_embeddings), documents.shape, documents.strides)
+        if self._index is not None and identity == self._document_identity:
+            return self._index
+        self.close()
+        faiss = self._faiss()
+        vectors = np.ascontiguousarray(documents, dtype=np.float32)
+        if self.metric == "cosine":
+            vectors = vectors.copy()
+            faiss.normalize_L2(vectors)
+            if np.any(np.linalg.norm(vectors, axis=1) == 0):
+                raise ValueError("Dense embeddings contain a zero vector")
+        cpu_index = faiss.IndexFlatIP(vectors.shape[1])
+        cpu_index.add(vectors)
+        self.resolved_device = self._resolve_device(faiss)
+        if self.resolved_device.startswith("cuda:"):
+            gpu_id = int(self.resolved_device.removeprefix("cuda:"))
+            self._gpu_resources = faiss.StandardGpuResources()
+            self._index = faiss.index_cpu_to_gpu(
+                self._gpu_resources, gpu_id, cpu_index
+            )
+        else:
+            self._index = cpu_index
+        self._document_identity = identity
+        return self._index
+
+    def _prepare_queries(self, query_embeddings: np.ndarray) -> np.ndarray:
+        queries = np.ascontiguousarray(query_embeddings, dtype=np.float32)
+        if queries.ndim != 2:
+            raise ValueError("Dense embeddings must be two-dimensional matrices")
+        if self.metric == "cosine":
+            queries = queries.copy()
+            self._faiss().normalize_L2(queries)
+            if np.any(np.linalg.norm(queries, axis=1) == 0):
+                raise ValueError("Dense embeddings contain a zero vector")
+        return queries
+
+    @staticmethod
+    def _standard_depth_is_safe(
+        scores: np.ndarray, *, requested_k: int, searched_k: int, total: int
+    ) -> bool:
+        if searched_k >= total or requested_k >= total:
+            return True
+        return bool(scores[searched_k - 1] < scores[requested_k - 1])
+
+    @staticmethod
+    def _grouped_depth_is_safe(
+        scores: np.ndarray,
+        indices: np.ndarray,
+        aids: np.ndarray,
+        *,
+        requested_k: int,
+        searched_k: int,
+        total: int,
+    ) -> bool:
+        best: dict[int, float] = {}
+        for score, position in zip(scores, indices):
+            aid = int(aids[int(position)])
+            best[aid] = max(best.get(aid, -float("inf")), float(score))
+        if len(best) < requested_k:
+            return searched_k >= total
+        threshold = sorted(best.items(), key=lambda item: (-item[1], item[0]))[
+            requested_k - 1
+        ][1]
+        return searched_k >= total or bool(scores[searched_k - 1] < threshold)
+
+    def _search_batch(
+        self,
+        index: Any,
+        queries: np.ndarray,
+        *,
+        requested_k: int,
+        aids: np.ndarray,
+        grouped: bool,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        total = int(index.ntotal)
+        searched_k = min(total, max(requested_k + 64, requested_k * 2))
+        while True:
+            scores, indices = index.search(queries, searched_k)
+            safe = []
+            for row in range(len(queries)):
+                if grouped:
+                    safe.append(
+                        self._grouped_depth_is_safe(
+                            scores[row], indices[row], aids,
+                            requested_k=requested_k,
+                            searched_k=searched_k,
+                            total=total,
+                        )
+                    )
+                else:
+                    safe.append(
+                        self._standard_depth_is_safe(
+                            scores[row], requested_k=requested_k,
+                            searched_k=searched_k,
+                            total=total,
+                        )
+                    )
+            if all(safe) or searched_k >= total:
+                return scores, indices
+            searched_k = min(total, searched_k * 2)
+
+    def search(
+        self,
+        query_embeddings: np.ndarray,
+        document_embeddings: np.ndarray,
+        aids: Sequence[int],
+        *,
+        top_k: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        documents = np.asarray(document_embeddings, dtype=np.float32)
+        aid_array = np.asarray(aids, dtype=np.int64)
+        if documents.shape[0] != len(aid_array):
+            raise ValueError("Document embeddings and aid mapping have different lengths")
+        if top_k <= 0 or documents.shape[0] == 0:
+            raise ValueError("top_k must be positive and document embeddings non-empty")
+        queries = self._prepare_queries(query_embeddings)
+        if queries.shape[1] != documents.shape[1]:
+            raise ValueError("Query and document embedding dimensions do not match")
+        index = self._prepare_index(documents)
+        result_k = min(top_k, len(aid_array))
+        all_indices: list[np.ndarray] = []
+        all_scores: list[np.ndarray] = []
+        for start in range(0, len(queries), self.query_batch_size):
+            scores, indices = self._search_batch(
+                index, queries[start : start + self.query_batch_size],
+                requested_k=result_k, aids=aid_array, grouped=False,
+            )
+            for row_scores, row_indices in zip(scores, indices):
+                order = np.lexsort((aid_array[row_indices], -row_scores))[:result_k]
+                all_indices.append(row_indices[order])
+                all_scores.append(row_scores[order])
+        return np.stack(all_indices), np.stack(all_scores)
+
+    def search_grouped(
+        self,
+        query_embeddings: np.ndarray,
+        document_embeddings: np.ndarray,
+        aids: Sequence[int],
+        *,
+        top_k: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        documents = np.asarray(document_embeddings, dtype=np.float32)
+        aid_array = np.asarray(aids, dtype=np.int64)
+        if documents.shape[0] != len(aid_array):
+            raise ValueError("Document embeddings and aid mapping have different lengths")
+        if top_k <= 0 or documents.shape[0] == 0:
+            raise ValueError("top_k must be positive and document embeddings non-empty")
+        queries = self._prepare_queries(query_embeddings)
+        if queries.shape[1] != documents.shape[1]:
+            raise ValueError("Query and document embedding dimensions do not match")
+        index = self._prepare_index(documents)
+        result_k = min(top_k, len(np.unique(aid_array)))
+        all_aids: list[np.ndarray] = []
+        all_scores: list[np.ndarray] = []
+        for start in range(0, len(queries), self.query_batch_size):
+            scores, indices = self._search_batch(
+                index, queries[start : start + self.query_batch_size],
+                requested_k=result_k, aids=aid_array, grouped=True,
+            )
+            for row_scores, row_indices in zip(scores, indices):
+                best: dict[int, float] = {}
+                for score, position in zip(row_scores, row_indices):
+                    aid = int(aid_array[int(position)])
+                    best[aid] = max(best.get(aid, -float("inf")), float(score))
+                selected = sorted(best.items(), key=lambda item: (-item[1], item[0]))[
+                    :result_k
+                ]
+                all_aids.append(np.asarray([aid for aid, _ in selected], dtype=np.int64))
+                all_scores.append(np.asarray([score for _, score in selected], dtype=np.float32))
+        return np.stack(all_aids), np.stack(all_scores)
+
+    def close(self) -> None:
+        self._index = None
+        self._document_identity = None
+        self._gpu_resources = None
+        self.resolved_device = "uninitialized"
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
 
 
 class EmbeddingCache:
@@ -343,7 +599,7 @@ class DenseRetriever:
         self,
         *,
         encoder: TextEncoder,
-        search: ExactVectorSearch,
+        search: ExactVectorSearch | FaissFlatVectorSearch,
         cache: EmbeddingCache | None = None,
         chunker: ArticleChunker | None = None,
         rocchio_enabled: bool = False,
@@ -456,8 +712,9 @@ class DenseRetriever:
             "embedding_shape": shape,
             "embedding_cache_hit": self.cache_hit,
             "embedding_cache_required": self.require_cache_hit,
-            "search_backend": "exact",
+            "search_backend": self.search.backend,
             "search_metric": self.search.metric,
+            "search_device": getattr(self.search, "resolved_device", "cpu"),
             "encoder_device": device,
             "chunker_cache_key": self.chunker.cache_key,
             "chunking": getattr(self.chunker, "last_stats", {"method": "article_truncate"}),
@@ -479,6 +736,9 @@ class DenseRetriever:
 
     def close(self) -> None:
         """Drop corpus/query matrices, chunks, and encoder resources."""
+        close_search = getattr(self.search, "close", None)
+        if callable(close_search):
+            close_search()
         close_encoder = getattr(self.encoder, "close", None)
         if callable(close_encoder):
             close_encoder()

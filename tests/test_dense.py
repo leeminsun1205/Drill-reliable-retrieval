@@ -6,7 +6,12 @@ import numpy as np
 
 from drill_ir.data import Article, Query
 from drill_ir.preprocessing import Chunk
-from drill_ir.retrieval import DenseRetriever, EmbeddingCache, ExactVectorSearch
+from drill_ir.retrieval import (
+    DenseRetriever,
+    EmbeddingCache,
+    ExactVectorSearch,
+    FaissFlatVectorSearch,
+)
 
 
 class FakeEncoder:
@@ -72,6 +77,54 @@ class DenseRetrieverTest(unittest.TestCase):
             top_k=2,
         )
         self.assertEqual(indices.tolist(), [[1, 0]])
+
+    def test_faiss_flat_matches_numpy_exact_chunk_and_grouped_results(self) -> None:
+        rng = np.random.default_rng(42)
+        documents = rng.normal(size=(257, 16)).astype(np.float32)
+        queries = rng.normal(size=(7, 16)).astype(np.float32)
+        aids = np.asarray([1000 + index // 3 for index in range(len(documents))])
+        numpy_search = ExactVectorSearch(metric="cosine", query_batch_size=3)
+        faiss_search = FaissFlatVectorSearch(
+            metric="cosine", query_batch_size=3, device="cpu"
+        )
+
+        numpy_indices, numpy_scores = numpy_search.search(
+            queries, documents, aids, top_k=25
+        )
+        faiss_indices, faiss_scores = faiss_search.search(
+            queries, documents, aids, top_k=25
+        )
+        self.assertEqual(faiss_indices.tolist(), numpy_indices.tolist())
+        np.testing.assert_allclose(faiss_scores, numpy_scores, rtol=1e-5, atol=1e-6)
+
+        numpy_aids, numpy_grouped_scores = numpy_search.search_grouped(
+            queries, documents, aids, top_k=25
+        )
+        faiss_aids, faiss_grouped_scores = faiss_search.search_grouped(
+            queries, documents, aids, top_k=25
+        )
+        self.assertEqual(faiss_aids.tolist(), numpy_aids.tolist())
+        np.testing.assert_allclose(
+            faiss_grouped_scores, numpy_grouped_scores, rtol=1e-5, atol=1e-6
+        )
+
+    def test_faiss_flat_expands_through_duplicate_aids_and_score_ties(self) -> None:
+        documents = np.asarray(
+            [[1.0, 0.0]] * 80 + [[0.9, 0.1], [0.8, 0.2], [0.7, 0.3]],
+            dtype=np.float32,
+        )
+        aids = np.asarray([20] * 80 + [30, 10, 40])
+        query = np.asarray([[1.0, 0.0]], dtype=np.float32)
+        numpy_search = ExactVectorSearch(metric="dot_product")
+        faiss_search = FaissFlatVectorSearch(metric="dot_product", device="cpu")
+        expected_aids, expected_scores = numpy_search.search_grouped(
+            query, documents, aids, top_k=4
+        )
+        actual_aids, actual_scores = faiss_search.search_grouped(
+            query, documents, aids, top_k=4
+        )
+        self.assertEqual(actual_aids.tolist(), expected_aids.tolist())
+        np.testing.assert_allclose(actual_scores, expected_scores)
 
     def test_valid_cache_avoids_reencoding_documents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
