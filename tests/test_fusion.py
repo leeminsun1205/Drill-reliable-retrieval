@@ -1,5 +1,8 @@
 import unittest
 import math
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from drill_ir.data import Article, Query, RetrievalResult
@@ -171,6 +174,143 @@ class WeightedRRFTest(unittest.TestCase):
                 chunk_candidate_selection="unknown",
             )
 
+    def test_same_law_neighbor_expansion_replaces_tail_at_fixed_budget(self) -> None:
+        chunks = (
+            Chunk("10:0", 10, "L", 0, "diem", "seed", 0, 1, 1),
+            Chunk("30:0", 30, "X", 0, "diem", "tail", 0, 1, 1),
+            Chunk("20:0", 20, "L", 0, "diem", "neighbor", 0, 1, 1),
+        )
+        sparse = FakeRetriever([RetrievalResult(1, (), ())])
+        dense = FakeChunkRetriever(
+            [RetrievalResult(1, (10, 30, 20), (0.9, 0.8, 0.7))],
+            [ChunkRetrievalResult(1, chunks, (0.9, 0.8, 0.7))],
+        )
+        retriever = WeightedRRFRetriever(
+            sparse=sparse,
+            dense=dense,
+            neighbor_expansion_enabled=True,
+            neighbor_seed_top_k=1,
+            neighbor_radius=1,
+            neighbor_max_expansions=1,
+        )
+        retriever.fit(
+            [
+                Article(10, "same-law", "seed"),
+                Article(20, "same-law", "neighbor"),
+                Article(30, "other-law", "tail"),
+            ]
+        )
+        retriever.retrieve([Query(1, "q", ())], top_k=3)
+        result = retriever.retrieve_chunks(
+            [Query(1, "q", ())], top_k=2, dense_depth=3
+        )[0]
+        self.assertEqual(tuple(chunk.aid for chunk in result.chunks), (10, 20))
+        self.assertEqual(
+            retriever.feedback_records()["same_law_neighbors"],
+            [{"qid": 1, "seed_aid": 10, "neighbor_aid": 20, "signed_distance": 1}],
+        )
+
+    def test_reference_expansion_replaces_tail_and_records_provenance(self) -> None:
+        chunks = (
+            Chunk("10:0", 10, "L", 0, "diem", "seed", 0, 1, 1),
+            Chunk("30:0", 30, "X", 0, "diem", "tail", 0, 1, 1),
+            Chunk("20:0", 20, "R", 0, "diem", "reference", 0, 1, 1),
+        )
+        sparse = FakeRetriever([RetrievalResult(1, (), ())])
+        dense = FakeChunkRetriever(
+            [RetrievalResult(1, (10, 30, 20), (0.9, 0.8, 0.7))],
+            [ChunkRetrievalResult(1, chunks, (0.9, 0.8, 0.7))],
+        )
+        retriever = WeightedRRFRetriever(
+            sparse=sparse,
+            dense=dense,
+            reference_adjacency={
+                10: [
+                    {
+                        "target_aid": 20,
+                        "scope": "cross_document",
+                        "target_law_id": "R",
+                    }
+                ]
+            },
+            reference_scopes=("cross_document",),
+            reference_seed_top_k=1,
+            reference_max_expansions=1,
+        )
+        retriever.retrieve([Query(1, "q", ())], top_k=3)
+        result = retriever.retrieve_chunks(
+            [Query(1, "q", ())], top_k=2, dense_depth=3
+        )[0]
+        self.assertEqual(tuple(chunk.aid for chunk in result.chunks), (10, 20))
+        self.assertEqual(
+            retriever.feedback_records()["explicit_references"],
+            [
+                {
+                    "qid": 1,
+                    "seed_aid": 10,
+                    "reference_aid": 20,
+                    "scope": "cross_document",
+                    "target_law_id": "R",
+                }
+            ],
+        )
+
+    def test_factory_reference_expansion_filters_scope_and_fails_closed(self) -> None:
+        base = {
+            "hybrid": {
+                "fusion": "weighted_rrf",
+                "reference_expansion": {
+                    "enabled": True,
+                    "scopes": ["same_document"],
+                    "seed_top_k": 2,
+                    "max_expansions": 3,
+                },
+            },
+            "bm25": {},
+            "dense": {
+                "encoder": {
+                    "backend": "sentence_transformers",
+                    "model_name": "model",
+                    "max_seq_length": 512,
+                },
+                "search": {"backend": "exact", "metric": "cosine"},
+                "chunking": {"method": "article_truncate", "aggregation": "max"},
+                "cache": {"enabled": False},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "requires graph_path"):
+            build_retriever("hybrid", base, {"accelerator": "cpu"})
+        rows = [
+            {
+                "source_aid": 10,
+                "target_aid": 20,
+                "target_law_id": "L",
+                "scope": "same_document",
+                "candidate_eligible": True,
+            },
+            {
+                "source_aid": 10,
+                "target_aid": 30,
+                "target_law_id": "X",
+                "scope": "cross_document",
+                "candidate_eligible": True,
+            },
+        ]
+        with TemporaryDirectory() as directory:
+            graph = Path(directory) / "edges.jsonl"
+            graph.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            base["hybrid"]["reference_expansion"]["graph_path"] = str(graph)
+            with patch("drill_ir.retrieval.factory.SentenceTransformerEncoder"):
+                retriever = build_retriever("hybrid", base, {"accelerator": "cpu"})
+        self.assertEqual(
+            retriever.reference_adjacency,
+            {10: [{"target_aid": 20, "scope": "same_document", "target_law_id": "L"}]},
+        )
+        self.assertEqual(retriever.reference_seed_top_k, 2)
+        self.assertEqual(retriever.reference_max_expansions, 3)
+
     def test_multi_dense_fuses_articles_and_exact_matching_chunks(self) -> None:
         shared = Chunk("20:a", 20, "L", 0, "diem", "shared", 0, 6, 1)
         other = Chunk("30:a", 30, "L", 0, "diem", "other", 0, 5, 1)
@@ -243,6 +383,12 @@ class WeightedRRFTest(unittest.TestCase):
             "hybrid": {
                 "fusion": "weighted_rrf",
                 "chunk_candidate_selection": "best_per_aid",
+                "same_law_neighbor_expansion": {
+                    "enabled": True,
+                    "seed_top_k": 3,
+                    "radius": 2,
+                    "max_expansions": 6,
+                },
             },
             "bm25": {},
             "dense": {
@@ -259,6 +405,10 @@ class WeightedRRFTest(unittest.TestCase):
         with patch("drill_ir.retrieval.factory.SentenceTransformerEncoder"):
             retriever = build_retriever("hybrid", config, {"accelerator": "cpu"})
         self.assertEqual(retriever.chunk_candidate_selection, "best_per_aid")
+        self.assertTrue(retriever.neighbor_expansion_enabled)
+        self.assertEqual(retriever.neighbor_seed_top_k, 3)
+        self.assertEqual(retriever.neighbor_radius, 2)
+        self.assertEqual(retriever.neighbor_max_expansions, 6)
 
 
 if __name__ == "__main__":

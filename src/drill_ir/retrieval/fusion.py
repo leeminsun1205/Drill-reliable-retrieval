@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import json
+from pathlib import Path
 from typing import Mapping, Sequence
 
 from drill_ir.data.models import Article, Query, RetrievalResult
@@ -13,6 +15,68 @@ from .dense import ChunkRetrievalResult
 
 
 _CHUNK_CANDIDATE_SELECTIONS = {"top_chunks", "best_per_aid"}
+_REFERENCE_SCOPES = {"same_document", "cross_document"}
+
+
+def load_reference_adjacency(
+    path: Path, *, scopes: Sequence[str]
+) -> dict[int, list[dict[str, object]]]:
+    """Load verified eligible graph edges while preserving artifact order."""
+    requested = tuple(dict.fromkeys(scopes))
+    unknown = set(requested) - _REFERENCE_SCOPES
+    if not requested or unknown:
+        raise ValueError(
+            "reference expansion scopes must be a non-empty subset of "
+            f"{sorted(_REFERENCE_SCOPES)}; unknown={sorted(unknown)}"
+        )
+    if not path.is_file():
+        raise FileNotFoundError(f"Reference graph does not exist: {path}")
+    adjacency: dict[int, list[dict[str, object]]] = defaultdict(list)
+    seen: set[tuple[int, int, str]] = set()
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(
+                    f"Invalid reference graph JSON at {path}:{line_number}"
+                ) from error
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"Reference graph row must be an object at {path}:{line_number}"
+                )
+            if not bool(record.get("candidate_eligible", False)):
+                raise ValueError(
+                    "Reference edge artifact must contain eligible edges only; "
+                    f"found ineligible row at {path}:{line_number}"
+                )
+            scope = str(record.get("scope", ""))
+            if scope not in _REFERENCE_SCOPES:
+                raise ValueError(
+                    f"Unknown reference scope {scope!r} at {path}:{line_number}"
+                )
+            source_aid = int(record["source_aid"])
+            target_aid = int(record["target_aid"])
+            if source_aid <= 0 or target_aid <= 0:
+                raise ValueError(
+                    f"Reference graph aids must be positive at {path}:{line_number}"
+                )
+            if scope not in requested:
+                continue
+            key = (source_aid, target_aid, scope)
+            if key in seen:
+                continue
+            seen.add(key)
+            adjacency[source_aid].append(
+                {
+                    "target_aid": target_aid,
+                    "scope": scope,
+                    "target_law_id": str(record.get("target_law_id", "")),
+                }
+            )
+    return dict(adjacency)
 
 
 def _validate_chunk_candidate_selection(value: str) -> str:
@@ -45,6 +109,124 @@ def _select_chunk_candidates(
     return selected
 
 
+def _same_law_neighbors(
+    articles: Sequence[Article], *, radius: int
+) -> dict[int, list[tuple[int, int]]]:
+    by_law: dict[str, list[int]] = {}
+    for article in articles:
+        by_law.setdefault(article.law_id, []).append(article.aid)
+    neighbors: dict[int, list[tuple[int, int]]] = {}
+    for aids in by_law.values():
+        for position, aid in enumerate(aids):
+            values: list[tuple[int, int]] = []
+            for distance in range(1, radius + 1):
+                if position - distance >= 0:
+                    values.append((aids[position - distance], -distance))
+                if position + distance < len(aids):
+                    values.append((aids[position + distance], distance))
+            neighbors[aid] = values
+    return neighbors
+
+
+def _expand_with_available_neighbors(
+    ranked: Sequence[Sequence[object]],
+    selected: Sequence[Sequence[object]],
+    *,
+    qid: int,
+    top_k: int,
+    neighbors: Mapping[int, Sequence[tuple[int, int]]],
+    seed_top_k: int,
+    max_expansions: int,
+) -> tuple[list[Sequence[object]], list[dict[str, int]]]:
+    """Replace tail chunks with available same-law neighbors at a fixed budget."""
+    best_by_aid: dict[int, Sequence[object]] = {}
+    for item in ranked:
+        aid = int(getattr(item[0], "aid"))
+        best_by_aid.setdefault(aid, item)
+    selected_aids = {int(getattr(item[0], "aid")) for item in selected}
+    seed_aids: list[int] = []
+    for item in selected:
+        aid = int(getattr(item[0], "aid"))
+        if aid not in seed_aids:
+            seed_aids.append(aid)
+        if len(seed_aids) == seed_top_k:
+            break
+    expansions: list[Sequence[object]] = []
+    records: list[dict[str, int]] = []
+    for seed_aid in seed_aids:
+        for neighbor_aid, signed_distance in neighbors.get(seed_aid, ()):
+            candidate = best_by_aid.get(neighbor_aid)
+            if candidate is None or neighbor_aid in selected_aids:
+                continue
+            selected_aids.add(neighbor_aid)
+            expansions.append(candidate)
+            records.append(
+                {
+                    "qid": qid,
+                    "seed_aid": seed_aid,
+                    "neighbor_aid": neighbor_aid,
+                    "signed_distance": signed_distance,
+                }
+            )
+            if len(expansions) == max_expansions:
+                break
+        if len(expansions) == max_expansions:
+            break
+    if not expansions:
+        return list(selected), records
+    return [*selected[: top_k - len(expansions)], *expansions], records
+
+
+def _expand_with_available_references(
+    ranked: Sequence[Sequence[object]],
+    selected: Sequence[Sequence[object]],
+    *,
+    qid: int,
+    top_k: int,
+    references: Mapping[int, Sequence[Mapping[str, object]]],
+    seed_top_k: int,
+    max_expansions: int,
+) -> tuple[list[Sequence[object]], list[dict[str, object]]]:
+    """Replace tail chunks with available explicit-reference targets."""
+    best_by_aid: dict[int, Sequence[object]] = {}
+    for item in ranked:
+        best_by_aid.setdefault(int(getattr(item[0], "aid")), item)
+    selected_aids = {int(getattr(item[0], "aid")) for item in selected}
+    seed_aids: list[int] = []
+    for item in selected:
+        aid = int(getattr(item[0], "aid"))
+        if aid not in seed_aids:
+            seed_aids.append(aid)
+        if len(seed_aids) == seed_top_k:
+            break
+    expansions: list[Sequence[object]] = []
+    records: list[dict[str, object]] = []
+    for seed_aid in seed_aids:
+        for edge in references.get(seed_aid, ()):
+            target_aid = int(edge["target_aid"])
+            candidate = best_by_aid.get(target_aid)
+            if candidate is None or target_aid in selected_aids:
+                continue
+            selected_aids.add(target_aid)
+            expansions.append(candidate)
+            records.append(
+                {
+                    "qid": qid,
+                    "seed_aid": seed_aid,
+                    "reference_aid": target_aid,
+                    "scope": str(edge["scope"]),
+                    "target_law_id": str(edge.get("target_law_id", "")),
+                }
+            )
+            if len(expansions) == max_expansions:
+                break
+        if len(expansions) == max_expansions:
+            break
+    if not expansions:
+        return list(selected), records
+    return [*selected[: top_k - len(expansions)], *expansions], records
+
+
 class WeightedRRFRetriever:
     """Fuse sparse and dense ranks with weighted reciprocal rank fusion."""
 
@@ -60,6 +242,15 @@ class WeightedRRFRetriever:
         dense_top_k: int = 100,
         include_zero_score_sparse: bool = False,
         chunk_candidate_selection: str = "top_chunks",
+        neighbor_expansion_enabled: bool = False,
+        neighbor_seed_top_k: int = 5,
+        neighbor_radius: int = 1,
+        neighbor_max_expansions: int = 4,
+        reference_adjacency: Mapping[int, Sequence[Mapping[str, object]]] | None = None,
+        reference_graph_path: str | None = None,
+        reference_scopes: Sequence[str] = ("same_document",),
+        reference_seed_top_k: int = 5,
+        reference_max_expansions: int = 4,
     ) -> None:
         if sparse_weight < 0 or dense_weight < 0:
             raise ValueError("WRRF weights cannot be negative")
@@ -80,9 +271,27 @@ class WeightedRRFRetriever:
         self.chunk_candidate_selection = _validate_chunk_candidate_selection(
             chunk_candidate_selection
         )
+        if neighbor_seed_top_k <= 0 or neighbor_radius <= 0 or neighbor_max_expansions <= 0:
+            raise ValueError("Same-law neighbor expansion parameters must be positive")
+        self.neighbor_expansion_enabled = neighbor_expansion_enabled
+        self.neighbor_seed_top_k = neighbor_seed_top_k
+        self.neighbor_radius = neighbor_radius
+        self.neighbor_max_expansions = neighbor_max_expansions
+        self._neighbor_aids: dict[int, list[tuple[int, int]]] = {}
+        self._neighbor_expansion_records: list[dict[str, int]] = []
+        if reference_seed_top_k <= 0 or reference_max_expansions <= 0:
+            raise ValueError("Reference expansion parameters must be positive")
+        self.reference_adjacency = dict(reference_adjacency or {})
+        self.reference_expansion_enabled = reference_adjacency is not None
+        self.reference_graph_path = reference_graph_path
+        self.reference_scopes = tuple(reference_scopes)
+        self.reference_seed_top_k = reference_seed_top_k
+        self.reference_max_expansions = reference_max_expansions
+        self._reference_expansion_records: list[dict[str, object]] = []
         self._component_results: dict[str, list[RetrievalResult]] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
+        self._neighbor_aids = _same_law_neighbors(articles, radius=self.neighbor_radius)
         cuda_snapshot("retrieval_fit:sparse:before")
         self.sparse.fit(articles)
         cuda_snapshot("retrieval_fit:sparse:after")
@@ -162,6 +371,10 @@ class WeightedRRFRetriever:
                 values = getter()
                 if values:
                     records[name] = values
+        if self._neighbor_expansion_records:
+            records["same_law_neighbors"] = list(self._neighbor_expansion_records)
+        if self._reference_expansion_records:
+            records["explicit_references"] = list(self._reference_expansion_records)
         return records
 
     def close(self) -> None:
@@ -200,6 +413,8 @@ class WeightedRRFRetriever:
         if set(dense_chunk_by_qid) != expected_qids:
             raise ValueError("Dense chunk retriever must return every query exactly once")
         fused: list[ChunkRetrievalResult] = []
+        self._neighbor_expansion_records = []
+        self._reference_expansion_records = []
         for query in queries:
             result = dense_chunk_by_qid[query.qid]
             sparse = sparse_by_qid[result.qid]
@@ -225,6 +440,28 @@ class WeightedRRFRetriever:
                 top_k=top_k,
                 selection=self.chunk_candidate_selection,
             )
+            if self.neighbor_expansion_enabled:
+                selected, records = _expand_with_available_neighbors(
+                    ranked,
+                    selected,
+                    qid=result.qid,
+                    top_k=top_k,
+                    neighbors=self._neighbor_aids,
+                    seed_top_k=self.neighbor_seed_top_k,
+                    max_expansions=self.neighbor_max_expansions,
+                )
+                self._neighbor_expansion_records.extend(records)
+            if self.reference_expansion_enabled:
+                selected, records = _expand_with_available_references(
+                    ranked,
+                    selected,
+                    qid=result.qid,
+                    top_k=top_k,
+                    references=self.reference_adjacency,
+                    seed_top_k=self.reference_seed_top_k,
+                    max_expansions=self.reference_max_expansions,
+                )
+                self._reference_expansion_records.extend(records)
             fused.append(
                 ChunkRetrievalResult(
                     qid=result.qid,
@@ -246,6 +483,22 @@ class WeightedRRFRetriever:
             "dense_top_k": self.dense_top_k,
             "include_zero_score_sparse": self.include_zero_score_sparse,
             "chunk_candidate_selection": self.chunk_candidate_selection,
+            "same_law_neighbor_expansion": {
+                "enabled": self.neighbor_expansion_enabled,
+                "seed_top_k": self.neighbor_seed_top_k,
+                "radius": self.neighbor_radius,
+                "max_expansions": self.neighbor_max_expansions,
+                "available_chunk_only": True,
+            },
+            "reference_expansion": {
+                "enabled": self.reference_expansion_enabled,
+                "graph_path": self.reference_graph_path,
+                "scopes": list(self.reference_scopes),
+                "seed_top_k": self.reference_seed_top_k,
+                "max_expansions": self.reference_max_expansions,
+                "available_chunk_only": True,
+                "fixed_candidate_budget": True,
+            },
             "sparse": sparse_metadata() if callable(sparse_metadata) else {},
             "dense": dense_metadata() if callable(dense_metadata) else {},
         }
@@ -266,6 +519,15 @@ class MultiDenseWeightedRRFRetriever:
         dense_top_k: Mapping[str, int] | None = None,
         include_zero_score_sparse: bool = False,
         chunk_candidate_selection: str = "top_chunks",
+        neighbor_expansion_enabled: bool = False,
+        neighbor_seed_top_k: int = 5,
+        neighbor_radius: int = 1,
+        neighbor_max_expansions: int = 4,
+        reference_adjacency: Mapping[int, Sequence[Mapping[str, object]]] | None = None,
+        reference_graph_path: str | None = None,
+        reference_scopes: Sequence[str] = ("same_document",),
+        reference_seed_top_k: int = 5,
+        reference_max_expansions: int = 4,
     ) -> None:
         if not dense_retrievers:
             raise ValueError("Multi-dense WRRF requires at least one dense component")
@@ -291,9 +553,27 @@ class MultiDenseWeightedRRFRetriever:
         self.chunk_candidate_selection = _validate_chunk_candidate_selection(
             chunk_candidate_selection
         )
+        if neighbor_seed_top_k <= 0 or neighbor_radius <= 0 or neighbor_max_expansions <= 0:
+            raise ValueError("Same-law neighbor expansion parameters must be positive")
+        self.neighbor_expansion_enabled = neighbor_expansion_enabled
+        self.neighbor_seed_top_k = neighbor_seed_top_k
+        self.neighbor_radius = neighbor_radius
+        self.neighbor_max_expansions = neighbor_max_expansions
+        self._neighbor_aids: dict[int, list[tuple[int, int]]] = {}
+        self._neighbor_expansion_records: list[dict[str, int]] = []
+        if reference_seed_top_k <= 0 or reference_max_expansions <= 0:
+            raise ValueError("Reference expansion parameters must be positive")
+        self.reference_adjacency = dict(reference_adjacency or {})
+        self.reference_expansion_enabled = reference_adjacency is not None
+        self.reference_graph_path = reference_graph_path
+        self.reference_scopes = tuple(reference_scopes)
+        self.reference_seed_top_k = reference_seed_top_k
+        self.reference_max_expansions = reference_max_expansions
+        self._reference_expansion_records: list[dict[str, object]] = []
         self._component_results: dict[str, list[RetrievalResult]] = {}
 
     def fit(self, articles: Sequence[Article]) -> None:
+        self._neighbor_aids = _same_law_neighbors(articles, radius=self.neighbor_radius)
         cuda_snapshot("retrieval_fit:sparse:before")
         self.sparse.fit(articles)
         cuda_snapshot("retrieval_fit:sparse:after")
@@ -364,6 +644,10 @@ class MultiDenseWeightedRRFRetriever:
             getter = getattr(retriever, "feedback_records", None)
             if callable(getter) and (values := getter()):
                 records[name] = values
+        if self._neighbor_expansion_records:
+            records["same_law_neighbors"] = list(self._neighbor_expansion_records)
+        if self._reference_expansion_records:
+            records["explicit_references"] = list(self._reference_expansion_records)
         return records
 
     def close(self) -> None:
@@ -404,6 +688,8 @@ class MultiDenseWeightedRRFRetriever:
             raise ValueError("Chunk retrievers must return every query exactly once")
 
         fused: list[ChunkRetrievalResult] = []
+        self._neighbor_expansion_records = []
+        self._reference_expansion_records = []
         for query in queries:
             sparse = sparse_by_qid[query.qid]
             sparse_ranks = {
@@ -446,6 +732,28 @@ class MultiDenseWeightedRRFRetriever:
                 top_k=top_k,
                 selection=self.chunk_candidate_selection,
             )
+            if self.neighbor_expansion_enabled:
+                selected, records = _expand_with_available_neighbors(
+                    ranked,
+                    selected,
+                    qid=query.qid,
+                    top_k=top_k,
+                    neighbors=self._neighbor_aids,
+                    seed_top_k=self.neighbor_seed_top_k,
+                    max_expansions=self.neighbor_max_expansions,
+                )
+                self._neighbor_expansion_records.extend(records)
+            if self.reference_expansion_enabled:
+                selected, records = _expand_with_available_references(
+                    ranked,
+                    selected,
+                    qid=query.qid,
+                    top_k=top_k,
+                    references=self.reference_adjacency,
+                    seed_top_k=self.reference_seed_top_k,
+                    max_expansions=self.reference_max_expansions,
+                )
+                self._reference_expansion_records.extend(records)
             fused.append(
                 ChunkRetrievalResult(
                     qid=query.qid,
@@ -463,6 +771,22 @@ class MultiDenseWeightedRRFRetriever:
             "sparse_top_k": self.sparse_top_k,
             "include_zero_score_sparse": self.include_zero_score_sparse,
             "chunk_candidate_selection": self.chunk_candidate_selection,
+            "same_law_neighbor_expansion": {
+                "enabled": self.neighbor_expansion_enabled,
+                "seed_top_k": self.neighbor_seed_top_k,
+                "radius": self.neighbor_radius,
+                "max_expansions": self.neighbor_max_expansions,
+                "available_chunk_only": True,
+            },
+            "reference_expansion": {
+                "enabled": self.reference_expansion_enabled,
+                "graph_path": self.reference_graph_path,
+                "scopes": list(self.reference_scopes),
+                "seed_top_k": self.reference_seed_top_k,
+                "max_expansions": self.reference_max_expansions,
+                "available_chunk_only": True,
+                "fixed_candidate_budget": True,
+            },
             "dense_components": {
                 name: {
                     "weight": self.dense_weights[name],

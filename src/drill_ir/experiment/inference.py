@@ -274,12 +274,12 @@ def run_submission_inference(
                             component: list(values)
                             for component, values in component_results().items()
                         }
-                    feedback_records = getattr(retriever, "feedback_records", None)
-                    if callable(feedback_records):
-                        named_feedback[name] = feedback_records()
                     chunk_candidates[name] = retrieve_chunks(
                         queries, top_k=candidate_pool_size, dense_depth=dense_depth
                     )
+                    feedback_records = getattr(retriever, "feedback_records", None)
+                    if callable(feedback_records):
+                        named_feedback[name] = feedback_records()
                 # Complete dense/sparse candidate generation for every split before
                 # the cross-encoder lazily loads onto GPU. This avoids returning to
                 # dense inference after the larger reranker has occupied GPU memory.

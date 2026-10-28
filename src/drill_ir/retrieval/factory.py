@@ -15,7 +15,11 @@ from .dense import (
     SentenceTransformerEncoder,
     SentenceTransformerEncoderConfig,
 )
-from .fusion import MultiDenseWeightedRRFRetriever, WeightedRRFRetriever
+from .fusion import (
+    MultiDenseWeightedRRFRetriever,
+    WeightedRRFRetriever,
+    load_reference_adjacency,
+)
 from drill_ir.preprocessing import (
     ArticleTruncationChunker,
     DiemChunker,
@@ -67,6 +71,49 @@ def build_retriever(
             raise ValueError("retrieval.hybrid must be a YAML mapping")
         if hybrid.get("fusion", "weighted_rrf") != "weighted_rrf":
             raise ValueError("Only hybrid fusion='weighted_rrf' is currently supported")
+        neighbor_expansion = hybrid.get("same_law_neighbor_expansion", {})
+        if not isinstance(neighbor_expansion, dict):
+            raise ValueError(
+                "retrieval.hybrid.same_law_neighbor_expansion must be a YAML mapping"
+            )
+        neighbor_parameters = {
+            "neighbor_expansion_enabled": bool(
+                neighbor_expansion.get("enabled", False)
+            ),
+            "neighbor_seed_top_k": int(neighbor_expansion.get("seed_top_k", 5)),
+            "neighbor_radius": int(neighbor_expansion.get("radius", 1)),
+            "neighbor_max_expansions": int(
+                neighbor_expansion.get("max_expansions", 4)
+            ),
+        }
+        reference_expansion = hybrid.get("reference_expansion", {})
+        if not isinstance(reference_expansion, dict):
+            raise ValueError("retrieval.hybrid.reference_expansion must be a YAML mapping")
+        reference_enabled = bool(reference_expansion.get("enabled", False))
+        reference_path_value = reference_expansion.get("graph_path")
+        reference_scopes = tuple(
+            str(value) for value in reference_expansion.get("scopes", ["same_document"])
+        )
+        if reference_enabled and not reference_path_value:
+            raise ValueError(
+                "Enabled retrieval.hybrid.reference_expansion requires graph_path"
+            )
+        reference_adjacency = (
+            load_reference_adjacency(
+                Path(str(reference_path_value)), scopes=reference_scopes
+            )
+            if reference_enabled
+            else None
+        )
+        reference_parameters = {
+            "reference_adjacency": reference_adjacency,
+            "reference_graph_path": str(reference_path_value) if reference_enabled else None,
+            "reference_scopes": reference_scopes,
+            "reference_seed_top_k": int(reference_expansion.get("seed_top_k", 5)),
+            "reference_max_expansions": int(
+                reference_expansion.get("max_expansions", 4)
+            ),
+        }
         dense_components = hybrid.get("dense_components")
         if dense_components is not None:
             if not isinstance(dense_components, list) or not dense_components:
@@ -110,6 +157,8 @@ def build_retriever(
                 chunk_candidate_selection=str(
                     hybrid.get("chunk_candidate_selection", "top_chunks")
                 ),
+                **neighbor_parameters,
+                **reference_parameters,
             )
         return WeightedRRFRetriever(
             sparse=build_retriever("bm25", retrieval_config, runtime),
@@ -125,6 +174,8 @@ def build_retriever(
             chunk_candidate_selection=str(
                 hybrid.get("chunk_candidate_selection", "top_chunks")
             ),
+            **neighbor_parameters,
+            **reference_parameters,
         )
     if method == "bm25":
         params = retrieval_config.get("bm25", {})

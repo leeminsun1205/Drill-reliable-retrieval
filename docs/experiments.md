@@ -805,7 +805,14 @@ Harrier supplied 14 gold articles found by no other top-50 component, while E5
 and BM25S each supplied five. Harrier and E5 rescued respectively 60 and 51
 BM25S top-50 misses. The principal weakness was multi-article supervision:
 fused Recall@50 was `0.971787` for 319 one-gold queries, `0.809783` for 92
-two-gold queries, and `0.681818` for 22 three-gold queries. Grouped by legal
+two-gold queries, and `0.681818` for 22 three-gold queries. The remaining five
+development queries had respectively four golds (three queries, Recall@50
+`1.0`), five golds (one query, `0.8`), and seven golds (one query, `0.571429`).
+These tiny 4+ strata do not support a monotonic trend claim. Across all 2,190
+training rows after stable per-query deduplication, gold-count frequencies were
+1: 1,646; 2: 416; 3: 84; 4: 30; 5: 6; 6: 3; 7: 3; 8: 1; and 9: 1. Thus the
+dataset maximum is nine, while the fixed development split maximum is seven.
+Grouped by legal
 source, the 77 multi-gold queries whose gold articles belonged to one law had
 Recall@50 `0.801793`, while 42 cross-law multi-gold queries had `0.765079`.
 Among missing gold articles, 35 had another retrieved gold article from the
@@ -813,6 +820,39 @@ same law; eight were immediately adjacent in corpus article order and 14 were
 within five articles. These observations motivate a controlled same-law
 structure/reference expansion, but do not by themselves prove that adjacency
 or references are causal.
+
+An additional same-law audit over all 119 multi-gold development queries found
+77 whose complete gold set was in one law, 89 with at least one same-law gold
+pair, 30 with an adjacent same-law pair, 39 with a same-law pair at distance at
+most two, and 58 at distance at most five. The median distance among same-law
+gold pairs was three articles. Therefore unrestricted neighbor expansion is not
+justified: adjacency describes only one quarter of multi-gold queries, and some
+4+ examples span several laws or twenty article positions.
+
+A retrospective fixed-budget simulation nevertheless identifies one small
+candidate treatment worth executing. Starting from fused article top 50,
+expanding only the top five seeds by one article on either side, limiting the
+expansion to four distinct aids, and removing the same number of lowest-ranked
+baseline aids recovered 12 previously missing golds while dropping one former
+top-50 gold. Its descriptive macro Recall@50 was `0.936867`, versus `0.922081`
+for the saved baseline, and multi-gold Recall@50 was `0.818047`. The unbudgeted
+version added four aids per query on average and recovered the same 12 golds.
+These values were selected after inspecting the development labels and are
+diagnostic upper evidence, not an unbiased measured treatment result. Any
+implemented neighbor policy must remain independently disableable and be
+compared at the same candidate budget before reranking.
+
+The implemented control is `retrieval.hybrid.same_law_neighbor_expansion` and
+is disabled by default. When enabled, it derives article neighbors from corpus
+order within each exact `law_id`, takes distinct seed aids from the selected
+chunk pool, and can insert only neighbor aids for which the configured dense
+retrieval depth already supplied chunk evidence. It replaces the same number
+of tail chunks, so reranker pair count remains fixed. The default treatment
+parameters are seed top five, radius one, and at most four expansions. Each
+accepted edge records qid, seed aid, neighbor aid, and signed distance in the
+retrieval feedback/provenance artifact. This available-chunk constraint means
+the executed treatment may recover fewer items than the retrospective
+article-level simulation and must be reported separately.
 
 At rank five, 374 gold articles were found by OOF LightGBM. Another 122 were in
 the candidate pool but outside epoch-3 top five, while 13 were in epoch-3 top
@@ -834,6 +874,134 @@ disableable same-law structural or explicit-reference expansion, reporting
 single-gold, same-law multi-gold, and cross-law multi-gold strata. Increasing
 all candidate budgets or adding unrestricted query expansion would confound
 these failure modes and is not the first recommended treatment.
+
+The subsequent full-corpus reference audit found a stronger low-volume signal
+than unrestricted neighbor expansion: outgoing same-instrument references from
+top-five fused seeds provisionally recovered 18 missing top-50 gold aids while
+adding 0.71 candidates per query, or 16/0.69 after excluding every source law
+with an out-of-range local reference. Exact cross-document identifiers added
+only one recovery at this depth. Because corpus records omit their own article
+number, these edges are position-derived and remain unverified; the detailed
+coverage and ambiguity counts are recorded in `docs/dataset.md`. The next
+reference step is therefore a deterministic extractor with explicit
+`resolved`, `position_derived`, `ambiguous`, and `missing` statuses plus a fixed
+human-review sample. Only reviewed/accepted edges may enter the controlled
+recall treatment.
+
+The precision-first reference graph v2 was subsequently evaluated against the
+saved packed-stream batch-256 first-stage artifact, without rerunning retrieval.
+The deterministic review sample uses seed 47 and contains 105 mentions: 25
+eligible same-document edges, 25 eligible cross-document edges, and stratified
+unresolved/heading/amendment controls. A contextual review by Codex found all
+50 sampled eligible edges consistent with their stored source text. This is a
+documented assistant review, not independent human annotation, and therefore
+does not close the precision gate by itself.
+
+The retrospective fixed-split recall gate used fused top 50, seed depth five,
+at most four added aids, and a fixed 50-aid budget. Baseline macro Recall@50 was
+`0.922081`. Same-document edges expanded 173/438 queries, added 0.795 aids per
+query on average, recovered 22 missing gold pairs, dropped one tail gold, and
+produced Recall@50 `0.943227`. Cross-document edges expanded 19 queries,
+recovered one gold without dropping another, and produced `0.923222`. Their
+union recovered 23, dropped one, and produced `0.944368`. All 23 recovered
+edges were context-inspected and matched the cited gold provision; the one
+dropped gold resulted from fixed-budget tail replacement. These figures use
+development labels and are diagnostic upper evidence, not an unbiased final
+experiment. The detailed qid, seed edge, context, recovery, and drop records
+are retained beside the graph artifact.
+
+The graph treatment is now implemented at the same chunk-candidate boundary as
+the same-law neighbor treatment and is disabled by default. It loads only the
+eligible-only `reference_edges.jsonl` artifact, fails if an enabled graph is
+missing or malformed, and permits `same_document` and `cross_document` scopes
+to be selected independently. From the first five distinct selected article
+IDs it follows outgoing references in stable artifact order, admits a target
+only when that target already has a chunk in the frozen dense depth, and
+replaces at most four tail candidates so the reranker budget remains fixed.
+Every accepted expansion records qid, seed aid, target aid, scope, and target
+law ID. Consequently, the executed treatment can be weaker than the
+retrospective article-level gate and requires its own end-to-end measurement.
+
+The first controlled matrix is: baseline; same-document references only; and
+cross-document references only. Keep `top_chunks`, dense depth 100, candidate
+pool 50, seed depth five, maximum four expansions, reranker, LightGBM features,
+and final policy fixed. Do not combine the two reference scopes, same-law
+neighbors, or `best_per_aid` until their independent effects are measured.
+The 50/50 contextual edge review and inspection of all 23 diagnostic recoveries
+are sufficient to begin this fail-closed ablation, but do not establish a
+perfect graph. Before a final scientific claim, add an independent review of a
+second fixed random sample and inspect every recovered or dropped gold edge in
+each measured treatment; resolving all ambiguous mentions is not required.
+
+### Distinct-article chunk-candidate ablation
+
+The 2026-10-28 matched `best_per_aid` run is a negative ablation. Its saved
+split, first-stage predictions, and component rankings are byte-identical to
+the `top_chunks` packed-stream batch-256 baseline; the reranker checkpoint,
+FP16 mode, candidate budget 50, retrieved chunk depth 100, LightGBM protocol,
+and seed 42 also match. Thus the measured difference is attributable to chunk
+candidate selection rather than a changed retrieval run.
+
+`best_per_aid` increased the number of distinct candidates from a mean of
+31.90 to exactly 50 aids per query and improved candidate Recall@50 from
+`0.903033` to `0.926647`. It added 18 gold candidate pairs and removed none.
+This coverage gain did not survive evidence reranking: epoch-3 Recall@5 fell
+from `0.725913` to `0.673782`, with 7 query-level wins and 39 losses, and its
+best threshold F2 fell from `0.594003` to `0.546620`. LightGBM OOF Recall@5
+fell from `0.787633` to `0.754642`; nested OOF score-gap F2 fell from
+`0.657352` to `0.625154`, while pooled diagnostic score-gap F2 fell from
+`0.660765` to `0.631653`. The loss was particularly large for three-gold
+queries at LightGBM top five: recall fell from `0.469697` to `0.333333` over
+22 such queries.
+
+The cause is the mismatch between dense-fusion chunk selection and
+cross-encoder evidence selection. The control retained a mean of 18.10 extra
+chunks per query from already represented aids, allowing the cross-encoder's
+article-level max aggregation to choose among several passages. Of 509 gold
+article-query pairs present in both candidate pools, 417 had multiple chunks
+in the control. `best_per_aid` kept the same first/best-fusion chunk but removed
+all alternatives before the cross-encoder, and the LightGBM `chunk_count`
+feature consequently had zero importance. Broader article coverage therefore
+traded away more valuable within-article evidence coverage.
+
+Keep `top_chunks` as the primary baseline. Do not use strict one-chunk-per-aid
+for the current cross-encoder. If this direction is revisited, test a bounded
+hybrid allocation such as two chunks for high-ranked aids plus remaining slots
+for distinct articles, or rerank a larger chunk pool before article-level max;
+either is a new controlled ablation rather than a replacement justified by the
+present result.
+
+The next WRRF tuning run keeps this restored `top_chunks` baseline and screens
+40 inexpensive offline combinations from the already saved component
+rankings: `rrf_k` in `10/20/40/60` crossed with ten normalized weight triples.
+The grid retains the measured BM25/Harrier/E5 control `0.10/0.50/0.40`, spans
+BM25 weights `0.05--0.20`, and concentrates Harrier weights at `0.50--0.65`
+while retaining equal-dense and E5-heavier controls. This concentration is
+motivated by the previous LightGBM importance observation but does not treat
+feature importance as causal evidence. Selection maximizes first-stage
+Recall@50, breaking ties with Recall@20, top-3 F2, and declaration order. The
+weight screen itself uses component article rankings and is therefore
+unaffected by chunk-boundary expansion. The selected reranker run enables only
+same-document explicit-reference expansion; same-law neighbors and
+cross-document references remain off. Because selection and the subsequent
+scoreboard use the same development split, the latter is a tuning diagnostic;
+the selected setting must be frozen before a test comparison or repeated-split
+robustness check.
+
+A local preflight of this exact grid against the saved byte-identical baseline
+component rankings selected `rrf_k=10` with BM25/Harrier/E5 weights
+`0.15/0.55/0.30`: Recall@50 `0.927789`, Recall@20 `0.875826`, and Recall@100
+`0.952794`. The measured `rrf_k=20`, `0.10/0.50/0.40` control had Recall@50
+`0.922081`. The apparent `+0.005708` development Recall@50 gain is a
+retrospective tuning result, not yet evidence of downstream F2 improvement;
+the Kaggle run must freeze this selection before reranking and report the full
+epoch-3 and nested-OOF LightGBM comparison.
+
+This notebook run changes both WRRF and reference treatment relative to the
+measured baseline, so its final delta cannot identify their separate causal
+effects. It is an operational combined candidate for the owner, while the
+already documented matched reference-only run remains necessary for a clean
+scientific ablation.
 
 Split-count feature importance ranked reranker score (`309.6`) and reranker
 margin (`278.2`) first. Harrier raw score (`212.6`) and reciprocal rank (`164.0`)

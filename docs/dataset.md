@@ -73,6 +73,130 @@ structure-aware chunker must extract boundaries deterministically, retain
 `chunk_id -> aid`, and keep extraction separate from article-level retrieval and
 evaluation.
 
+### Preliminary explicit-reference audit
+
+A full-corpus deterministic audit on 2026-10-28 searched the 59,636 raw article
+bodies for explicit `Điều N` references. It found 62,009 mentions across
+18,181 articles. A conservative same-instrument pattern requiring forms such as
+`Điều N của Luật này` or `Điều N Thông tư này` found 24,865 mentions across
+12,609 articles. Treating the one-based position in a document's `content`
+array as the provisional article number placed 23,205 mentions in range and
+1,660 out of range. After deduplication, the in-range mentions represented
+17,127 directed source/target aid pairs.
+
+This audit does **not** establish that content position is an authoritative
+article-number mapping. The supplied schema omits article numbers, and amendment
+instruments can contain quoted/restarted numbering or only a subset of the
+provisions they discuss. Of 1,513 laws containing a conservative local
+reference, 1,363 had every detected target in range and 150 had at least one
+out-of-range target. The latter must be marked ambiguous rather than silently
+resolved. Even the internally consistent group remains `position_derived`
+until checked against external titles or a human-review sample.
+
+A second conservative pattern paired `Điều N` with an explicit nearby document
+identifier such as `91/2017/NĐ-CP`. It found 4,614 mentions; 3,002 named a
+`law_id` present in the supplied corpus and 2,807 also had an in-range
+provisional article position. These yielded 2,229 unique cross-document edges.
+Coordinated references and ranges such as `Điều 41, Điều 42` or `Điều 69 đến
+Điều 74` are intentionally under-extracted by this preliminary pattern.
+
+On the fixed 438-query development split, provisional outgoing local edges from
+the fused top-five seeds recovered 18 gold aids missing from fused top 50 while
+adding 0.71 distinct aids per query on average. Restricting sources to the 1,363
+internally range-consistent laws still recovered 16 and added 0.69 per query.
+Provisional cross-document edges recovered one additional missing gold at the
+same seed depth. These are retrospective recall-gate diagnostics using
+development labels, not measured retrieval results. They justify a reviewed,
+disableable reference treatment but not deployment of unverified position
+mapping.
+
+The project owner manually checked the eight blank raw records against public
+legal text on 2026-10-28. The five blank fourth positions in `919/QĐ-TTg`,
+`01/QĐ-TTg`, `1261/QĐ-TTg`, `334/QĐ-TTg`, and `368/QĐ-TTg` are genuine Điều 4
+execution provisions; the blank third position in `964/QĐ-TTg` is likewise a
+genuine Điều 3. Their omitted bodies follow the standard form assigning
+ministers, heads of agencies, provincial People's Committee chairs, and related
+units responsibility for implementing the decision. These six aids therefore
+retain valid article-number mappings but have `missing_body` status and must not
+be silently populated without a separately sourced, provenance-bearing derived
+text artifact.
+
+`24-NQ/TW` is organized as numbered sections rather than legal articles, so its
+blank final position (`aid=34344`) is not Điều 15 and the document must be
+excluded only as a target of same-document position-derived Điều mapping. It
+may still be a source of explicit references to article-numbered instruments;
+those references are resolved against the target `law_id`, so the source's own
+numbering scheme is irrelevant. `67/2023/NĐ-CP` has no Điều 79;
+its blank final position (`aid=58295`) is a non-article trailing artifact, while
+the preceding positions through Điều 78 remain unaffected. None of the eight
+blank aids appears in the 2,190 training ground-truth lists. These facts are
+manual owner verification, not an independently crawled repository artifact.
+
+The deterministic v1 mapping records these exceptions in
+`configs/reference_mapping_overrides.yaml`. `scripts/build_reference_graph.py`
+produces an auditable article-number mapping, all extracted mention records,
+and deduplicated resolved source/target edges. A nearby self-reference marker
+such as `Thông tư này` takes precedence over a more distant external document
+identifier in the same sentence; this prevents replacement or amendment prose
+from assigning the local Điều mention to the wrong instrument. Missing-body
+targets remain mapped for provenance but are marked ineligible for candidate
+expansion. The extractor remains conservative: unresolved and ambiguous
+mentions are retained for audit and are not graph edges.
+
+The measured v1 build on 2026-10-28 produced 59,620 article mappings and
+61,322 extracted mention records. Of these, 31,961 resolved to eligible corpus
+targets, yielding 23,997 distinct eligible edges after source/target/scope
+deduplication. Another 5,306 mentions named targets not represented by a valid
+mapped article, 24,044 lacked a target instrument identifier, and 11 remained
+ambiguous. These are extractor coverage counts, not retrieval effectiveness
+results; the graph has not yet passed the fixed-split recall gate or a sampled
+precision review.
+
+A subsequent context audit on the same date showed that this first graph must
+remain provisional. A deterministic random sample contained correct local and
+explicit-ID edges, but also exposed a false local edge: `aid=50282` lists
+`Điều 14` through `Điều 30 của Luật thú y` and later says `Thông tư này`; the
+window-based extractor incorrectly attached Điều 19 to the source
+`14/2016/TT-BNNPTNT` (`aid=50295`) instead of the named Veterinary Law
+`79/2015/QH13` (`aid=16583`). The mention artifact now stores exact source
+character offsets and surrounding context so repeated article numbers can be
+audited without relocating the wrong occurrence. No v1 edge is accepted for a
+retrieval treatment until target attribution is revised and sampled precision
+is measured.
+
+The same audit also disproved the assumption that a bare `Điều N` should always
+resolve to the source law. Among the 24,044 currently unresolved mentions, a
+context heuristic found 8,426 followed within 180 characters by a named
+external instrument such as `Luật Đầu tư` or `Luật Thủy sản`; 1,832 had a
+strong nearby self-reference marker within 80 characters. Another 7,789 had a
+more distant self marker, often after a coordinated list, but this group also
+contains amendment and quoted-heading constructions and cannot be accepted as
+local without parsing the full reference span. The remaining records had a
+preceding marker or no safely detected attribution. These categories are
+diagnostic regex counts and may overlap legal constructions; they guide the v2
+parser rather than constitute accepted annotations.
+
+The precision-first v2 rebuild removed the backward-ID fallback and added
+separate `named_target_without_law_id`, `amendment_target_without_law_id`, and
+`quoted_article_heading` outcomes. It retains all 61,322 mention records but
+accepts 30,603 mentions, representing 23,107 distinct structurally eligible
+edges. It leaves 9,166 named-target mentions, 4,303 amendment targets, 1,155
+quoted headings, 11,875 otherwise unattributed mentions, and 11 ambiguous
+mentions out of the graph. Deterministic inspection confirmed that the known
+Veterinary Law, nested amendment, later-unrelated-ID, and preceding-ID failure
+cases no longer produce eligible edges. These counts supersede v1 for parser
+development, but v2 still requires a recorded stratified precision sample and
+fixed-split recall gate before use in retrieval.
+
+The 5,306 `target_not_in_corpus` mentions require a finer distinction. There
+were 2,231 cross-document mentions naming 630 distinct normalized `law_id`
+values absent from the supplied corpus. Another 266 cross-document mentions
+named a law present in the corpus but an unmapped article number, and 2,809
+same-document mentions pointed outside that instrument's mapped article range.
+The separate 24,044 `missing_target_law_id` records are not evidence that the
+named law is absent: the extractor saw `Điều N` but could not conservatively
+identify any target instrument from the nearby text.
+
 The implemented generic chunk record preserves `chunk_id`, `aid`, `law_id`,
 chunk index/type, encoding text, raw character offsets, token count, parse
 status, structure path, and one or more source spans. Fixed tokenizer windows

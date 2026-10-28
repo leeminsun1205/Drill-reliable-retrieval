@@ -20,6 +20,18 @@ retrieval:
     # Ablation: top_chunks preserves the measured baseline; best_per_aid spends
     # the fixed 50-pair reranking budget on distinct article IDs.
     chunk_candidate_selection: top_chunks
+    same_law_neighbor_expansion:
+      enabled: false
+      seed_top_k: 5
+      radius: 1
+      max_expansions: 4
+    # Controlled graph ablation. graph_path is required when enabled.
+    reference_expansion:
+      enabled: false
+      graph_path: null
+      scopes: [same_document]
+      seed_top_k: 5
+      max_expansions: 4
     dense_components:
       - name: vietlegal_harrier
         profile: vietlegal_harrier

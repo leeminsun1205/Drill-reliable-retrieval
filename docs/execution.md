@@ -1083,10 +1083,102 @@ resolved config and retriever metadata record the selected policy. This test
 maximizes distinct-article coverage within the existing chunk-scored pool; it
 is not the later treatment that guarantees the article-level fused top 50.
 
-The tracked `notebooks/kaggle_multi_dense_weight_selection.ipynb` is currently
-configured as this full treatment: `best_per_aid`, packed-stream reranking,
-batch size 256, and a separate
-`/kaggle/working/multi_dense_best_per_aid` output root. It writes
-`multi_dense_best_per_aid_results.tar.gz` and compares its development metrics
-against the measured 2026-10-28 `top_chunks` packed-stream batch-256 baseline.
-Switching `CHUNK_CANDIDATE_SELECTION` back to `top_chunks` restores the control.
+The tracked `notebooks/kaggle_multi_dense_weight_selection.ipynb` has returned
+to the measured `top_chunks` control after the negative `best_per_aid`
+ablation. It uses packed-stream reranking with batch size 256 and writes under
+`/kaggle/working/multi_dense_wrrf_reference`, packaging
+`multi_dense_wrrf_reference_results.tar.gz`. The notebook retrieves component
+rankings once, then screens the Cartesian product of `rrf_k` values
+`10/20/40/60` and ten predeclared normalized BM25/Harrier/E5 weight triples
+without rerunning encoders. It selects by Recall@50, then Recall@20 and top-3
+F2 as deterministic tie-breakers. This is development tuning; the downstream
+development scoreboard is diagnostic and must not be described as an unbiased
+test estimate. Same-law neighbor expansion remains off. Same-document explicit
+reference expansion is enabled for the selected reranker run; the notebook
+builds graph v2 deterministically from the attached corpus and tracked mapping
+overrides, validates a positive eligible-edge count, and then relies on the
+retriever's fail-closed graph loader. Cross-document references remain off.
+
+The same-law neighbor treatment is a separate switch and remains off in that
+notebook run. Enable it only in a subsequent matched experiment:
+
+```python
+!python scripts/run_experiment.py \
+  --config configs/hybrid_reranker_multi_dense.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --output-root /kaggle/working/same_law_neighbor_ablation \
+  --devices 2 \
+  --set retrieval.hybrid.same_law_neighbor_expansion.enabled=true
+```
+
+For the first neighbor-only comparison, retain `top_chunks`, seed top five,
+radius one, maximum four expansions, depth 100, and candidate pool 50. Do not
+combine it with `best_per_aid` until both independent treatments have results.
+
+Build the reviewed v1 article-number mapping and explicit-reference artifact
+locally with:
+
+```bash
+!python scripts/build_reference_graph.py \
+  --corpus data/legal-corpus.parquet \
+  --overrides configs/reference_mapping_overrides.yaml \
+  --output-dir results/reference_graph_v2
+```
+
+`reference_mentions.jsonl` retains every resolved, unresolved, and ambiguous
+mention for audit. `reference_edges.jsonl` contains one record per distinct
+resolved `(source_aid, target_aid, scope)` edge; only records with
+`candidate_eligible=true` may be consumed by a retrieval treatment.
+
+Create the fixed review sample with:
+
+```bash
+!python scripts/sample_reference_review.py \
+  --graph-dir results/reference_graph_v2 \
+  --output-dir results/reference_review_v2_seed47 \
+  --seed 47
+```
+
+The sample deliberately leaves `review_label` and expected-target fields empty
+for a reviewer. Run the retrospective recall gate against an existing saved
+first-stage artifact with:
+
+```bash
+!python scripts/evaluate_reference_expansion.py \
+  --train data/train.parquet \
+  --dev-qids /path/to/dev/split_dev_qids.json \
+  --first-stage /path/to/dev/first_stage_predictions.jsonl \
+  --reference-edges results/reference_graph_v2/reference_edges.jsonl \
+  --output results/reference_graph_v2/recall_gate_seed5_max4.json \
+  --cutoff 50 \
+  --seed-depth 5 \
+  --max-expansions 4
+```
+
+This command reads saved rankings and labels only. Its output is a diagnostic
+recall gate, not a reranking or final effectiveness result; the companion
+`.details.jsonl` records each expansion edge and any recovered or dropped gold.
+
+Run the implemented same-document reference ablation with the graph attached
+or rebuilt in the execution environment:
+
+```bash
+!python scripts/run_experiment.py \
+  --config configs/hybrid_reranker_multi_dense.yaml \
+  --corpus-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/legal-corpus.parquet \
+  --train-path /kaggle/input/datasets/lmnhnht125/wedev-vlsp/train.parquet \
+  --output-root /kaggle/working/reference_same_document_ablation \
+  --devices 2 \
+  --set retrieval.hybrid.reference_expansion.enabled=true \
+  --set retrieval.hybrid.reference_expansion.graph_path=/kaggle/working/reference_graph_v2/reference_edges.jsonl \
+  --set 'retrieval.hybrid.reference_expansion.scopes=[same_document]'
+```
+
+For the matched cross-document treatment, change only the output root and
+scope to `[cross_document]`. The enabled treatment deliberately fails before
+model loading if `graph_path` is absent, unreadable, contains an ineligible
+row, or uses an unknown scope. Keep same-law neighbor expansion and
+`best_per_aid` disabled for these first comparisons. The resolved config,
+retriever metadata, and retrieval feedback artifacts record the graph path,
+scope, parameters, and every accepted expansion.
