@@ -39,6 +39,14 @@ make model/tokenizer downloads faster and more reliable; it does not accelerate
 GPU encoding or reranking after the files are cached. Never place the token in
 the repository, experiment config, command arguments, or notebook output.
 
+For the pinned `AITeamVN/Vietnamese_Reranker` checkpoint screen, the dedicated
+notebook downloads the complete snapshot into `/kaggle/working` and verifies
+the safetensors size before retrieval. It then materializes the sequence
+classifier once in a disposable CPU process. The experiment receives only the
+verified local path, so a Hub/Xet transfer failure or incompatible checkpoint
+fails before the expensive frozen first stage rather than appearing as an
+indefinite reranker load after retrieval.
+
 After cloning or updating the repository, install it in editable mode from the
 repository root. This is the preferred execution path because it makes the
 `src/` package importable independently of the notebook working directory:
