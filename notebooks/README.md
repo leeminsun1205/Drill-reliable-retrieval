@@ -2,6 +2,11 @@
 
 Only current execution entry points live in this directory:
 
+- `kaggle_main_frozen_first_stage.ipynb`: primary post-selection 2-by-2 gate.
+  It freezes BM25 + Harrier + multilingual-E5-large, WRRF `k=10`, weights
+  `0.15/0.55/0.30`, component depth 100, and the epoch-3 reranker. Change only
+  `CANDIDATE_BUDGET` (`50` or `100`) and
+  `ENABLE_REFERENCE_EXPANSION` (`False` or `True`).
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
   cache artifact per process.
 - `kaggle_multi_dense_weight_selection.ipynb`: current BM25S + Harrier +

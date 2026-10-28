@@ -188,6 +188,34 @@ cases no longer produce eligible edges. These counts supersede v1 for parser
 development, but v2 still requires a recorded stratified precision sample and
 fixed-split recall gate before use in retrieval.
 
+The final pre-freeze audit on 2026-10-28 identified 1,408 compact integer-list
+occurrences such as `Điều 65, 66, 67`; graph v2 resolved only the first numbered
+article in those lists. Graph v3 deterministically expands comma- and
+`và`-separated integer continuations after an explicit `Điều N`, while retaining
+the same attribution, amendment, quotation, mapping, and eligibility guards.
+It also excludes candidate-ineligible targets and 263 resolved self-reference
+mentions from the retrieval edge artifact; all mentions remain available in
+`reference_mentions.jsonl` for audit.
+
+Graph v3 contains 71,640 mention records, 36,112 eligible resolved mentions,
+and 25,404 distinct non-self eligible edges. A contextual inspection of the
+first 30 new edges found ordinary coordinated legal citations with correctly
+inherited same-document or explicit-law-ID scope. This is an assistant audit,
+not independent legal annotation. On the retuned Harrier +
+multilingual-E5-large first-stage artifact, v3 expanded two additional
+same-document queries and one additional cross-document query but recovered no
+additional gold over v2 in the retrospective fixed-budget gate. The parser
+change was therefore accepted for deterministic coverage rather than selected
+from a development gain.
+
+Known fail-closed omissions remain: 1,219 occurrences of alphanumeric article
+identifiers such as `Điều 8a` or `Điều 148đ` cannot be mapped safely by the
+integer position-derived index; named instruments without an exact `law_id`,
+ambiguous amendment targets, quoted replacement headings, missing targets, and
+unsupported numbering schemes remain non-eligible. These records must not be
+guessed into graph edges. Cross-document edges remain available for separate
+analysis but are not enabled in the primary reference treatment.
+
 The 5,306 `target_not_in_corpus` mentions require a finer distinction. There
 were 2,231 cross-document mentions naming 630 distinct normalized `law_id`
 values absent from the supplied corpus. Another 266 cross-document mentions

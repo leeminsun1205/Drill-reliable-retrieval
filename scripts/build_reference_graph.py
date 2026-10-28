@@ -27,8 +27,12 @@ def main() -> None:
     index, mappings = build_article_number_index(documents, **overrides)
     references = extract_reference_records(documents, index)
     unique_edges = {}
+    self_loop_mentions = 0
     for record in references:
-        if record.target_aid is None:
+        if record.target_aid is None or not record.candidate_eligible:
+            continue
+        if record.source_aid == record.target_aid:
+            self_loop_mentions += 1
             continue
         key = (record.source_aid, record.target_aid, record.scope)
         unique_edges.setdefault(key, record)
@@ -53,6 +57,7 @@ def main() -> None:
         "candidate_eligible_edges": sum(
             record.candidate_eligible for record in unique_edges.values()
         ),
+        "excluded_self_loop_mentions": self_loop_mentions,
         "overrides": overrides,
     }
     (args.output_dir / "summary.json").write_text(

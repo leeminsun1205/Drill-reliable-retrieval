@@ -131,6 +131,60 @@ class ReferenceExtractionTest(unittest.TestCase):
         self.assertEqual(by_number[11].status, "named_target_without_law_id")
         self.assertIsNone(by_number[11].target_aid)
 
+    def test_expands_compact_same_document_article_lists(self) -> None:
+        documents = [{
+            "law_id": "10/2020/QH14",
+            "content": [
+                {"aid": 10, "content_Article": (
+                    "Thực hiện theo Điều 2, 3 và 4 của Luật này."
+                )},
+                {"aid": 20, "content_Article": "Hai"},
+                {"aid": 30, "content_Article": "Ba"},
+                {"aid": 40, "content_Article": "Bốn"},
+            ],
+        }]
+        index, _ = build_article_number_index(documents)
+        records = extract_reference_records(documents, index)
+        self.assertEqual(
+            [(record.article_number, record.target_aid) for record in records],
+            [(2, 20), (3, 30), (4, 40)],
+        )
+
+    def test_expands_compact_cross_document_article_lists(self) -> None:
+        documents = [
+            {"law_id": "20/2021/NĐ-CP", "content": [
+                {"aid": 1, "content_Article": (
+                    "Theo Điều 1, 2, 3 Nghị định số 10/2020/NĐ-CP."
+                )},
+            ]},
+            {"law_id": "10/2020/NĐ-CP", "content": [
+                {"aid": 10, "content_Article": "Một"},
+                {"aid": 20, "content_Article": "Hai"},
+                {"aid": 30, "content_Article": "Ba"},
+            ]},
+        ]
+        index, _ = build_article_number_index(documents)
+        records = extract_reference_records(documents, index)
+        self.assertEqual(
+            [(record.article_number, record.target_aid) for record in records],
+            [(1, 10), (2, 20), (3, 30)],
+        )
+
+    def test_explicit_current_law_id_is_same_document_scope(self) -> None:
+        documents = [{
+            "law_id": "06/2019/TT-NHNN",
+            "content": [
+                {"aid": 10, "content_Article": (
+                    "Theo Điều 2 Thông tư 06/2019/TT-NHNN."
+                )},
+                {"aid": 20, "content_Article": "Hai"},
+            ],
+        }]
+        index, _ = build_article_number_index(documents)
+        record = extract_reference_records(documents, index)[0]
+        self.assertEqual(record.target_aid, 20)
+        self.assertEqual(record.scope, "same_document")
+
 
 if __name__ == "__main__":
     unittest.main()

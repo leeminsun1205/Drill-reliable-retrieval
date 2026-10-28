@@ -9,6 +9,10 @@ from typing import Any, Mapping, Sequence
 
 
 ARTICLE_PATTERN = re.compile(r"\bĐiều\s+(\d{1,3})\b", re.IGNORECASE)
+ARTICLE_LIST_CONTINUATION_PATTERN = re.compile(
+    r"(?:\s*,\s*|\s+và\s+)(?:Điều\s+)?(\d{1,3})\b",
+    re.IGNORECASE,
+)
 LAW_ID_PATTERN = re.compile(
     r"\b([0-9]{1,4}/[0-9]{4}/[A-ZĐ0-9]+(?:-[A-ZĐ0-9]+)*)\b", re.IGNORECASE
 )
@@ -70,6 +74,52 @@ class ReferenceRecord:
         return asdict(self)
 
 
+@dataclass(frozen=True, slots=True)
+class _ArticleMention:
+    number_text: str
+    matched_text: str
+    char_start: int
+    char_end: int
+
+    def group(self, index: int = 0) -> str:
+        if index == 0:
+            return self.matched_text
+        if index == 1:
+            return self.number_text
+        raise IndexError(index)
+
+    def start(self) -> int:
+        return self.char_start
+
+    def end(self) -> int:
+        return self.char_end
+
+
+def _article_mentions(sentence: str) -> list[_ArticleMention]:
+    """Return explicit Điều mentions, including compact integer lists."""
+    mentions: dict[tuple[int, int], _ArticleMention] = {}
+    for match in ARTICLE_PATTERN.finditer(sentence):
+        mention = _ArticleMention(
+            number_text=match.group(1),
+            matched_text=match.group(0),
+            char_start=match.start(),
+            char_end=match.end(),
+        )
+        mentions[(mention.start(), mention.end())] = mention
+        cursor = match.end()
+        while continuation := ARTICLE_LIST_CONTINUATION_PATTERN.match(sentence, cursor):
+            number_start, number_end = continuation.span(1)
+            compact = _ArticleMention(
+                number_text=continuation.group(1),
+                matched_text=continuation.group(1),
+                char_start=number_start,
+                char_end=number_end,
+            )
+            mentions[(compact.start(), compact.end())] = compact
+            cursor = continuation.end()
+    return sorted(mentions.values(), key=lambda mention: (mention.start(), mention.end()))
+
+
 def build_article_number_index(
     documents: Sequence[Mapping[str, Any]],
     *,
@@ -128,7 +178,7 @@ def extract_reference_records(
                 sentence_start = boundary.end()
             sentences.append((text[sentence_start:], sentence_start))
             for sentence, sentence_offset in sentences:
-                mentions = list(ARTICLE_PATTERN.finditer(sentence))
+                mentions = _article_mentions(sentence)
                 if not mentions:
                     continue
                 for mention in mentions:
@@ -206,7 +256,11 @@ def extract_reference_records(
                         and not competing_named_instrument
                     ):
                         target_law_id = normalize_law_id(nearest_after.group(1))
-                        scope = "cross_document"
+                        scope = (
+                            "same_document"
+                            if target_law_id == normalized_source
+                            else "cross_document"
+                        )
                     elif named_precedes_local or competing_named_instrument:
                         records.append(
                             ReferenceRecord(

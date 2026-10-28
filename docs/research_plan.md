@@ -500,3 +500,169 @@ component complementarity, fusion exclusions, actual unique-article reranker
 coverage, and later-stage demotions before another retriever is introduced.
 Component names are discovered from artifacts rather than fixed to the current
 Harrier/E5 pair, preserving the same analysis for future dense replacements.
+
+### Session checkpoint: dense-pair selection and next optimization gate
+
+As of 2026-10-28, the immediate decision is among three matched no-expansion
+multi-dense treatments, each anchored by VietLegal-Harrier and differing only
+in its second dense peer: BGE-M3, VietLegal-E5, or multilingual-E5-large. The
+corresponding Kaggle notebooks are
+`kaggle_multi_dense_harrier_bge.ipynb`,
+`kaggle_multi_dense_harrier_vietlegal_e5.ipynb`, and
+`kaggle_multi_dense_harrier_e5_retuned.ipynb`. All retain the seed-42 split,
+BM25S/VnCoreNLP, BGE-M3-tokenized Khoản–Điểm 448/64 chunk store, `top_chunks`,
+the 40-case WRRF screen, epoch-3 cross-encoder, packed-stream batch 256,
+nested-OOF LightGBM evaluation, and disabled neighbor/reference expansion.
+Results are pending and must not be inferred from standalone dense ranking.
+
+Select the dense pair using candidate Recall@20/50/100, paired per-query
+wins/losses, unique recovered gold, oracle-union recall, actual fixed-budget
+fusion recall, reranker results, nested-OOF LightGBM, and runtime/memory. Do not
+select solely on the pooled development F2 or standalone dense F2. Model-family
+similarity is a hypothesis only: VietLegal-E5 and multilingual-E5-large share
+an E5-large lineage, while VietLegal-Harrier and VietLegal-E5 used substantially
+overlapping legal training sources despite different base models. Empirical
+ranking overlap and unique-gold recovery decide complementarity.
+
+After selecting the pair, freeze it before deeper retrieval tuning. First run a
+coarse-to-fine WRRF search around the winning `rrf_k` and weights, then consider
+component-specific depths and candidate budgets 50/75/100. The next independent
+treatments, in order, are fixed-WRRF explicit-reference expansion, deterministic
+citation/query normalization, conservative same-law radius-one expansion, and
+only then metadata features or OOF learned fusion. At the current roughly
+92--93% development Recall@50 level, expect diminishing returns; preserve a
+fixed candidate budget and prioritize paired recovery over unbounded oracle
+union gains.
+
+The retuned no-expansion Harrier + multilingual-E5 run is the control for the
+reference-enabled main notebook. If reference expansion changes the selected
+WRRF case, report both the end-to-end retuned treatment and a fixed-WRRF
+reference-only ablation. Never label their combined difference as the isolated
+graph effect.
+
+Only after the winning first stage and reference decision are frozen should a
+new reranker be trained. Persist the exact component rankings, fused candidates,
+chunk candidates, split IDs, resolved config, and cache fingerprints. Mine
+training-fold hard negatives from that frozen candidate distribution, retain
+all useful positive chunks for gold articles, and compare the new reranker with
+epoch 3 on exactly the same candidates. Keep reranker supervision, LightGBM,
+and final-selection policy as separate ablations, and reserve untouched or
+nested evaluation to control accumulated development tuning.
+
+### Measured reference-expansion result on the retuned dense control
+
+The 2026-10-28 matched seed-42 development comparison used the selected
+Harrier + multilingual-E5-large control with `rrf_k=10`, BM25/Harrier/E5
+weights `0.15/0.55/0.30`, `top_chunks`, candidate budget 50, and the epoch-3
+reranker. The treatment added deterministic same-document explicit-reference
+expansion from the top five seeds, with at most four available-chunk
+expansions and a fixed candidate budget. The saved split IDs, component
+rankings, and fused first-stage predictions are byte-identical between the two
+artifacts, so this is a fixed-WRRF reference-only ablation rather than a
+retuned end-to-end comparison.
+
+Reference expansion changed the reranker chunk ranking for 110/438 queries.
+Candidate Recall@50 increased from `0.904175` to `0.916623` (`+0.012448`): 11
+queries gained gold coverage and none lost it. Gains occurred only after rank
+20; Recall@1/5/10/20 was unchanged at the candidate-construction stage. The
+epoch-3 reranker retained the candidate gain at depth 50, but fixed top-2 F2
+was unchanged at `0.533073`; its threshold-policy F2 increased only from
+`0.598183` to `0.598525`.
+
+Fresh LightGBM OOF training improved fixed top-2 F2 from `0.562469` to
+`0.580849`, but deployable-policy evidence was mixed. Pooled score-gap F2 moved
+from `0.650374` to `0.651078`, while the leakage-controlled nested-OOF estimate
+moved from `0.648354` to `0.647035`. Treat the reference component as a real
+candidate-recall improvement but not yet a demonstrated final-selection F2
+improvement. The next controlled diagnostic should apply the control-trained
+reranker/selector unchanged to both candidate sets, or retrain a reranker on
+the frozen reference-expanded candidate distribution and evaluate it on an
+untouched split; do not select the graph treatment from pooled development F2.
+
+The subsequent graph-v3 freeze audit inspected all 12 recovered gold aids
+across those 11 queries. Every recovery had an explicit same-document source
+mention whose target was the recorded gold provision. The audit also found
+compact coordinated Điều lists omitted by v2 and arbitrary edge-file ordering
+when more than four targets were reachable. Graph v3 adds deterministic compact
+integer-list extraction, excludes self-loops from the candidate graph, and
+selects at most four available reference targets by their existing base chunk
+rank. Alphanumeric Điều identifiers and ambiguous/named-without-ID references
+remain fail-closed. Use graph v3, same-document scope only, for the final
+candidate-budget matrix; cross-document expansion remains a separate low-signal
+treatment.
+
+Freeze this graph definition after the audit. On the same 438-query
+retrospective gate, v3 expanded 172 rather than 170 queries under the
+same-document policy, but both v2 and v3 recovered 21 fixed-budget gold pairs,
+dropped one, and produced identical Recall@50 (`0.948174`) in this
+article-level upper diagnostic. Cross-document v3 expanded 24 queries and
+recovered only one gold pair. Further parser broadening is therefore outside
+the current first-stage study unless a concrete failed case or independent
+annotation demonstrates a missing edge that can be resolved without guessing.
+This freeze denotes a conservative, reproducible experimental graph; it is not
+a claim that the supplied corpus has been converted into a complete or
+authoritatively annotated legal citation graph.
+
+### Measured three-pair dense selection
+
+The matched seed-42 three-pair screen completed on 2026-10-28 for Harrier
+paired with multilingual-E5-large, VietLegal-E5, or BGE-M3. Each treatment used
+the same BM25S/VnCoreNLP component, chunk store, 40-case WRRF screen,
+`top_chunks` candidate construction, epoch-3 reranker, and fresh five-fold OOF
+LightGBM. The winning WRRF settings were allowed to differ within that shared
+predeclared grid, so these values select an end-to-end dense pair and are not a
+fixed-weight encoder-only ablation.
+
+Harrier + multilingual-E5-large achieved fused Recall@20/50/100 of
+`0.875826/0.927789/0.952794` and nested-OOF score-gap F2 `0.648354`.
+Harrier + VietLegal-E5 improved Recall@50 to `0.933823` but reduced Recall@1
+from `0.488965` to `0.431126`, was essentially tied at Recall@100 (`0.952033`),
+and reduced nested-OOF F2 to `0.630950`. Paired against multilingual-E5-large,
+it won/lost 11/4 queries at Recall@50 but only 4/3 at Recall@100, while losing
+37 and winning 10 at Recall@1.
+
+Harrier + BGE-M3 achieved fused Recall@20/50/100 of
+`0.878164/0.926593/0.949369` and nested-OOF F2 `0.629978`. Against
+multilingual-E5-large it won/lost only 6/3 queries at Recall@50 and 1/2 at
+Recall@100; its candidate Recall@50 (`0.902653`) was also slightly below the
+multilingual-E5-large control (`0.904175`). Its incomplete public/private
+submission run is irrelevant to this selection because first-stage retrieval,
+development reranking, OOF LightGBM, and query analysis all completed.
+
+Freeze Harrier + multilingual-E5-large as the selected dense pair. VietLegal-E5
+provides a small depth-50 coverage gain but does not survive the preregistered
+downstream and nested-OOF criteria; BGE-M3 provides no material coverage or
+final-selection advantage and has a less reliable Kaggle execution path.
+Freeze the primary first-stage WRRF at `rrf_k=10` with normalized
+BM25/Harrier/multilingual-E5-large weights `0.15/0.55/0.30`, component depth
+100, and candidate budget 50. The 40-case screen showed that the leading
+Recall@50 cases cluster at `rrf_k` 10--20 and that further fine-grained tuning
+on the same 438-query development split offers little value relative to its
+selection-bias risk. Do not reopen encoder or WRRF search while evaluating
+reference and structure treatments.
+
+### Next execution gate: candidate budget by reference expansion
+
+Before retraining the reranker, run one matched 2-by-2 gate with candidate
+budgets 50 and 100 crossed with deterministic same-document explicit-reference
+expansion disabled and enabled. Keep BM25, both dense encoders, chunking,
+component depth 100, WRRF, split IDs, epoch-3 reranker, output cutoffs, and the
+control threshold fixed. Reuse saved component rankings and caches; do not
+re-encode the corpus or reopen fusion tuning.
+
+For each cell report candidate Recall@20/50/100 where defined, paired per-query
+wins/losses, recovered and displaced gold aids, epoch-3 top-1/2/3 and fixed-
+threshold Precision/Recall/F2, reranked pair count, wall time, and peak memory.
+Fresh LightGBM OOF results may be reported as a downstream end-to-end
+diagnostic, but must not replace the fixed-reranker/fixed-policy comparison when
+attributing an effect to reference expansion or candidate budget. Audit every
+query whose gold coverage changes under reference expansion before accepting
+the graph treatment.
+
+Select the candidate distribution by end-to-end quality under measured cost,
+not Recall@k alone. Budget 100 must improve final performance enough to justify
+roughly doubling reranker pairs; otherwise retain budget 50. Reference expansion
+must use the same edge rule and expansion cap in both budgets. After this gate,
+freeze the winning candidate distribution, mine its hard negatives, and train
+the next reranker. Do not run further dense-model, BM25, WRRF, HyDE, generated-
+title, external-crawl, or large-LLM experiments before that reranker comparison.

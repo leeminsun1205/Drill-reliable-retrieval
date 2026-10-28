@@ -922,6 +922,16 @@ Every accepted expansion records qid, seed aid, target aid, scope, and target
 law ID. Consequently, the executed treatment can be weaker than the
 retrospective article-level gate and requires its own end-to-end measurement.
 
+For graph v3, expansion selection no longer takes the first eligible edges in
+raw graph-file order. It gathers every available target reachable from the top
+five distinct seed aids, orders targets by their existing base chunk rank, and
+uses seed order, edge order, then target aid as deterministic tie-breakers.
+This prevents a long coordinated article list from consuming all four slots
+merely because it appeared first in the corpus. Feedback now records each
+promoted target's `base_rank`. Targets must still exist in the frozen dense
+depth, and an equal number of tail candidates is replaced, preserving the
+candidate budget and reranker pair count.
+
 The first controlled matrix is: baseline; same-document references only; and
 cross-document references only. Keep `top_chunks`, dense depth 100, candidate
 pool 50, seed depth five, maximum four expansions, reranker, LightGBM features,

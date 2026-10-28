@@ -1214,3 +1214,31 @@ Both must print `reference_expansion.enabled=false` and
 `same_law_neighbor_expansion=false`. They may run concurrently only in separate
 Kaggle sessions because each expects both visible T4 GPUs. Do not run either in
 the same session as another GPU experiment.
+
+### Frozen first-stage 2-by-2 gate
+
+Use `notebooks/kaggle_main_frozen_first_stage.ipynb` for the final candidate
+distribution gate. At the top of its configuration cell, change only:
+
+```python
+CANDIDATE_BUDGET = 50               # 50 or 100
+ENABLE_REFERENCE_EXPANSION = False  # False or True
+```
+
+Run all four combinations. Each treatment writes to
+`/kaggle/working/frozen_first_stage_pool{50|100}_ref{off|on}` and creates a
+matching `frozen_first_stage_pool{50|100}_ref{off|on}_results.tar.gz`, so a run
+cannot reuse or overwrite another treatment's result directory. The notebook
+freezes standard BM25S with VnCoreNLP, VietLegal-Harrier and
+multilingual-E5-large at component depth 100, WRRF `k=10` with normalized
+weights `0.15/0.55/0.30`, `top_chunks`, same-law neighbors disabled, the
+epoch-3 checkpoint, and packed-stream batch 256. When enabled, graph v3 is
+built deterministically and only `same_document` edges are used with seed
+depth five and at most four expansions.
+
+This gate stops after development reranking, fresh OOF diagnostics, query
+analysis, and artifact packaging. It intentionally does not run public/private
+inference for all four treatments. Compare the fixed epoch-3 metrics and
+coverage changes first; treat fresh LightGBM OOF as a downstream diagnostic.
+After selecting one candidate distribution, freeze it before mining reranker
+training examples.

@@ -14,6 +14,26 @@ Avoid evaluation leakage:
 Treat the official DRiLL private test on Codabench as a final post-challenge
 benchmark, not as a development set.
 
+## Current holdout decision
+
+As of 2026-10-28, do not carve an additional local holdout out of the 1,752
+queries outside the fixed 438-query seed-42 development split. Those queries
+provide scarce reranker supervision, and evaluating the existing epoch-3
+reranker on a newly selected subset of them would not be untouched because that
+model was trained from the same pool. Creating a valid new holdout would
+therefore require excluding it and retraining every supervised downstream
+component, with a material reduction in training data.
+
+Continue to use the fixed development split for controlled paired diagnostics,
+label all such results as development results, and use query-grouped OOF or
+nested-OOF estimates for learned downstream selection. Use official Codabench
+evaluation as external confirmation after a treatment and its output policy are
+frozen. Merely producing public/private prediction files is not test evidence;
+record the official score, split, policy, and submission history before citing
+an official improvement. Repeated public-leaderboard submissions used to choose
+a method make that leaderboard a tuning signal; never treat it as an untouched
+test afterward. Keep the private test final and do not use it to iterate.
+
 ## Metrics
 
 The primary DRiLL-compatible metrics are Precision, Recall, and F2, aggregated

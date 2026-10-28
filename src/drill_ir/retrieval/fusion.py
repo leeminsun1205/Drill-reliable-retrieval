@@ -189,8 +189,11 @@ def _expand_with_available_references(
 ) -> tuple[list[Sequence[object]], list[dict[str, object]]]:
     """Replace tail chunks with available explicit-reference targets."""
     best_by_aid: dict[int, Sequence[object]] = {}
-    for item in ranked:
-        best_by_aid.setdefault(int(getattr(item[0], "aid")), item)
+    rank_by_aid: dict[int, int] = {}
+    for rank, item in enumerate(ranked, start=1):
+        aid = int(getattr(item[0], "aid"))
+        best_by_aid.setdefault(aid, item)
+        rank_by_aid.setdefault(aid, rank)
     selected_aids = {int(getattr(item[0], "aid")) for item in selected}
     seed_aids: list[int] = []
     for item in selected:
@@ -199,29 +202,45 @@ def _expand_with_available_references(
             seed_aids.append(aid)
         if len(seed_aids) == seed_top_k:
             break
-    expansions: list[Sequence[object]] = []
-    records: list[dict[str, object]] = []
-    for seed_aid in seed_aids:
-        for edge in references.get(seed_aid, ()):
+    proposals: list[
+        tuple[int, int, int, int, Sequence[object], Mapping[str, object]]
+    ] = []
+    proposed_aids: set[int] = set()
+    for seed_index, seed_aid in enumerate(seed_aids):
+        for edge_index, edge in enumerate(references.get(seed_aid, ())):
             target_aid = int(edge["target_aid"])
             candidate = best_by_aid.get(target_aid)
-            if candidate is None or target_aid in selected_aids:
+            if (
+                candidate is None
+                or target_aid in selected_aids
+                or target_aid in proposed_aids
+            ):
                 continue
-            selected_aids.add(target_aid)
-            expansions.append(candidate)
-            records.append(
-                {
-                    "qid": qid,
-                    "seed_aid": seed_aid,
-                    "reference_aid": target_aid,
-                    "scope": str(edge["scope"]),
-                    "target_law_id": str(edge.get("target_law_id", "")),
-                }
+            proposed_aids.add(target_aid)
+            proposals.append(
+                (
+                    rank_by_aid[target_aid],
+                    seed_index,
+                    edge_index,
+                    target_aid,
+                    candidate,
+                    {"seed_aid": seed_aid, **edge},
+                )
             )
-            if len(expansions) == max_expansions:
-                break
-        if len(expansions) == max_expansions:
-            break
+    proposals.sort(key=lambda proposal: proposal[:4])
+    chosen = proposals[:max_expansions]
+    expansions = [proposal[4] for proposal in chosen]
+    records = [
+        {
+            "qid": qid,
+            "seed_aid": int(proposal[5]["seed_aid"]),
+            "reference_aid": proposal[3],
+            "scope": str(proposal[5]["scope"]),
+            "target_law_id": str(proposal[5].get("target_law_id", "")),
+            "base_rank": proposal[0],
+        }
+        for proposal in chosen
+    ]
     if not expansions:
         return list(selected), records
     return [*selected[: top_k - len(expansions)], *expansions], records

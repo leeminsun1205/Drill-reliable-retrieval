@@ -251,8 +251,43 @@ class WeightedRRFTest(unittest.TestCase):
                     "reference_aid": 20,
                     "scope": "cross_document",
                     "target_law_id": "R",
+                    "base_rank": 3,
                 }
             ],
+        )
+
+    def test_reference_expansion_prefers_best_base_rank_across_edges(self) -> None:
+        chunks = (
+            Chunk("10:0", 10, "L", 0, "diem", "seed", 0, 1, 1),
+            Chunk("30:0", 30, "L", 0, "diem", "tail", 0, 1, 1),
+            Chunk("40:0", 40, "L", 0, "diem", "better", 0, 1, 1),
+            Chunk("20:0", 20, "L", 0, "diem", "worse", 0, 1, 1),
+        )
+        sparse = FakeRetriever([RetrievalResult(1, (), ())])
+        dense = FakeChunkRetriever(
+            [RetrievalResult(1, (10, 30, 40, 20), (0.9, 0.8, 0.7, 0.6))],
+            [ChunkRetrievalResult(1, chunks, (0.9, 0.8, 0.7, 0.6))],
+        )
+        retriever = WeightedRRFRetriever(
+            sparse=sparse,
+            dense=dense,
+            reference_adjacency={
+                10: [
+                    {"target_aid": 20, "scope": "same_document"},
+                    {"target_aid": 40, "scope": "same_document"},
+                ]
+            },
+            reference_seed_top_k=1,
+            reference_max_expansions=1,
+        )
+        retriever.retrieve([Query(1, "q", ())], top_k=4)
+        result = retriever.retrieve_chunks(
+            [Query(1, "q", ())], top_k=2, dense_depth=4
+        )[0]
+        self.assertEqual(tuple(chunk.aid for chunk in result.chunks), (10, 40))
+        self.assertEqual(
+            retriever.feedback_records()["explicit_references"][0]["base_rank"],
+            3,
         )
 
     def test_factory_reference_expansion_filters_scope_and_fails_closed(self) -> None:
