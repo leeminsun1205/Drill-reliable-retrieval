@@ -1963,3 +1963,22 @@ wins/losses, reranker rankings, nested-OOF LightGBM, and final predictions;
 matching scores are not assumed because the dense component intentionally
 changes. No measured result is recorded until the notebook completes and its
 artifacts are inspected.
+
+Two matched follow-ups complete the three-pair comparison. The
+`kaggle_multi_dense_harrier_vietlegal_e5.ipynb` treatment pairs Harrier with
+`mainguyen9/vietlegal-e5`; the
+`kaggle_multi_dense_harrier_e5_retuned.ipynb` treatment reruns Harrier with
+`intfloat/multilingual-e5-large` using the expanded WRRF screen. Both disable
+same-law neighbor and explicit-reference expansion and retain the BGE-M3-
+tokenized Khoản–Điểm chunk store, reranker, split, selection policy, and
+LightGBM stages. The three no-expansion notebooks therefore differ only in the
+second dense peer, apart from model-specific query/document prefixes and
+embedding caches.
+
+The retuned Harrier + multilingual-E5 notebook is also the intended
+no-reference control for the reference-enabled main notebook. That comparison
+is valid only if the resolved configs confirm identical split IDs, WRRF search
+space and selected weights, candidate selection, reranking, and downstream
+policy. If reference expansion changes the WRRF winner, report both the full
+end-to-end treatment effect and a fixed-WRRF reference-only ablation; do not
+attribute the combined difference solely to graph expansion.

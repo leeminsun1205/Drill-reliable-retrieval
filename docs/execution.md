@@ -1199,3 +1199,18 @@ that the printed treatment has `bge_m3`, `top_chunks`, `packed_stream`, batch
 256, `same_law_neighbor_expansion=false`, and
 `reference_expansion.enabled=false`. A comparison with the earlier Harrier +
 multilingual-E5 run is a cross-model treatment comparison, not a parity check.
+
+The two follow-up launchers use the same execution contract and separate output
+roots:
+
+- `notebooks/kaggle_multi_dense_harrier_vietlegal_e5.ipynb` writes
+  `/kaggle/working/multi_dense_harrier_vietlegal_e5_results.tar.gz` and requires
+  the verified `vietlegal_e5` cache (or builds only that missing cache).
+- `notebooks/kaggle_multi_dense_harrier_e5_retuned.ipynb` writes
+  `/kaggle/working/multi_dense_harrier_e5_retuned_results.tar.gz` and reuses the
+  verified `multilingual_e5_large` cache.
+
+Both must print `reference_expansion.enabled=false` and
+`same_law_neighbor_expansion=false`. They may run concurrently only in separate
+Kaggle sessions because each expects both visible T4 GPUs. Do not run either in
+the same session as another GPU experiment.

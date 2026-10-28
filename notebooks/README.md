@@ -10,6 +10,13 @@ Only current execution entry points live in this directory:
   peer-fusion treatment. It keeps the current multi-dense split, WRRF screen,
   reranker, and LightGBM stages, while disabling neighbor and reference
   expansion so that the dense-peer replacement is the intended change.
+- `kaggle_multi_dense_harrier_vietlegal_e5.ipynb`: matched no-expansion
+  BM25S + Harrier + VietLegal-E5 treatment using the same WRRF screen and
+  downstream stages.
+- `kaggle_multi_dense_harrier_e5_retuned.ipynb`: no-expansion Harrier +
+  multilingual-E5-large control using the expanded WRRF grid. Compare it with
+  the reference-enabled main notebook only after confirming all non-reference
+  settings and split IDs match.
 - `kaggle_query_recall50_analysis.ipynb`: analysis-only view of a completed
   multi-dense archive, including per-query deficit, component attribution,
   stage coverage, and independently downloadable diagnostic tables.
