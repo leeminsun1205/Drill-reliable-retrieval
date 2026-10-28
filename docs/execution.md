@@ -1182,3 +1182,20 @@ row, or uses an unknown scope. Keep same-law neighbor expansion and
 `best_per_aid` disabled for these first comparisons. The resolved config,
 retriever metadata, and retrieval feedback artifacts record the graph path,
 scope, parameters, and every accepted expansion.
+
+### Harrier + BGE-M3 multi-dense notebook
+
+Run `notebooks/kaggle_multi_dense_harrier_bge.ipynb` on Kaggle T4 x2 for the
+no-reference dense-peer control. Attach the same corpus, query, reranker, BM25,
+Harrier, and chunk-cache inputs as the main multi-dense notebook. Attach a
+verified `bge_m3` retrieval cache when available; otherwise the notebook builds
+only the missing BGE-M3 cache through `scripts/prepare_retrieval_cache.py` in an
+isolated process before the fail-closed experiment run.
+
+The notebook writes working artifacts below
+`/kaggle/working/multi_dense_harrier_bge` and packages
+`/kaggle/working/multi_dense_harrier_bge_results.tar.gz`. Confirm at startup
+that the printed treatment has `bge_m3`, `top_chunks`, `packed_stream`, batch
+256, `same_law_neighbor_expansion=false`, and
+`reference_expansion.enabled=false`. A comparison with the earlier Harrier +
+multilingual-E5 run is a cross-model treatment comparison, not a parity check.

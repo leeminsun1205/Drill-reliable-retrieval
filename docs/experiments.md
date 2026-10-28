@@ -1941,3 +1941,25 @@ of every component's top 50 is an oracle with a budget potentially greater than
 leave-one-out estimates; causal attribution requires re-fusion after removing
 one component with all other settings fixed. Direct chunk candidates are a
 separate stage because 50 chunks can represent fewer than 50 unique articles.
+
+### Planned Harrier + BGE-M3 multi-dense control
+
+`notebooks/kaggle_multi_dense_harrier_bge.ipynb` is the controlled dense-peer
+replacement experiment for the current multi-dense pipeline. It replaces
+multilingual-E5 with `BAAI/bge-m3`, while retaining BM25S with VnCoreNLP,
+VietLegal-Harrier, the persisted seed-42 split, `top_chunks`, the epoch-3
+cross-encoder, packed-stream reranking with neural batch 256, and the existing
+OOF/final LightGBM stages. Same-law neighbor expansion and explicit-reference
+expansion are both disabled. Thus this notebook does not test legal structure;
+it asks only whether BGE-M3 is a better complementary dense peer for Harrier.
+
+The development screen crosses WRRF `k` in `{10, 20, 40, 60}` with ten explicit
+BM25/Harrier/BGE weight triples. Selection is lexicographic by candidate
+Recall@50, then Recall@20, then fixed top-3 F2, with declaration order as the
+last deterministic tie-break. This is development tuning and must not be
+reported as an untouched evaluation. The selected treatment must be compared
+with Harrier + multilingual-E5 using first-stage recall, paired query-level
+wins/losses, reranker rankings, nested-OOF LightGBM, and final predictions;
+matching scores are not assumed because the dense component intentionally
+changes. No measured result is recorded until the notebook completes and its
+artifacts are inspected.
