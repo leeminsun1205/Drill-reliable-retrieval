@@ -1242,3 +1242,13 @@ inference for all four treatments. Compare the fixed epoch-3 metrics and
 coverage changes first; treat fresh LightGBM OOF as a downstream diagnostic.
 After selecting one candidate distribution, freeze it before mining reranker
 training examples.
+
+The notebook's `Gate summary` reports macro Precision, Recall, and F2 at
+cutoffs 20/50/100 for both the fused article ranking and the distinct article
+IDs represented by the actual reranker chunk pool. These are candidate-stage
+diagnostics, not final-output metrics; precision and F2 naturally penalize a
+larger candidate set. It also records complete-gold query counts, total and
+mean reranker pairs, mean unique article IDs, queries below the configured
+pool, fixed epoch-3 policies, and per-stage wall time. The packaged compact
+tables are `gate_summary.csv`, `candidate_cost.csv`, `epoch3_summary.csv`, and
+`wall_time_summary.csv`.
