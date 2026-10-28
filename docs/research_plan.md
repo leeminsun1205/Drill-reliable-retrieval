@@ -740,3 +740,12 @@ lower-cost pool, adds verified candidate coverage without harming the fixed
 top-2 result, and exposes the rescued positives to the subsequent aligned
 reranker training. Do not reopen pool size, graph scope, encoder, BM25, WRRF,
 or query expansion during the two predeclared reranker treatments.
+
+Before supervised retraining, run one checkpoint-only screen of
+`AITeamVN/Vietnamese_Reranker` on this exact frozen candidate distribution.
+Pin model revision `f536976248403314225d7fdfdbc87f0e9516a54e`; retain direct
+retrieved Khoản–Điểm chunks, pair length 512, packed-stream batch 256, all
+candidate/reference settings, fixed output cutoffs, and fresh query-grouped
+five-fold OOF LightGBM. This is an initialization/checkpoint ablation, not a
+reopening of first-stage selection. Do not run public/private inference or
+reuse epoch-3 score thresholds before the development comparison is complete.
