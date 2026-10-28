@@ -1252,3 +1252,25 @@ mean reranker pairs, mean unique article IDs, queries below the configured
 pool, fixed epoch-3 policies, and per-stage wall time. The packaged compact
 tables are `gate_summary.csv`, `candidate_cost.csv`, `epoch3_summary.csv`, and
 `wall_time_summary.csv`.
+
+### Epoch-3 warm-start reranker treatments
+
+After the candidate pool/reference gate is frozen, copy its two flag values
+into both `notebooks/kaggle_finetune_reranker_warmstart_bce.ipynb` and
+`notebooks/kaggle_finetune_reranker_warmstart_pairwise.ipynb`. The first uses
+pointwise BCE; the second derives query/positive/negative rows from the same
+audited miner and uses pairwise logistic loss. Both use the epoch-3 Kaggle model
+as a weights-only initialization, run a two-GPU one-step smoke test, retain six
+new adaptation snapshots, and evaluate the warm start plus every snapshot on
+the same development configuration.
+
+The epoch-3 Kaggle model has no compatible historical optimizer state, so do
+not pass it through `--resume-from-checkpoint`. Exact resume is available only
+between checkpoints created inside one of these new runs. The trainer performs
+a disk-capacity check before optimization; checkpoint weights remain in the
+Kaggle output model directory, while the small metrics archive deliberately
+excludes weights, optimizer states, caches, and optimization JSONL.
+
+The completed gate selected `CANDIDATE_BUDGET = 50` and
+`ENABLE_REFERENCE_EXPANSION = True`; both fine-tuning notebooks now carry these
+values as their defaults. Do not change them during the reranker comparison.

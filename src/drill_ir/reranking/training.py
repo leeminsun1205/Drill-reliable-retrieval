@@ -559,6 +559,7 @@ def prepare_direct_chunk_bce_training_data(
     config: dict[str, Any],
     destination: str | Path,
     *,
+    candidate_pool_size: int | None = None,
     retrieved_chunk_depth: int = 100,
     reranked_pool_size: int = 30,
     skip_top_negatives: int = 5,
@@ -574,8 +575,14 @@ def prepare_direct_chunk_bce_training_data(
     before deterministic sampling, following the false-negative safeguard from
     FPT.AI while retaining the project's 448/64 chunk unit.
     """
-    if retrieved_chunk_depth < reranked_pool_size:
-        raise ValueError("retrieved_chunk_depth must be >= reranked_pool_size")
+    if candidate_pool_size is None:
+        candidate_pool_size = retrieved_chunk_depth
+    if candidate_pool_size <= 0 or retrieved_chunk_depth < candidate_pool_size:
+        raise ValueError(
+            "Require retrieved_chunk_depth >= candidate_pool_size > 0"
+        )
+    if candidate_pool_size < reranked_pool_size:
+        raise ValueError("candidate_pool_size must be >= reranked_pool_size")
     if not 0 <= skip_top_negatives < reranked_pool_size:
         raise ValueError("Require reranked_pool_size > skip_top_negatives >= 0")
     if negatives_per_query <= 0:
@@ -604,11 +611,14 @@ def prepare_direct_chunk_bce_training_data(
         raise TypeError("Direct-chunk mining requires a retriever with chunk evidence")
     chunk_candidates = retrieve_chunks(
         train_queries,
-        top_k=retrieved_chunk_depth,
+        top_k=candidate_pool_size,
         dense_depth=retrieved_chunk_depth,
     )
     chunks_by_qid = {result.qid: result.chunks for result in chunk_candidates}
-    stage(f"Retrieved {retrieved_chunk_depth} fused chunks for {len(chunk_candidates):,} train queries")
+    stage(
+        f"Retrieved {candidate_pool_size} fused chunks at dense depth "
+        f"{retrieved_chunk_depth} for {len(chunk_candidates):,} train queries"
+    )
 
     gold_aids = {aid for query in train_queries for aid in query.relevant_aids}
     missing = gold_aids - set(by_aid)
@@ -704,6 +714,7 @@ def prepare_direct_chunk_bce_training_data(
         "skipped_qids": skipped,
         "positive_pairs": positive_pairs,
         "negative_pairs": negative_pairs,
+        "candidate_pool_size": candidate_pool_size,
         "retrieved_chunk_depth": retrieved_chunk_depth,
         "reranked_pool_size": reranked_pool_size,
         "skip_top_negatives": skip_top_negatives,
@@ -719,4 +730,70 @@ def prepare_direct_chunk_bce_training_data(
         json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     stage(f"Saved {positive_pairs:,} positive and {negative_pairs:,} negative pairs")
+    return destination
+
+
+def prepare_pairwise_training_data_from_audit(
+    audit_path: str | Path,
+    query_path: str | Path,
+    destination: str | Path,
+) -> Path:
+    """Expand audited direct-chunk positives/negatives into ranking pairs.
+
+    Each selected gold passage is paired with every audited semi-hard negative
+    for the same train query. The source audit remains the provenance record;
+    this derivative contains only text required by the pairwise trainer.
+    """
+    queries = {query.qid: query for query in load_queries(query_path)}
+    audit_path = Path(audit_path)
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    rows = 0
+    qids: list[int] = []
+    with audit_path.open(encoding="utf-8") as source, temporary.open(
+        "w", encoding="utf-8"
+    ) as output:
+        for line_number, line in enumerate(source, start=1):
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            qid = int(record["qid"])
+            query = queries.get(qid)
+            if query is None:
+                raise ValueError(f"Audit line {line_number}: unknown qid={qid}")
+            positives = [str(item["text"]) for item in record["positive"]]
+            negatives = [str(item["text"]) for item in record["negative"]]
+            if not positives or not negatives:
+                raise ValueError(
+                    f"Audit line {line_number}: positives and negatives are required"
+                )
+            for positive in positives:
+                for negative in negatives:
+                    output.write(
+                        json.dumps(
+                            {
+                                "query": query.question,
+                                "positive": positive,
+                                "negative": negative,
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+                    rows += 1
+            qids.append(qid)
+    if not rows:
+        raise ValueError(f"No pairwise rows were derived from {audit_path}")
+    temporary.replace(destination)
+    metadata = {
+        "selection": "audited_direct_chunk_positive_x_semihard_negative_v1",
+        "source_audit": str(audit_path),
+        "queries": len(qids),
+        "unique_queries": len(set(qids)),
+        "rows": rows,
+    }
+    destination.with_name(destination.stem + "_metadata.json").write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return destination

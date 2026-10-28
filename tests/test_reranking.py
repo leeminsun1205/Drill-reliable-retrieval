@@ -1,5 +1,9 @@
 import unittest
 import random
+import json
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
 
 import numpy as np
 
@@ -10,6 +14,7 @@ from drill_ir.reranking import (
     HFCrossEncoderConfig,
     HFCrossEncoderScorer,
     prefilter_representations,
+    prepare_pairwise_training_data_from_audit,
     select_fpt_semi_hard_negatives,
     select_best_passages,
 )
@@ -55,6 +60,38 @@ class FakeScorer:
 
 
 class CrossEncoderRerankerTest(unittest.TestCase):
+    def test_pairwise_training_rows_expand_audited_positive_negative_cross_product(self) -> None:
+        query = Query(7, "mức phạt", (10,))
+        audit_row = {
+            "qid": 7,
+            "positive": [
+                {"aid": 10, "chunk_id": "10:0", "text": "đúng", "score": 2.0}
+            ],
+            "negative": [
+                {"aid": 20, "chunk_id": "20:0", "text": "nhiễu 1", "score": 1.0},
+                {"aid": 30, "chunk_id": "30:0", "text": "nhiễu 2", "score": 0.5},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            audit = root / "audit.jsonl"
+            output = root / "pairwise.jsonl"
+            audit.write_text(json.dumps(audit_row, ensure_ascii=False) + "\n")
+            with patch(
+                "drill_ir.reranking.training.load_queries", return_value=[query]
+            ):
+                prepare_pairwise_training_data_from_audit(
+                    audit, root / "queries.parquet", output
+                )
+            rows = [json.loads(line) for line in output.read_text().splitlines()]
+        self.assertEqual(
+            rows,
+            [
+                {"query": "mức phạt", "positive": "đúng", "negative": "nhiễu 1"},
+                {"query": "mức phạt", "positive": "đúng", "negative": "nhiễu 2"},
+            ],
+        )
+
     def test_hf_scorer_batch_override_validates_without_loading_model(self) -> None:
         scorer = HFCrossEncoderScorer(HFCrossEncoderConfig(model_name="unused"))
         self.assertEqual(scorer.score_with_batch_size([], batch_size=16).shape, (0,))

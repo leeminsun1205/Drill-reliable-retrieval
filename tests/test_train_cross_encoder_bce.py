@@ -34,6 +34,48 @@ def test_load_pairs_accepts_strict_binary_schema(tmp_path: Path) -> None:
     assert [pair["label"] for pair in pairs] == [1.0, 0.0]
 
 
+def test_load_pairwise_rows_accepts_strict_ranking_schema(tmp_path: Path) -> None:
+    path = tmp_path / "pairwise.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {
+                "query": "mức phạt",
+                "positive": "Điều đúng",
+                "negative": "Điều gây nhiễu",
+            }
+        ],
+    )
+
+    rows = MODULE._load_pairwise_rows(path)
+
+    assert rows == [
+        {
+            "negative": "Điều gây nhiễu",
+            "positive": "Điều đúng",
+            "query": "mức phạt",
+        }
+    ]
+
+
+def test_load_pairwise_rows_rejects_extra_fields(tmp_path: Path) -> None:
+    path = tmp_path / "pairwise.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {
+                "query": "q",
+                "positive": "p",
+                "negative": "n",
+                "qid": 7,
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="expected exactly"):
+        MODULE._load_pairwise_rows(path)
+
+
 def test_link_final_model_reuses_checkpoint_storage(tmp_path: Path) -> None:
     checkpoint = tmp_path / "model" / "checkpoint-10"
     checkpoint.mkdir(parents=True)

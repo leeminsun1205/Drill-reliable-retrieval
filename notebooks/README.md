@@ -7,6 +7,13 @@ Only current execution entry points live in this directory:
   `0.15/0.55/0.30`, component depth 100, and the epoch-3 reranker. Change only
   `CANDIDATE_BUDGET` (`50` or `100`) and
   `ENABLE_REFERENCE_EXPANSION` (`False` or `True`).
+- `kaggle_finetune_reranker_warmstart_bce.ipynb`: conservative reranker
+  adaptation. It warm-starts from the epoch-3 weights, mines FPT-inspired
+  semi-hard chunks from the final frozen first stage, trains pointwise BCE for
+  at most six new adaptation epochs, and evaluates every snapshot.
+- `kaggle_finetune_reranker_warmstart_pairwise.ipynb`: promotion-oriented
+  treatment using the same audited candidates and epoch-3 warm start, but
+  expanding positive-negative pairs and optimizing pairwise logistic loss.
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
   cache artifact per process.
 - `kaggle_multi_dense_weight_selection.ipynb`: current BM25S + Harrier +

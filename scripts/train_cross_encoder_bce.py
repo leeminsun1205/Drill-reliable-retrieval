@@ -54,6 +54,28 @@ def _load_pairs(path: Path) -> list[dict[str, object]]:
     return pairs
 
 
+def _load_pairwise_rows(path: Path) -> list[dict[str, str]]:
+    """Load query/positive/negative rows for a pairwise ranking objective."""
+    rows: list[dict[str, str]] = []
+    expected = {"query", "positive", "negative"}
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if set(row) != expected:
+                raise ValueError(
+                    f"Line {line_number}: expected exactly {sorted(expected)}, "
+                    f"got {sorted(row)}"
+                )
+            if any(not isinstance(row[key], str) or not row[key].strip() for key in expected):
+                raise ValueError(f"Line {line_number}: every field must be non-empty text")
+            rows.append({key: row[key] for key in sorted(expected)})
+    if not rows:
+        raise ValueError(f"No pairwise training rows found in {path}")
+    return rows
+
+
 def _checkpoint_step(path: Path) -> int:
     return int(path.name.rsplit("-", 1)[-1])
 
@@ -78,6 +100,11 @@ def main() -> None:
     parser.add_argument("--model-name-or-path", required=True)
     parser.add_argument("--train-data", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument(
+        "--objective",
+        choices=("pointwise_bce", "pairwise_logistic"),
+        default="pointwise_bce",
+    )
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--epochs", type=float, default=2.0)
     parser.add_argument(
@@ -157,7 +184,11 @@ def main() -> None:
         random.seed(args.seed + rank)
         torch.manual_seed(args.seed + rank)
         torch.cuda.manual_seed_all(args.seed + rank)
-        pairs = _load_pairs(args.train_data)
+        pairs = (
+            _load_pairs(args.train_data)
+            if args.objective == "pointwise_bce"
+            else _load_pairwise_rows(args.train_data)
+        )
         train_data_sha256 = _sha256(args.train_data)
 
         class PairDataset(Dataset):
@@ -173,18 +204,39 @@ def main() -> None:
         tokenizer = AutoTokenizer.from_pretrained(model_source)
 
         def collate(rows: list[dict[str, object]]) -> dict[str, torch.Tensor]:
-            encoded = tokenizer(
+            if args.objective == "pointwise_bce":
+                encoded = tokenizer(
+                    [str(row["query"]) for row in rows],
+                    [str(row["passage"]) for row in rows],
+                    padding=True,
+                    truncation="only_second",
+                    max_length=args.max_length,
+                    return_tensors="pt",
+                )
+                encoded["labels"] = torch.tensor(
+                    [float(row["label"]) for row in rows], dtype=torch.float32
+                )
+                return encoded
+            positive = tokenizer(
                 [str(row["query"]) for row in rows],
-                [str(row["passage"]) for row in rows],
+                [str(row["positive"]) for row in rows],
                 padding=True,
                 truncation="only_second",
                 max_length=args.max_length,
                 return_tensors="pt",
             )
-            encoded["labels"] = torch.tensor(
-                [float(row["label"]) for row in rows], dtype=torch.float32
+            negative = tokenizer(
+                [str(row["query"]) for row in rows],
+                [str(row["negative"]) for row in rows],
+                padding=True,
+                truncation="only_second",
+                max_length=args.max_length,
+                return_tensors="pt",
             )
-            return encoded
+            return {
+                **{f"positive_{key}": value for key, value in positive.items()},
+                **{f"negative_{key}": value for key, value in negative.items()},
+            }
 
         dataset = PairDataset()
         sampler = (
@@ -310,6 +362,7 @@ def main() -> None:
             state = torch.load(state_path, map_location=device, weights_only=False)
             rng_state = torch.load(rng_path, map_location="cpu", weights_only=False)
             expected_state = {
+                "objective": args.objective,
                 "world_size": world_size,
                 "steps_per_epoch": steps_per_epoch,
                 "scheduler_total_epochs": scheduler_total_epochs,
@@ -385,10 +438,28 @@ def main() -> None:
                         key: value.to(device, non_blocking=True)
                         for key, value in batch.items()
                     }
-                    labels = batch.pop("labels")
                     with torch.autocast(device_type="cuda", dtype=torch.float16):
-                        logits = train_model(**batch).logits.view(-1)
-                        loss = criterion(logits, labels) / group_size
+                        if args.objective == "pointwise_bce":
+                            labels = batch.pop("labels")
+                            logits = train_model(**batch).logits.view(-1)
+                            raw_loss = criterion(logits, labels)
+                        else:
+                            positive_batch = {
+                                key.removeprefix("positive_"): value
+                                for key, value in batch.items()
+                                if key.startswith("positive_")
+                            }
+                            negative_batch = {
+                                key.removeprefix("negative_"): value
+                                for key, value in batch.items()
+                                if key.startswith("negative_")
+                            }
+                            positive_scores = train_model(**positive_batch).logits.view(-1)
+                            negative_scores = train_model(**negative_batch).logits.view(-1)
+                            raw_loss = torch.nn.functional.softplus(
+                                negative_scores - positive_scores
+                            ).mean()
+                        loss = raw_loss / group_size
                     scaler.scale(loss).backward()
 
                 if not should_step:
@@ -421,6 +492,7 @@ def main() -> None:
                 (checkpoint / "checkpoint_manifest.json").write_text(
                     json.dumps(
                         {
+                            "objective": args.objective,
                             "epoch_completed": epoch + 1,
                             "global_step": global_step,
                             "scheduler_total_epochs": scheduler_total_epochs,
@@ -435,6 +507,7 @@ def main() -> None:
             if rank == 0 and not args.skip_model_save:
                 torch.save(
                     {
+                        "objective": args.objective,
                         "epoch_completed": epoch + 1,
                         "global_step": global_step,
                         "world_size": world_size,
@@ -504,7 +577,7 @@ def main() -> None:
             (args.output_dir / "training_provenance.json").write_text(
                 json.dumps(
                     {
-                        "objective": "pointwise_binary_cross_entropy",
+                        "objective": args.objective,
                         "training_engine": "pytorch_ddp",
                         "model_name_or_path": args.model_name_or_path,
                         "train_data": str(args.train_data),

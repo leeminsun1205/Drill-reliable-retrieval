@@ -666,3 +666,77 @@ must use the same edge rule and expansion cap in both budgets. After this gate,
 freeze the winning candidate distribution, mine its hard negatives, and train
 the next reranker. Do not run further dense-model, BM25, WRRF, HyDE, generated-
 title, external-crawl, or large-LLM experiments before that reranker comparison.
+
+The post-freeze reranker comparison has two predeclared treatments. Direction A
+warm-starts from the existing epoch-3 model weights and retains the aligned
+direct-chunk pointwise-BCE recipe: one teacher-selected positive passage per
+gold aid, a top-30 non-gold teacher pool, the five most suspicious hits
+excluded, and ten deterministically sampled semi-hard negatives. Direction B
+uses the same audited passages but forms every selected positive-negative pair
+and optimizes pairwise logistic loss, targeting the measured failure to promote
+available gold candidates into the first few ranks. Both treatments must mine
+from the selected Harrier + multilingual-E5-large candidate distribution with
+its final pool and graph setting, exclude the persisted 438 development qids,
+and compare fixed top-1/2/3 on identical candidates before LightGBM is used for
+downstream diagnosis.
+
+The Kaggle epoch-3 artifact contains inference weights, not the former
+optimizer, scheduler, scaler, or RNG state. These treatments are therefore
+weights-only warm starts with a fresh six-epoch schedule. Their snapshots are
+named adaptation epochs 1--6 and must not be described as an exact continuation
+or as epochs 4--9. Six is a maximum checkpoint horizon rather than an assumption
+that the last snapshot will win; retain and evaluate every epoch.
+
+### Final first-stage gate: pool 50 with same-document references
+
+The four 2026-10-28 pool-50/100 by reference-off/on artifacts passed the
+matched-run audit:
+their development split, component rankings, and fused article predictions are
+byte-identical, and their resolved configurations differ only in the declared
+pool/reference treatment.
+
+Increasing the chunk-pair pool from 50 to 100 without references raised actual
+candidate recall from `0.904175` to `0.941433`, recovered 30 gold pairs across
+28 queries, dropped none, and raised complete-gold queries from 369 to 392.
+However, the unchanged epoch-3 reranker became worse at every principal fixed
+cutoff: top-1/2/3 F2 changed from `0.514270/0.533073/0.518575` to
+`0.493488/0.512372/0.495090`. At top 2, pool 100 won/lost 9/21 queries in
+recall. A paired query bootstrap for the top-2 F2 difference gave `-0.020701`
+with a 95% interval of `[-0.038733, -0.003241]`. Nested-OOF score-gap F2 also
+fell from `0.648354` to `0.639096`. The pair count doubled from 21,900 to
+43,800, while measured development retrieval plus reranking time increased
+from 611.5 to 871.8 seconds. These results reject pool 100
+under the predeclared fixed-reranker-and-cost rule despite its larger recall
+ceiling.
+
+At pool 100, same-document graph v3 changed candidate sets and reranker rankings
+for 49/438 queries but recovered and dropped no gold candidate pair. Epoch-3
+top-1 and top-2 were exactly unchanged; top-3 lost gold on two queries and F2
+moved from `0.495090` to `0.492344`. Nested-OOF score-gap F2 moved from
+`0.639096` to `0.637982`. This is evidence that references are redundant at
+pool 100, not a decision about their pool-50 treatment.
+
+At pool 50, enabling same-document graph v3 raised actual candidate recall from
+`0.904175` to `0.917765`, recovered 13 gold pairs across 12 queries, dropped
+none, and raised complete-gold queries from 369 to 380. All 13 recoveries were
+audited against the graph: each has an explicit same-document source-to-gold
+citation reachable from a top-five seed. The treatment changed 114/438
+candidate sets. With the unchanged epoch-3 reranker, fixed top-1 and top-2 and
+the threshold/fallback-2 policy were exactly unchanged; top-3 F2 increased from
+`0.518575` to `0.521322`, with two query wins and no losses. Pair count remained
+21,900. Retrieval plus reranking time increased from 611.5 to 678.1 seconds,
+plus 15.6 seconds to build the reproducible graph.
+
+Fresh LightGBM diagnostics were mixed: fixed top-2 F2 increased from `0.562469`
+to `0.577226`, while pooled threshold F2 and leakage-controlled nested score-gap
+F2 decreased from `0.644395/0.648354` to `0.639982/0.643605`. Per the
+predeclared protocol, this freshly fitted downstream learner does not replace
+the fixed epoch-3 comparison for attributing the reference treatment.
+
+Freeze the first stage as candidate pool 50 with graph-v3 same-document
+reference expansion enabled, seed depth five, at most four base-rank-selected
+expansions, and same-law neighbor expansion disabled. This choice preserves the
+lower-cost pool, adds verified candidate coverage without harming the fixed
+top-2 result, and exposes the rescued positives to the subsequent aligned
+reranker training. Do not reopen pool size, graph scope, encoder, BM25, WRRF,
+or query expansion during the two predeclared reranker treatments.
