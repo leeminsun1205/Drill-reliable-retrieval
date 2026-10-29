@@ -1353,7 +1353,9 @@ retrieval owners does not guarantee reclamation of all non-PyTorch CUDA/FAISS
 state inside the mining process. The fine-tuning notebooks therefore keep
 `runtime.devices=2` for retrieval but pass the mining-only CLI option
 `--reranker-device cuda:1`. A successful mining artifact must record
-`resolved_devices: [cuda:1]`. This phase-specific pin does not alter candidate
+`reranker.scorer.resolved_devices: [cuda:1]`; `resolved_devices` belongs to the
+scorer metadata nested inside the reranker run metadata, not to the reranker
+mapping itself. This phase-specific pin does not alter candidate
 generation, mining labels, optimization, or later matched evaluation.
 
 Long-running stages emit progress at their actual ownership boundary. Hybrid
