@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import random
 from typing import Any, Sequence
+import warnings
 
 import numpy as np
 
@@ -51,6 +52,27 @@ LIGHTGBM_PARAMETERS = {
     "n_jobs": -1,
     "verbosity": -1,
 }
+
+
+def _predict_positive_probability(model: Any, features: np.ndarray) -> np.ndarray:
+    """Predict class-one probability while hiding one known wrapper warning.
+
+    LightGBM's sklearn wrapper records generated feature names even when it is
+    fit from a NumPy matrix. Recent sklearn releases can then warn that another
+    NumPy matrix has no valid feature names. Training and inference remain
+    positionally aligned here, so suppress only that exact harmless warning.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=(
+                "X does not have valid feature names, but LGBMClassifier was "
+                "fitted with feature names"
+            ),
+            category=UserWarning,
+            module=r"sklearn\.utils\.validation",
+        )
+        return np.asarray(model.predict_proba(features)[:, 1], dtype=np.float64)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -280,7 +302,9 @@ def evaluate_oof_lightgbm(
             raise ValueError(f"Fold {fold} training rows do not contain both labels")
         model = LGBMClassifier(**LIGHTGBM_PARAMETERS, random_state=seed + fold)
         model.fit(features[training], labels[training])
-        probabilities[validation] = model.predict_proba(features[validation])[:, 1]
+        probabilities[validation] = _predict_positive_probability(
+            model, features[validation]
+        )
         importance += model.feature_importances_
 
     rankings: dict[int, tuple[list[int], list[float]]] = {}
@@ -373,9 +397,9 @@ def evaluate_oof_lightgbm(
                     random_state=seed + 10_000 + outer_fold * folds + inner_fold,
                 )
                 inner_model.fit(features[inner_training], labels[inner_training])
-                inner_probabilities[inner_validation] = inner_model.predict_proba(
-                    features[inner_validation]
-                )[:, 1]
+                inner_probabilities[inner_validation] = _predict_positive_probability(
+                    inner_model, features[inner_validation]
+                )
 
             tuning_rankings: dict[int, tuple[list[int], list[float]]] = {}
             for qid in tuning_qids:
@@ -453,7 +477,9 @@ def fit_lightgbm_and_rank(
         raise ValueError("Final LightGBM training requires both binary labels")
     model = LGBMClassifier(**LIGHTGBM_PARAMETERS, random_state=seed)
     model.fit(training_examples["features"], labels)
-    probabilities = model.predict_proba(inference_examples["features"])[:, 1]
+    probabilities = _predict_positive_probability(
+        model, inference_examples["features"]
+    )
     row_qids = inference_examples["qids"]
     aids = inference_examples["aids"]
     original_ranks = inference_examples["original_ranks"]

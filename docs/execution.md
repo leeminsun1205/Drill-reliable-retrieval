@@ -1181,6 +1181,18 @@ This command reads saved rankings and labels only. Its output is a diagnostic
 recall gate, not a reranking or final effectiveness result; the companion
 `.details.jsonl` records each expansion edge and any recovered or dropped gold.
 
+Local result retention was compacted on 2026-10-29 after graph v3 and the final
+pool/reference gate were selected. `results/` retains graph-v3
+`reference_edges.jsonl`, its summary, recall-gate details, and the reviewed v3
+sample. The superseded graph-v2 tree and the large graph-v3
+`reference_mentions.jsonl`/`article_number_mapping.jsonl` build intermediates
+were removed; regenerate them deterministically with
+`scripts/build_reference_graph.py` when a new mapping audit is required. Large
+CUDA traces and retrieval-stage handoff JSON files from the completed Harrier +
+BGE control were likewise removed after their compact configs, predictions,
+scoreboards, OOF metrics, and query diagnostics were retained. This cleanup
+does not change any recorded metric or selected treatment.
+
 Run the implemented same-document reference ablation with the graph attached
 or rebuilt in the execution environment:
 
