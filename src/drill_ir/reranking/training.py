@@ -693,7 +693,7 @@ def prepare_direct_chunk_bce_training_data(
     with train_tmp.open("w", encoding="utf-8") as train_stream, audit_tmp.open(
         "w", encoding="utf-8"
     ) as audit_stream:
-        for query in query_iterator:
+        for query_index, query in enumerate(query_iterator, start=1):
             query_gold_aids = tuple(dict.fromkeys(query.relevant_aids))
             positive_chunks_by_aid, positive_sources = select_aligned_positive_pools(
                 query.question,
@@ -712,8 +712,24 @@ def prepare_direct_chunk_bce_training_data(
                 chunk for aid in query_gold_aids for chunk in positive_chunks_by_aid[aid]
             ]
             pairs = [(query.question, chunk.text) for chunk in positive_flat + list(negative_chunks)]
+            heartbeat = (
+                query_index == 1
+                or query_index % 25 == 0
+                or query_index == len(train_queries)
+            )
+            if heartbeat:
+                stage(
+                    f"Teacher scoring query {query_index:,}/{len(train_queries):,} "
+                    f"qid={query.qid} pairs={len(pairs):,} "
+                    f"written={written_queries:,} total_scored={total_scored_pairs:,}"
+                )
             scores = reranker.scorer.score(pairs)
             total_scored_pairs += len(pairs)
+            if heartbeat:
+                stage(
+                    f"Teacher finished query {query_index:,}/{len(train_queries):,} "
+                    f"qid={query.qid} total_scored={total_scored_pairs:,}"
+                )
             positive_scores = scores[: len(positive_flat)]
             negative_scores = scores[len(positive_flat) :]
             positives = select_best_passages(
