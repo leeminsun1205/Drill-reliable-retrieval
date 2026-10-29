@@ -820,3 +820,96 @@ score-gap improved `0.010211`. The result confirms that the historical fusion
 remains a serious deployment control, but it does not yet isolate weights from
 reference expansion; await the new-weight/no-reference cell before changing
 the fine-tuning distribution.
+
+The retuned-weight Vietnamese no-reference control completed on 2026-10-29.
+Its seed-42 development split and component rankings are byte-identical to the
+historical-weight and retuned-weight/reference-on controls. Retuned WRRF
+improved fused article Recall@50 from `0.922081` to `0.927789` and direct
+reranker-candidate Recall@50 from `0.903033` to `0.904175`, but this small
+coverage gain did not improve the downstream selector. Raw Vietnamese
+reranker top-1/2/3 F2 was `0.521022/0.543752/0.520852`; top-2 was exactly equal
+to the historical-weight control. Fresh LightGBM reached fixed top-2 F2
+`0.589574`, pooled threshold/fallback-2 `0.643976`, pooled score-gap `0.640607`,
+and leakage-controlled nested-OOF score-gap `0.637017`. The corresponding
+historical-weight/no-reference nested estimate was `0.649468`, a difference of
+`-0.012451` for the retuned weights.
+
+With retuned weights held fixed, reference expansion raised direct candidate
+Recall@50 from `0.904175` to `0.917765`, LightGBM fixed top-2 F2 from
+`0.589574` to `0.597223`, and nested-OOF score-gap F2 from `0.637017` to
+`0.639257`. This is a modest downstream gain despite a material ceiling gain;
+it supports keeping reference-on as the graph research treatment, not claiming
+that the current unfine-tuned reranker fully exploits rescued candidates. The
+historical-weight/no-reference run remains the strongest measured deployment
+control. The standard control evaluated only the all-row LightGBM input and
+score-gap maximum cutoffs `{3,4,5}`; pooled tuning and every nested outer fold
+selected maximum cutoff 3, so the reduced diagnostic grid does not explain its
+lower result. Freeze these three configurations and do not reopen WRRF tuning
+on this development split.
+
+Artifact-integrity note: the later archive originally named
+`vietnamese_reranker_new_weights_noref_results.tar.gz`, subsequently renamed
+`vietnamese_reranker_old_weights_noref_full_results.tar.gz`, is a
+historical-weight run. Although its treatment ID and experiment name say new
+weights, its serialized effective
+configuration is `rrf_k=20` with BM25/Harrier/E5 weights
+`0.10/0.50/0.40`. Its first-stage predictions, reranker predictions, and
+scoreboard match the historical-weight/no-reference run, not the true retuned
+control. Do not count it as an independent run or use it to replace the valid
+retuned artifact
+`vietnamese_reranker_new_weights_noref_standard_results.tar.gz`, whose effective
+configuration is `rrf_k=10` and `0.15/0.55/0.30`.
+
+The corrected full-grid archive
+`vietnamese_reranker_new_weights_noref_results.tar.gz` was verified on
+2026-10-29. Its effective configuration is `rrf_k=10` with weights
+`0.15/0.55/0.30`; its split, component rankings, first-stage predictions,
+chunk candidates, reranker predictions, reranker summary, and gate summary are
+byte-identical to the standard archive. Full LightGBM evaluation reproduced
+fixed top-2 F2 `0.589574`, pooled threshold/fallback-2 `0.643976`, pooled
+score-gap `0.640607`, and nested-OOF score-gap `0.637017`. Therefore the
+standard run was not an approximation of the measured treatment, and the
+first-stage decision is final.
+
+The full LightGBM input-depth ablation contains a useful downstream result
+that is separate from first-stage selection. Limiting LightGBM training and
+prediction rows to reranker top 30 produced the best leakage-controlled
+nested-OOF score-gap F2, `0.643248`, compared with top 10 `0.637678`, top 20
+`0.635571`, and all rows `0.637017`. Top 30 also had the best pooled score-gap
+F2 (`0.648649`) and threshold/fallback-2 F2 (`0.644742`). Fixed-top-2 F2 was
+very slightly higher at input depth 20 (`0.594588`) than depth 10 (`0.594296`),
+depth 30 (`0.591930`), or all rows (`0.589574`), so no single depth dominates
+every policy. Every pooled and nested score-gap search selected output
+`maximum_k=3`; larger output caps did not help. This ablation used the
+retuned-weight/no-reference distribution, whereas reranker fine-tuning uses
+retuned-weight/reference-on candidates. Therefore treat depth 30 as a
+predeclared hypothesis and all rows as its control, not as an already selected
+winner for the fine-tuning treatment. Do not fit LightGBM for every fine-tuned
+epoch: select reranker snapshots first by the predeclared fixed-top-2 gate,
+then compare depth 30 and all rows only for the warm start and objective
+finalists on the exact reference-on candidates.
+
+The historical-weight/no-reference depth ablation does not reproduce the same
+nested-OOF winner. Its depth 10/20/30/all nested score-gap F2 values were
+`0.644672/0.639692/0.647064/0.649468`, so all rows won that leakage-controlled
+comparison, while depth 30 was slightly best only for pooled score-gap
+(`0.655183` versus all-row `0.654008`). Depth 10 had the best fixed-top-2 F2
+(`0.596763`), and depth 20 had the best threshold/fallback-2 F2 (`0.650349`).
+Thus input depth is a selector hyperparameter whose effect depends on the
+candidate distribution, not a universal top-30 rule. The historical treatment
+also exceeded the retuned treatment at every tested nested depth, but because
+it is no-reference this does not answer how historical weights would interact
+with graph expansion. Do not introduce an unplanned historical-weight/ref-on
+run before the frozen reranker-objective comparison.
+
+The main reranker fine-tuning treatment is now the pointwise-BCE notebook with
+pool 50, graph-v3 same-document reference expansion on, WRRF `k=10`, and
+BM25/Harrier/E5 weights `0.15/0.55/0.30`. It warm-starts from pinned
+`AITeamVN/Vietnamese_Reranker` weights and retains all six new adaptation-epoch
+snapshots. The notebook fails closed on the verified graph digest and on the
+fully resolved training configuration so a mislabeled experiment cannot run
+historical weights silently. The pairwise notebook has the same graph and
+resolved-configuration checks so the objective is the only intended difference.
+Pairwise remains the predeclared second treatment, not the main training recipe.
+Compare both objectives on the identical frozen development candidates with
+fixed top-2 as the primary checkpoint gate.
