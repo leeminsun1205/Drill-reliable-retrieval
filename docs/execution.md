@@ -1314,6 +1314,26 @@ warm start, and training settings while changing only the candidate budget and
 artifact identity. They are cost/ceiling ablations, not replacements for the
 pool-50 main treatments.
 
+Matched checkpoint evaluation freezes retrieval as well as its configuration.
+The warm-start evaluation materializes one
+`retrieval_stage_handoff.json`; every adaptation epoch in the same notebook
+then receives that exact artifact through `DRILL_RETRIEVAL_HANDOFF` and starts
+at reranking. Consequently Harrier, E5, BM25, fusion, chunk selection, and
+reference expansion run once per treatment rather than once per checkpoint.
+This is required both for runtime reliability and for the scientific invariant
+that reranker checkpoints are compared on identical first-stage candidates.
+The notebook fails closed if a later checkpoint is reached without the frozen
+handoff.
+
+When training has already completed in a separate Kaggle notebook output,
+`notebooks/temp/kaggle_evaluate_bce_pool100_checkpoints.ipynb` is the thin
+evaluation-only recovery path. It expects the six pointwise BCE pool-100
+checkpoints at steps 1239, 2479, 3720, 4961, 6203, and 7445, verifies each
+checkpoint manifest against epochs 1 through 6, and compares them with the
+pinned Vietnamese warm start. The warm-start evaluation creates the frozen
+retrieval handoff and epochs 1 through 6 reuse it. The notebook neither mines
+training pairs nor performs optimizer updates.
+
 For staged execution, run
 `notebooks/kaggle_prepare_reranker_mining_pool50.ipynb` and
 `notebooks/kaggle_prepare_reranker_mining_pool100.ipynb` before either training
