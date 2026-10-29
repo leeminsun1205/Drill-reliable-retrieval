@@ -12,6 +12,7 @@ from typing import Any, Sequence
 
 from drill_ir.data import Article, Query, RetrievalResult, iter_articles, load_queries
 from drill_ir.retrieval import build_retriever
+from drill_ir.runtime_resources import release_stage_resources
 
 from .factory import build_reranker
 
@@ -660,6 +661,13 @@ def prepare_direct_chunk_bce_training_data(
         f"Retrieved {candidate_pool_size} fused chunks at dense depth "
         f"{retrieved_chunk_depth} for {len(chunk_candidates):,} train queries"
     )
+    # Mining only needs the materialized CPU chunk records from this point on.
+    # Release dense encoders, FAISS GPU indexes, and CUDA IPC state before the
+    # cross-encoder teacher is loaded; otherwise both stages can overlap on
+    # cuda:0 and exhaust a Kaggle T4 even though cuda:1 remains mostly idle.
+    release_stage_resources(retriever, stage="direct_chunk_mining:retrieval")
+    retriever = None
+    stage("Released retrieval resources before loading the reranker teacher")
 
     gold_aids = {aid for query in train_queries for aid in query.relevant_aids}
     missing = gold_aids - set(by_aid)

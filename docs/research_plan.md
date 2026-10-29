@@ -913,3 +913,15 @@ resolved-configuration checks so the objective is the only intended difference.
 Pairwise remains the predeclared second treatment, not the main training recipe.
 Compare both objectives on the identical frozen development candidates with
 fixed top-2 as the primary checkpoint gate.
+
+Two optional pool-100 fine-tuning ablation notebooks mirror the BCE and
+pairwise pool-50 treatments. They change only the candidate budget and
+artifact identities: reference graph, WRRF, warm start, teacher top-30 mining
+depth, five-negative exclusion, ten semi-hard negatives, optimization, and
+evaluation protocol remain fixed. Pool 100/reference-on has measured candidate
+Recall `0.941433`, but its matched Vietnamese warm-start result is intentionally
+measured inside each notebook rather than borrowed from the pool-50 baseline.
+These runs test whether matched training can exploit the larger ceiling; they
+do not replace pool 50 as the predeclared main treatment unless their fixed
+top-2 and subsequent nested-OOF finalist comparisons justify the doubled
+reranking cost.

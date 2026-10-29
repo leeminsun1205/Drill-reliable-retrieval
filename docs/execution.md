@@ -1286,18 +1286,19 @@ pool, fixed epoch-3 policies, and per-stage wall time. The packaged compact
 tables are `gate_summary.csv`, `candidate_cost.csv`, `epoch3_summary.csv`, and
 `wall_time_summary.csv`.
 
-### Epoch-3 warm-start reranker treatments
+### Vietnamese warm-start reranker treatments
 
 After the candidate pool/reference gate is frozen, copy its two flag values
 into both `notebooks/kaggle_finetune_reranker_warmstart_bce.ipynb` and
 `notebooks/kaggle_finetune_reranker_warmstart_pairwise.ipynb`. The first uses
 pointwise BCE; the second derives query/positive/negative rows from the same
-audited miner and uses pairwise logistic loss. Both use the epoch-3 Kaggle model
+audited miner and uses pairwise logistic loss. Both use the pinned
+`AITeamVN/Vietnamese_Reranker` Kaggle model
 as a weights-only initialization, run a two-GPU one-step smoke test, retain six
 new adaptation snapshots, and evaluate the warm start plus every snapshot on
 the same development configuration.
 
-The epoch-3 Kaggle model has no compatible historical optimizer state, so do
+The Vietnamese checkpoint has no compatible historical optimizer state, so do
 not pass it through `--resume-from-checkpoint`. Exact resume is available only
 between checkpoints created inside one of these new runs. The trainer performs
 a disk-capacity check before optimization; checkpoint weights remain in the
@@ -1307,3 +1308,18 @@ excludes weights, optimizer states, caches, and optimization JSONL.
 The completed gate selected `CANDIDATE_BUDGET = 50` and
 `ENABLE_REFERENCE_EXPANSION = True`; both fine-tuning notebooks now carry these
 values as their defaults. Do not change them during the reranker comparison.
+
+The optional `*_pool100.ipynb` variants retain the same graph, WRRF, mining,
+warm start, and training settings while changing only the candidate budget and
+artifact identity. They are cost/ceiling ablations, not replacements for the
+pool-50 main treatments.
+
+Direct-chunk mining performs retrieval and teacher scoring in one process.
+After fused chunks have been materialized as CPU records, the reusable miner
+must call `release_stage_resources()` on the retriever before loading the
+cross-encoder teacher. Without this handoff, dense retrieval can retain roughly
+11 GiB on `cuda:0`; the teacher then selects `cuda:0` as its primary device and
+can OOM even while `cuda:1` remains mostly free. The expected log sequence is
+`direct_chunk_mining:retrieval:before_close`, then `after_close`, followed by
+`Released retrieval resources before loading the reranker teacher` and only
+then the reranker checkpoint load.
