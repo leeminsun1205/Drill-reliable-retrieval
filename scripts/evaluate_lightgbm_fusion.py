@@ -50,6 +50,7 @@ def main() -> None:
         folds=args.folds,
         seed=args.seed,
         include_score_gap=args.adaptive_selection == "score_gap",
+        progress_label="all",
     )
     depth_specs: list[tuple[str, int | None]] = []
     for raw_depth in args.input_depths:
@@ -75,6 +76,7 @@ def main() -> None:
                 folds=args.folds,
                 seed=args.seed,
                 include_score_gap=args.adaptive_selection == "score_gap",
+                progress_label=f"depth_{name}",
             )
         ablation[name] = {
             "maximum_reranker_rank": depth,

@@ -70,11 +70,21 @@ def _isolated_sentence_transformer_encode(
     try:
         from sentence_transformers import SentenceTransformer
 
+        started = time.perf_counter()
+        print(
+            f"[dense-worker] Loading model on CPU: {config.model_name}", flush=True
+        )
         model = SentenceTransformer(
             config.model_name,
             revision=config.revision,
             trust_remote_code=config.trust_remote_code,
             device="cpu",
+        )
+        print(
+            f"[dense-worker] Model materialized in "
+            f"{time.perf_counter() - started:.1f}s; encoding "
+            f"texts={len(texts)} devices={devices} batch_size={config.batch_size}",
+            flush=True,
         )
         if config.max_seq_length is not None:
             model.max_seq_length = config.max_seq_length
@@ -85,6 +95,11 @@ def _isolated_sentence_transformer_encode(
             normalize_embeddings=config.normalize_embeddings,
             convert_to_numpy=True,
             show_progress_bar=True,
+        )
+        print(
+            f"[dense-worker] Encoding complete in "
+            f"{time.perf_counter() - started:.1f}s shape={list(embeddings.shape)}",
+            flush=True,
         )
         np.save(output_path, np.asarray(embeddings, dtype=np.float32), allow_pickle=False)
     except BaseException:
@@ -127,6 +142,8 @@ class SentenceTransformerEncoder:
                 "Dense retrieval requires the optional dense dependencies. "
                 "Install with: python -m pip install -e '.[dense]'"
             ) from error
+        started = time.perf_counter()
+        print(f"[dense] Loading model: {self.config.model_name}", flush=True)
         self._model = SentenceTransformer(
             self.config.model_name,
             revision=self.config.revision,
@@ -142,6 +159,11 @@ class SentenceTransformerEncoder:
         )
         if self.config.max_seq_length is not None:
             self._model.max_seq_length = self.config.max_seq_length
+        print(
+            f"[dense] Model ready in {time.perf_counter() - started:.1f}s: "
+            f"{self.config.model_name}",
+            flush=True,
+        )
         return self._model
 
     def _resolve_device(self) -> str | list[str]:
@@ -184,6 +206,13 @@ class SentenceTransformerEncoder:
         try:
             prefixed = [prefix + text for text in texts]
             self.last_device = self._resolve_device()
+            started = time.perf_counter()
+            print(
+                f"[dense] Encoding start model={self.config.model_name} "
+                f"texts={len(prefixed)} batch_size={self.config.batch_size} "
+                f"devices={self.last_device}",
+                flush=True,
+            )
             if isinstance(self.last_device, list):
                 trace.record(
                     "before_isolated_encode",
@@ -193,6 +222,11 @@ class SentenceTransformerEncoder:
                 )
                 result = self._encode_multi_gpu_isolated(prefixed, self.last_device)
                 trace.record("after_isolated_process_exit")
+                print(
+                    f"[dense] Encoding complete in "
+                    f"{time.perf_counter() - started:.1f}s shape={list(result.shape)}",
+                    flush=True,
+                )
                 return result
             trace.record("before_model_load")
             model = self._load_model()
@@ -215,7 +249,13 @@ class SentenceTransformerEncoder:
                 show_progress_bar=True,
             )
             trace.record("after_encode")
-            return np.asarray(embeddings, dtype=np.float32)
+            result = np.asarray(embeddings, dtype=np.float32)
+            print(
+                f"[dense] Encoding complete in "
+                f"{time.perf_counter() - started:.1f}s shape={list(result.shape)}",
+                flush=True,
+            )
+            return result
         except BaseException as error:
             trace.record("encode_error", error_type=type(error).__name__, error=str(error))
             raise
@@ -1019,7 +1059,16 @@ class DenseRetriever:
         """Load or create deterministic chunks without encoding documents."""
         if not articles:
             raise ValueError("Cannot fit dense retrieval on an empty corpus")
+        started = time.perf_counter()
+        print(
+            f"[dense] Fingerprinting raw corpus rows={len(articles):,}", flush=True
+        )
         self.raw_corpus_fingerprint = EmbeddingCache.corpus_fingerprint(articles)
+        print(
+            f"[dense] Raw corpus fingerprint ready in "
+            f"{time.perf_counter() - started:.1f}s",
+            flush=True,
+        )
         cached_chunks = None
         if self.chunk_cache is not None:
             cached_chunks = self.chunk_cache.load(
@@ -1067,7 +1116,17 @@ class DenseRetriever:
             Article(aid=chunk.aid, law_id=chunk.law_id, text=chunk.text)
             for chunk in self._chunks
         ]
+        started = time.perf_counter()
+        print(
+            f"[dense] Fingerprinting representations rows={len(representations):,}",
+            flush=True,
+        )
         fingerprint = EmbeddingCache.corpus_fingerprint(representations)
+        print(
+            f"[dense] Representation fingerprint ready in "
+            f"{time.perf_counter() - started:.1f}s",
+            flush=True,
+        )
         self.corpus_fingerprint = fingerprint
         representation_key = json.dumps(
             {"encoder": self.encoder.cache_key, "chunker": self.chunker.cache_key},

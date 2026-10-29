@@ -6,6 +6,7 @@ from collections import defaultdict
 import json
 from pathlib import Path
 import random
+import time
 from typing import Any, Sequence
 import warnings
 
@@ -270,6 +271,7 @@ def evaluate_oof_lightgbm(
     include_score_gap: bool = False,
     fixed_output_cutoffs: Sequence[int] = (1, 2, 3, 4, 5, 10, 20, 30, 50),
     score_gap_maximum_cutoffs: Sequence[int] = (3, 4, 5, 6, 7, 8, 9, 10),
+    progress_label: str = "all",
 ) -> dict[str, Any]:
     """Produce query-grouped out-of-fold pointwise LightGBM predictions."""
     if folds < 2:
@@ -293,6 +295,13 @@ def evaluate_oof_lightgbm(
     probabilities = np.zeros(len(labels), dtype=np.float64)
     importance = np.zeros(features.shape[1], dtype=np.float64)
 
+    print(
+        f"[lightgbm:{progress_label}] start rows={len(labels)} "
+        f"positive_rows={int(labels.sum())} folds={folds} "
+        f"nested={include_score_gap}",
+        flush=True,
+    )
+
     for fold in range(folds):
         validation = np.asarray(
             [fold_by_qid[int(qid)] == fold for qid in row_qids], dtype=bool
@@ -300,12 +309,24 @@ def evaluate_oof_lightgbm(
         training = ~validation
         if len(set(labels[training])) != 2:
             raise ValueError(f"Fold {fold} training rows do not contain both labels")
+        started = time.perf_counter()
+        print(
+            f"[lightgbm:{progress_label}] outer_oof_fit "
+            f"{fold + 1}/{folds} train_rows={int(training.sum())} "
+            f"validation_rows={int(validation.sum())}",
+            flush=True,
+        )
         model = LGBMClassifier(**LIGHTGBM_PARAMETERS, random_state=seed + fold)
         model.fit(features[training], labels[training])
         probabilities[validation] = _predict_positive_probability(
             model, features[validation]
         )
         importance += model.feature_importances_
+        print(
+            f"[lightgbm:{progress_label}] outer_oof_fit_complete "
+            f"{fold + 1}/{folds} seconds={time.perf_counter() - started:.2f}",
+            flush=True,
+        )
 
     rankings: dict[int, tuple[list[int], list[float]]] = {}
     for qid in unique_qids:
@@ -329,7 +350,14 @@ def evaluate_oof_lightgbm(
         {qid: values[0] for qid, values in rankings.items()},
         fixed_output_cutoffs,
     )
+    started = time.perf_counter()
+    print(f"[lightgbm:{progress_label}] threshold_tuning start", flush=True)
     thresholds = tune_score_thresholds(gold, rankings, [1, 2])
+    print(
+        f"[lightgbm:{progress_label}] threshold_tuning complete "
+        f"seconds={time.perf_counter() - started:.2f}",
+        flush=True,
+    )
     result = {
         "protocol": {
             "model": "LightGBM pointwise binary classifier",
@@ -353,8 +381,19 @@ def evaluate_oof_lightgbm(
         "rankings": rankings,
     }
     if include_score_gap:
+        started = time.perf_counter()
+        print(
+            f"[lightgbm:{progress_label}] pooled_score_gap_tuning start "
+            f"maximum_k={list(score_gap_maximum_cutoffs)}",
+            flush=True,
+        )
         score_gap = tune_score_gap(
             gold, rankings, maximum_cutoffs=score_gap_maximum_cutoffs
+        )
+        print(
+            f"[lightgbm:{progress_label}] pooled_score_gap_tuning complete "
+            f"seconds={time.perf_counter() - started:.2f}",
+            flush=True,
         )
 
         # Fully nest selector tuning: inner OOF scores use outer-training qids
@@ -392,6 +431,15 @@ def evaluate_oof_lightgbm(
                         f"Outer fold {outer_fold}, inner fold {inner_fold} "
                         "training rows do not contain both labels"
                     )
+                started = time.perf_counter()
+                print(
+                    f"[lightgbm:{progress_label}] nested_fit "
+                    f"outer={outer_fold + 1}/{folds} "
+                    f"inner={inner_fold + 1}/{folds} "
+                    f"train_rows={int(inner_training.sum())} "
+                    f"validation_rows={int(inner_validation.sum())}",
+                    flush=True,
+                )
                 inner_model = LGBMClassifier(
                     **LIGHTGBM_PARAMETERS,
                     random_state=seed + 10_000 + outer_fold * folds + inner_fold,
@@ -399,6 +447,13 @@ def evaluate_oof_lightgbm(
                 inner_model.fit(features[inner_training], labels[inner_training])
                 inner_probabilities[inner_validation] = _predict_positive_probability(
                     inner_model, features[inner_validation]
+                )
+                print(
+                    f"[lightgbm:{progress_label}] nested_fit_complete "
+                    f"outer={outer_fold + 1}/{folds} "
+                    f"inner={inner_fold + 1}/{folds} "
+                    f"seconds={time.perf_counter() - started:.2f}",
+                    flush=True,
                 )
 
             tuning_rankings: dict[int, tuple[list[int], list[float]]] = {}
@@ -416,10 +471,22 @@ def evaluate_oof_lightgbm(
                     [int(aids[index]) for index in ordered],
                     [float(inner_probabilities[index]) for index in ordered],
                 )
+            started = time.perf_counter()
+            print(
+                f"[lightgbm:{progress_label}] nested_policy_tuning "
+                f"outer={outer_fold + 1}/{folds} start",
+                flush=True,
+            )
             tuned = tune_score_gap(
                 {qid: gold[qid] for qid in tuning_qids},
                 tuning_rankings,
                 maximum_cutoffs=score_gap_maximum_cutoffs,
+            )
+            print(
+                f"[lightgbm:{progress_label}] nested_policy_tuning "
+                f"outer={outer_fold + 1}/{folds} complete "
+                f"seconds={time.perf_counter() - started:.2f}",
+                flush=True,
             )
             policy = tuned["best"]
             selected = select_by_score_gap(
@@ -453,6 +520,7 @@ def evaluate_oof_lightgbm(
                 gold, rankings, maximum_k=max(score_gap_maximum_cutoffs)
             ),
         }
+    print(f"[lightgbm:{progress_label}] complete", flush=True)
     return result
 
 

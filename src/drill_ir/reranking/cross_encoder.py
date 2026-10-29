@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import asdict, dataclass
+import time
 from typing import Any, Protocol, Sequence
 
 import numpy as np
@@ -84,19 +85,30 @@ class HFCrossEncoderScorer:
                 "Cross-encoder reranking requires dense dependencies. "
                 "Install with: python -m pip install -e '.[dense]'"
             ) from error
+        started = time.perf_counter()
+        print(f"[reranker] Loading tokenizer: {self.config.model_name}", flush=True)
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.config.model_name,
             revision=self.config.revision,
             trust_remote_code=self.config.trust_remote_code,
             use_fast=True,
         )
+        print(
+            f"[reranker] Tokenizer ready in {time.perf_counter() - started:.1f}s",
+            flush=True,
+        )
+        started = time.perf_counter()
         print(f"[reranker] Loading checkpoint on CPU: {self.config.model_name}", flush=True)
         model = AutoModelForSequenceClassification.from_pretrained(
             self.config.model_name,
             revision=self.config.revision,
             trust_remote_code=self.config.trust_remote_code,
         )
-        print("[reranker] Checkpoint materialized on CPU", flush=True)
+        print(
+            f"[reranker] Checkpoint materialized on CPU in "
+            f"{time.perf_counter() - started:.1f}s",
+            flush=True,
+        )
         self._resolved_devices = self._resolve_devices(torch)
         self._primary_device = self._resolved_devices[0]
         print(
