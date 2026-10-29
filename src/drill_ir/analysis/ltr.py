@@ -543,8 +543,19 @@ def fit_lightgbm_and_rank(
     labels = training_examples["labels"]
     if set(labels.tolist()) != {0, 1}:
         raise ValueError("Final LightGBM training requires both binary labels")
+    started = time.perf_counter()
+    print(
+        "[lightgbm:final] fit start "
+        f"train_rows={len(labels)} inference_rows={len(inference_examples['qids'])} ",
+        flush=True,
+    )
     model = LGBMClassifier(**LIGHTGBM_PARAMETERS, random_state=seed)
     model.fit(training_examples["features"], labels)
+    print(
+        f"[lightgbm:final] fit complete seconds={time.perf_counter() - started:.2f}; "
+        "prediction start",
+        flush=True,
+    )
     probabilities = _predict_positive_probability(
         model, inference_examples["features"]
     )
@@ -564,4 +575,9 @@ def fit_lightgbm_and_rank(
             [int(aids[index]) for index in ordered],
             [float(probabilities[index]) for index in ordered],
         )
+    print(
+        f"[lightgbm:final] prediction complete queries={len(rankings)} "
+        f"total_seconds={time.perf_counter() - started:.2f}",
+        flush=True,
+    )
     return rankings, model

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 import json
 from pathlib import Path
+import time
 from typing import Mapping, Sequence
 
 from drill_ir.data.models import Article, Query, RetrievalResult
@@ -311,12 +312,30 @@ class WeightedRRFRetriever:
 
     def fit(self, articles: Sequence[Article]) -> None:
         self._neighbor_aids = _same_law_neighbors(articles, radius=self.neighbor_radius)
+        started = time.perf_counter()
+        print(
+            f"[hybrid] Sparse fit start articles={len(articles):,}",
+            flush=True,
+        )
         cuda_snapshot("retrieval_fit:sparse:before")
         self.sparse.fit(articles)
         cuda_snapshot("retrieval_fit:sparse:after")
+        print(
+            f"[hybrid] Sparse fit complete seconds={time.perf_counter() - started:.1f}",
+            flush=True,
+        )
+        started = time.perf_counter()
+        print(
+            f"[hybrid] Dense fit start articles={len(articles):,}",
+            flush=True,
+        )
         cuda_snapshot("retrieval_fit:dense:before")
         self.dense.fit(articles)
         cuda_snapshot("retrieval_fit:dense:after")
+        print(
+            f"[hybrid] Dense fit complete seconds={time.perf_counter() - started:.1f}",
+            flush=True,
+        )
 
     @staticmethod
     def _by_qid(
@@ -332,10 +351,32 @@ class WeightedRRFRetriever:
     def retrieve(self, queries: Sequence[Query], top_k: int) -> list[RetrievalResult]:
         if top_k <= 0:
             raise ValueError("top_k must be positive")
+        started = time.perf_counter()
+        print(
+            f"[hybrid] Sparse query retrieval start queries={len(queries):,} "
+            f"top_k={self.sparse_top_k}",
+            flush=True,
+        )
         sparse_results = self.sparse.retrieve(queries, top_k=self.sparse_top_k)
         cuda_snapshot("retrieval_query:sparse:after")
+        print(
+            "[hybrid] Sparse query retrieval complete "
+            f"seconds={time.perf_counter() - started:.1f}",
+            flush=True,
+        )
+        started = time.perf_counter()
+        print(
+            f"[hybrid] Dense query retrieval start queries={len(queries):,} "
+            f"top_k={self.dense_top_k}",
+            flush=True,
+        )
         dense_results = self.dense.retrieve(queries, top_k=self.dense_top_k)
         cuda_snapshot("retrieval_query:dense:after")
+        print(
+            "[hybrid] Dense query retrieval complete "
+            f"seconds={time.perf_counter() - started:.1f}",
+            flush=True,
+        )
         sparse_by_qid = self._by_qid(sparse_results, component="sparse")
         dense_by_qid = self._by_qid(dense_results, component="dense")
         expected_qids = {query.qid for query in queries}

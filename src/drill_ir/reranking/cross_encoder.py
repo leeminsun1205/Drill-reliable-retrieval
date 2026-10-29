@@ -374,7 +374,18 @@ class CrossEncoderReranker:
             pairs.clear()
             refs.clear()
 
-        for query in queries:
+        query_iterator: Any = queries
+        try:
+            from tqdm.auto import tqdm
+
+            query_iterator = tqdm(
+                queries,
+                desc="Reranking packed article candidates",
+                unit="query",
+            )
+        except ImportError:
+            pass
+        for query in query_iterator:
             candidate = by_qid.get(query.qid)
             if candidate is None:
                 raise ValueError(f"Missing first-stage candidates for qid={query.qid}")
@@ -526,7 +537,18 @@ class CrossEncoderReranker:
             pairs.clear()
             refs.clear()
 
-        for query in queries:
+        query_iterator: Any = queries
+        try:
+            from tqdm.auto import tqdm
+
+            query_iterator = tqdm(
+                queries,
+                desc="Reranking packed retrieved chunks",
+                unit="query",
+            )
+        except ImportError:
+            pass
+        for query in query_iterator:
             candidate = by_qid.get(query.qid)
             if candidate is None:
                 raise ValueError(f"Missing retrieved chunks for qid={query.qid}")

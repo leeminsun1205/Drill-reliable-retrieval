@@ -71,6 +71,45 @@ The public leaderboard had a different ordering: FPT IS, CUDO, and brain_rot
 were the top three, while eventual winner EDM ranked seventh. This change is a
 warning against selecting a method primarily from public-leaderboard feedback.
 
+### Organizer conclusions across pipeline stages
+
+The organizer's conference overview reports that eight of the public top-ten
+systems declined on the private set; EDM and ViDRILL were the two exceptions.
+The paper associates the more robust systems with careful preprocessing and
+the integration of multiple model signals, but this is an observational
+comparison rather than a controlled causal ablation. In particular, it does
+not establish that any single chunk length, overlap, retriever, or reranker
+caused the private-set robustness.
+
+Across submitted systems, the recurring architecture was a retrieval funnel:
+sparse and/or bi-encoder retrieval generated a broad candidate set, an
+expensive cross-encoder or LLM processed a smaller set, and thresholding,
+learned ranking, or entailment filtering selected the final variable-size
+answer. The organizer identifies learning-to-rank over heterogeneous features
+as a distinguishing feature of the strongest systems. This supports treating
+first-stage recall, reranker ordering, learned feature fusion, and final-set
+calibration as separate experimental boundaries rather than attributing the
+end-to-end score to one component.
+
+The extended organizer analysis identifies commonsense-dependent questions,
+extremely long context, and temporal relations as persistent error categories.
+These findings limit what can be claimed for chunking: smaller passages can
+reduce semantic dilution, but they can also separate a rule from its
+conditions, exceptions, effective dates, or supporting provisions. Therefore
+legal-boundary-aware chunks should preserve deterministic hierarchy/context,
+and chunk-size changes require a controlled ablation. Chunking alone is not a
+solution to multi-provision or temporal reasoning.
+
+The organizer also notes that some legal questions cannot be resolved from one
+retrieved article alone. Information extraction, answer generation, or other
+reasoning components may be needed in a complete application. For this
+repository that is a stated benchmark limitation, not permission to add an LLM
+or RAG layer before the retrieval, reranking, aggregation, and final-selection
+questions have been isolated experimentally.
+
+Sources: the organizer's [conference overview](https://aclanthology.org/2025.vlsp-1.16/)
+and [extended journal analysis](https://doi.org/10.25073/2588-1086/vnucsce.6463).
+
 ### Final output-size policies behind reported private scores
 
 The organizer leaderboard reports Precision, Recall, and F2 but does not report

@@ -1355,3 +1355,14 @@ state inside the mining process. The fine-tuning notebooks therefore keep
 `--reranker-device cuda:1`. A successful mining artifact must record
 `resolved_devices: [cuda:1]`. This phase-specific pin does not alter candidate
 generation, mining labels, optimization, or later matched evaluation.
+
+Long-running stages emit progress at their actual ownership boundary. Hybrid
+retrieval logs sparse and dense fit/query start, completion, and elapsed time;
+dense encoding retains its model-load messages and progress bar. Packed-stream
+cross-encoder inference reports completed queries after the checkpoint becomes
+ready, including direct retrieved-chunk reranking. Mining keeps its per-query
+progress bar, training keeps optimizer-step/epoch logs, and OOF LightGBM reports
+every outer and nested fit. The final all-development LightGBM fit and test
+prediction also report separate start/completion messages. These logs are
+observability-only: they do not change batching, ordering, scores, seeds, or
+artifacts.
