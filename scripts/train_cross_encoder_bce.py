@@ -555,6 +555,10 @@ def main() -> None:
             )
 
         for epoch in range(start_epoch, int(args.epochs)):
+            stage(
+                f"starting epoch {epoch + 1}/{int(args.epochs)} "
+                f"global_step={global_step} batches_per_rank={len(loader)}"
+            )
             if sampler is not None:
                 sampler.set_epoch(epoch)
             for batch_index, batch in enumerate(loader):
@@ -652,6 +656,10 @@ def main() -> None:
             checkpoint = args.output_dir / f"checkpoint-{global_step}"
             if rank == 0 and not args.skip_model_save:
                 checkpoint = args.output_dir / f"checkpoint-{global_step}"
+                stage(
+                    f"saving epoch {epoch + 1}/{int(args.epochs)} "
+                    f"checkpoint to {checkpoint}"
+                )
                 checkpoint.mkdir(parents=True, exist_ok=True)
                 model.save_pretrained(checkpoint, safe_serialization=True)
                 tokenizer.save_pretrained(checkpoint)
@@ -667,6 +675,10 @@ def main() -> None:
                         indent=2,
                     ),
                     encoding="utf-8",
+                )
+                stage(
+                    f"checkpoint ready epoch={epoch + 1} "
+                    f"global_step={global_step} path={checkpoint}"
                 )
             if distributed:
                 dist.barrier()
