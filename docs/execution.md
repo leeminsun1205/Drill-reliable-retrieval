@@ -1399,12 +1399,15 @@ rank-tagged completion message now identifies the exact startup boundary that
 stalled; a completed smoke test does not by itself prove that the subsequent
 fresh full-training process started successfully.
 
-The four selected fine-tuning notebooks now stage the verified warm-start model
-once from the read-only Kaggle input mount to their treatment-specific
-`/kaggle/working/.../warm_start_model_local` directory and verify the copied
-weight digest before launching DDP. Both ranks therefore read from local working
-storage rather than concurrently materializing the checkpoint from the input
-mount. `RUN_DDP_SMOKE` defaults to `False`: the two-GPU one-step path has already
+The four selected fine-tuning notebooks do not duplicate the warm-start model
+under `/kaggle/working`: six retained epoch snapshots plus the latest Adam state
+already approach Kaggle's 20 GiB working-disk quota. Instead, DDP rank 0 and rank
+1 sequentially read the training JSONL, tokenizer, checkpoint, and any exact-
+resume state from their original paths, with a distributed barrier after each
+rank. This avoids concurrent large-file reads without consuming another model-
+sized disk copy. GPU transfer, forward/backward, and DDP synchronization remain
+parallel because serializing them would materially reduce training throughput.
+`RUN_DDP_SMOKE` defaults to `False`: the two-GPU one-step path has already
 been validated, while launching a separate smoke `torchrun` immediately before
 the real `torchrun` duplicated checkpoint loading and did not guarantee that the
 fresh full-training process would start. The smoke remains an explicit debug

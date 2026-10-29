@@ -1858,12 +1858,13 @@ is unaffected. Training now uses a small explicit PyTorch DDP loop with the
 same tokenizer, one-logit model, unweighted pointwise BCE, data, sequence
 budget, effective batch size, optimizer settings, seed, and linear warmup.
 This is an execution-engine repair, but it may still cause numerical differences
-from the former Trainer and is recorded in `training_provenance.json`. Both
-active BCE notebooks require a two-rank, one-optimizer-step smoke test before
-starting the full run. The smoke test writes provenance but deliberately does
-not duplicate multi-gigabyte model weights. The trainer also destroys the
-process group on exit and expresses the warmup ratio as an explicit number of
-scheduler steps.
+from the former Trainer and is recorded in `training_provenance.json`. The
+two-rank, one-optimizer-step smoke path writes provenance without model weights,
+but the selected notebooks now skip this already-validated smoke by default:
+it starts a separate DDP process and does not validate the subsequent fresh
+full-training process. It remains an explicit debug flag. The trainer also
+destroys the process group on exit and expresses the warmup ratio as an explicit
+number of scheduler steps.
 
 For the replacement BCE trainer, the root final model is hard-linked from the
 last epoch checkpoint on filesystems that support hard links, with symbolic
@@ -1875,7 +1876,12 @@ hyperparameters and requires a scheduler horizon declared before the original
 run; otherwise loading an earlier model is explicitly a warm start. Before
 optimization, the trainer estimates all epoch model snapshots plus one Adam
 state and requires an additional 2 GiB reserve. Artifact ZIPs exclude model
-snapshots and embedding caches.
+snapshots and embedding caches. Before writing a new epoch's resume state, the
+trainer removes the previous checkpoint's optimizer/RNG state while retaining
+its model snapshot. This avoids a transient second Adam state that could exceed
+the 20 GiB Kaggle quota; a crash in that short replacement interval preserves
+all epoch models but may forfeit exact optimizer-state resume until the new
+state finishes writing.
 
 ### Hierarchical Khoản–Điểm representation
 

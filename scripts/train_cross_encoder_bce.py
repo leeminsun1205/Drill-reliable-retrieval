@@ -194,14 +194,25 @@ def main() -> None:
         random.seed(args.seed + rank)
         torch.manual_seed(args.seed + rank)
         torch.cuda.manual_seed_all(args.seed + rank)
-        stage(f"loading training rows from {args.train_data}")
-        pairs = (
-            _load_pairs(args.train_data)
-            if args.objective == "pointwise_bce"
-            else _load_pairwise_rows(args.train_data)
-        )
-        train_data_sha256 = _sha256(args.train_data)
-        stage(f"training rows ready rows={len(pairs):,} sha256={train_data_sha256}")
+        pairs = None
+        train_data_sha256 = None
+        for loading_rank in range(world_size):
+            if rank == loading_rank:
+                stage(f"loading training rows from {args.train_data}")
+                pairs = (
+                    _load_pairs(args.train_data)
+                    if args.objective == "pointwise_bce"
+                    else _load_pairwise_rows(args.train_data)
+                )
+                train_data_sha256 = _sha256(args.train_data)
+                stage(
+                    f"training rows ready rows={len(pairs):,} "
+                    f"sha256={train_data_sha256}"
+                )
+            if distributed:
+                dist.barrier()
+        if pairs is None or train_data_sha256 is None:
+            raise RuntimeError("Training rows were not loaded on this rank")
 
         class PairDataset(Dataset):
             def __len__(self) -> int:
@@ -214,9 +225,16 @@ def main() -> None:
         if args.resume_from_checkpoint is not None and not args.resume_from_checkpoint.is_dir():
             raise FileNotFoundError(args.resume_from_checkpoint)
         transformers.utils.logging.disable_progress_bar()
-        stage(f"loading tokenizer from {model_source}")
-        tokenizer = AutoTokenizer.from_pretrained(model_source)
-        stage("tokenizer ready")
+        tokenizer = None
+        for loading_rank in range(world_size):
+            if rank == loading_rank:
+                stage(f"loading tokenizer from {model_source}")
+                tokenizer = AutoTokenizer.from_pretrained(model_source)
+                stage("tokenizer ready")
+            if distributed:
+                dist.barrier()
+        if tokenizer is None:
+            raise RuntimeError("Tokenizer was not materialized on this rank")
 
         def collate(rows: list[dict[str, object]]) -> dict[str, torch.Tensor]:
             if args.objective == "pointwise_bce":
@@ -279,12 +297,22 @@ def main() -> None:
         if len(loader) == 0:
             raise ValueError("No complete per-rank training batch is available")
 
-        stage(f"materializing checkpoint on CPU from {model_source}")
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_source,
-            num_labels=1,
-        )
-        stage("checkpoint materialized on CPU")
+        model = None
+        # Kaggle input mounts can stall when both DDP ranks materialize the same
+        # large safetensors file concurrently.  Serialize only the read/load
+        # phase; each rank still owns its normal independent model replica.
+        for loading_rank in range(world_size):
+            if rank == loading_rank:
+                stage(f"materializing checkpoint on CPU from {model_source}")
+                model = AutoModelForSequenceClassification.from_pretrained(
+                    model_source,
+                    num_labels=1,
+                )
+                stage("checkpoint materialized on CPU")
+            if distributed:
+                dist.barrier()
+        if model is None:
+            raise RuntimeError("Checkpoint was not materialized on this rank")
         model.config.problem_type = "regression"
         model.config.use_cache = False
         model.gradient_checkpointing_enable()
@@ -308,6 +336,12 @@ def main() -> None:
         args.output_dir.parent.mkdir(parents=True, exist_ok=True)
         free_bytes_before_training = shutil.disk_usage(args.output_dir.parent).free
         reserve_bytes = 2 * 1024**3
+        stage(
+            "disk preflight "
+            f"free={free_bytes_before_training / 1024**3:.2f}GiB "
+            f"checkpoint_estimate={checkpoint_bytes_required / 1024**3:.2f}GiB "
+            f"reserve={reserve_bytes / 1024**3:.2f}GiB"
+        )
         if (
             not args.skip_model_save
             and free_bytes_before_training
@@ -378,8 +412,22 @@ def main() -> None:
                     f"Checkpoint has no resumable state for rank {rank}: "
                     f"{state_path}, {rng_path}"
                 )
-            state = torch.load(state_path, map_location=device, weights_only=False)
-            rng_state = torch.load(rng_path, map_location="cpu", weights_only=False)
+            state = None
+            rng_state = None
+            for loading_rank in range(world_size):
+                if rank == loading_rank:
+                    stage(f"loading resume state from {state_path}")
+                    state = torch.load(
+                        state_path, map_location=device, weights_only=False
+                    )
+                    rng_state = torch.load(
+                        rng_path, map_location="cpu", weights_only=False
+                    )
+                    stage("resume state ready")
+                if distributed:
+                    dist.barrier()
+            if state is None or rng_state is None:
+                raise RuntimeError("Resume state was not loaded on this rank")
             expected_state = {
                 "objective": args.objective,
                 "world_size": world_size,
@@ -524,6 +572,25 @@ def main() -> None:
             if distributed:
                 dist.barrier()
             if rank == 0 and not args.skip_model_save:
+                # Remove the previous resume state before writing the new one.
+                # Keeping all epoch model snapshots plus two simultaneous Adam
+                # states can exceed Kaggle's 20 GiB working-disk quota.
+                for older in args.output_dir.glob("checkpoint-*"):
+                    if older != checkpoint:
+                        for state_file in [
+                            older / "training_state.pt",
+                            *older.glob("rng_state_rank*.pt"),
+                        ]:
+                            if state_file.is_file():
+                                state_file.unlink()
+                        manifest_path = older / "checkpoint_manifest.json"
+                        if manifest_path.is_file():
+                            manifest = json.loads(manifest_path.read_text())
+                            manifest["resumable"] = False
+                            manifest_path.write_text(json.dumps(manifest, indent=2))
+            if distributed:
+                dist.barrier()
+            if rank == 0 and not args.skip_model_save:
                 torch.save(
                     {
                         "objective": args.objective,
@@ -556,24 +623,6 @@ def main() -> None:
                     },
                     checkpoint / f"rng_state_rank{rank}.pt",
                 )
-            if distributed:
-                dist.barrier()
-            if rank == 0 and not args.skip_model_save:
-                # Every epoch model is permanent; only the latest checkpoint
-                # keeps large process-specific training states.
-                for older in args.output_dir.glob("checkpoint-*"):
-                    if older != checkpoint:
-                        for state_file in [
-                            older / "training_state.pt",
-                            *older.glob("rng_state_rank*.pt"),
-                        ]:
-                            if state_file.is_file():
-                                state_file.unlink()
-                        manifest_path = older / "checkpoint_manifest.json"
-                        if manifest_path.is_file():
-                            manifest = json.loads(manifest_path.read_text())
-                            manifest["resumable"] = False
-                            manifest_path.write_text(json.dumps(manifest, indent=2))
             if distributed:
                 dist.barrier()
             if global_step >= target_steps:

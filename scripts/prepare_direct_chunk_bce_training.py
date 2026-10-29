@@ -50,9 +50,9 @@ def main() -> None:
             sys.executable,
             str(Path(__file__).resolve()),
             *sys.argv[1:],
-            "--retrieval-handoff",
-            str(handoff),
         ]
+        if args.retrieval_handoff is None:
+            base_command.extend(["--retrieval-handoff", str(handoff)])
         print(
             f"[direct-chunk-orchestrator] Starting isolated retrieval process; "
             f"handoff={handoff}",
