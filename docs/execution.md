@@ -1348,15 +1348,24 @@ dataset came from the pre-packaging recovery run, the notebook creates a local
 import manifest with computed SHA-256 values. Partial `.tmp` files are never
 accepted. Archive discovery remains the fallback after loose-dataset discovery.
 
-Direct-chunk mining performs retrieval and teacher scoring in one process.
-After fused chunks have been materialized as CPU records, the reusable miner
-must call `release_stage_resources()` on the retriever before loading the
-cross-encoder teacher. Without this handoff, dense retrieval can retain roughly
-11 GiB on `cuda:0`; the teacher then selects `cuda:0` as its primary device and
-can OOM even while `cuda:1` remains mostly free. The expected log sequence is
-`direct_chunk_mining:retrieval:before_close`, then `after_close`, followed by
-`Released retrieval resources before loading the reranker teacher` and only
-then the reranker checkpoint load.
+Direct-chunk mining originally performed retrieval and teacher scoring in one
+process and attempted to release retrieval resources before teacher loading.
+That was insufficient: one pool-50 run stopped making progress after 200 mined
+queries even though the same pool-100 flow completed in another Kaggle session.
+The current CLI therefore orchestrates two fresh subprocesses. The first
+process performs retrieval and atomically writes
+`direct_chunks_bce_train_retrieval_handoff.jsonl` plus metadata, then exits
+completely. A second teacher-only process loads this CPU handoff and never
+initializes the dense retriever. The handoff is reusable when the command is
+retried from the same working directory, so retrieval is not repeated.
+
+The expected boundary logs are
+`[direct-chunk-orchestrator] Starting isolated retrieval process`,
+`[direct-chunk-handoff] Saved ...; retrieval process may now exit`, and
+`Retrieval process exited; starting a fresh teacher-only process`. Only after
+the third message may the reranker checkpoint load. The split changes process
+ownership only; candidate order, chunks, teacher model, sampling, and training
+rows remain unchanged.
 
 On the first post-handoff Kaggle rerun, `cuda:0` still retained about 14.21 GiB
 while `cuda:1` had about 11.85 GiB free; the teacher again selected `cuda:0`
@@ -1380,3 +1389,24 @@ every outer and nested fit. The final all-development LightGBM fit and test
 prediction also report separate start/completion messages. These logs are
 observability-only: they do not change batching, ordering, scores, seeds, or
 artifacts.
+
+Cross-encoder DDP startup additionally logs every rank and PID before and after
+loading training rows, tokenizer materialization, checkpoint materialization on
+CPU, and the device transfer. Transformers' per-parameter materialization bar is
+disabled in this entry point because Papermill/Kaggle can buffer and replay its
+ANSI redraws with misleading late timestamps. Absence of the corresponding
+rank-tagged completion message now identifies the exact startup boundary that
+stalled; a completed smoke test does not by itself prove that the subsequent
+fresh full-training process started successfully.
+
+The four selected fine-tuning notebooks now stage the verified warm-start model
+once from the read-only Kaggle input mount to their treatment-specific
+`/kaggle/working/.../warm_start_model_local` directory and verify the copied
+weight digest before launching DDP. Both ranks therefore read from local working
+storage rather than concurrently materializing the checkpoint from the input
+mount. `RUN_DDP_SMOKE` defaults to `False`: the two-GPU one-step path has already
+been validated, while launching a separate smoke `torchrun` immediately before
+the real `torchrun` duplicated checkpoint loading and did not guarantee that the
+fresh full-training process would start. The smoke remains an explicit debug
+switch; skipping it changes no training data, optimizer, schedule, seed, or
+checkpoint selection.

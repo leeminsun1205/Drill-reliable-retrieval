@@ -180,16 +180,28 @@ def main() -> None:
     if distributed:
         dist.init_process_group(backend="nccl")
 
+    def stage(message: str) -> None:
+        print(
+            f"[cross-encoder-train rank={rank}/{world_size} pid={os.getpid()}] {message}",
+            flush=True,
+        )
+
     try:
+        stage(
+            f"process ready device={device} distributed={distributed} "
+            f"objective={args.objective}"
+        )
         random.seed(args.seed + rank)
         torch.manual_seed(args.seed + rank)
         torch.cuda.manual_seed_all(args.seed + rank)
+        stage(f"loading training rows from {args.train_data}")
         pairs = (
             _load_pairs(args.train_data)
             if args.objective == "pointwise_bce"
             else _load_pairwise_rows(args.train_data)
         )
         train_data_sha256 = _sha256(args.train_data)
+        stage(f"training rows ready rows={len(pairs):,} sha256={train_data_sha256}")
 
         class PairDataset(Dataset):
             def __len__(self) -> int:
@@ -201,7 +213,10 @@ def main() -> None:
         model_source = args.resume_from_checkpoint or args.model_name_or_path
         if args.resume_from_checkpoint is not None and not args.resume_from_checkpoint.is_dir():
             raise FileNotFoundError(args.resume_from_checkpoint)
+        transformers.utils.logging.disable_progress_bar()
+        stage(f"loading tokenizer from {model_source}")
         tokenizer = AutoTokenizer.from_pretrained(model_source)
+        stage("tokenizer ready")
 
         def collate(rows: list[dict[str, object]]) -> dict[str, torch.Tensor]:
             if args.objective == "pointwise_bce":
@@ -264,14 +279,18 @@ def main() -> None:
         if len(loader) == 0:
             raise ValueError("No complete per-rank training batch is available")
 
+        stage(f"materializing checkpoint on CPU from {model_source}")
         model = AutoModelForSequenceClassification.from_pretrained(
             model_source,
             num_labels=1,
         )
+        stage("checkpoint materialized on CPU")
         model.config.problem_type = "regression"
         model.config.use_cache = False
         model.gradient_checkpointing_enable()
+        stage(f"moving checkpoint to {device}")
         model.to(device)
+        stage(f"checkpoint ready on {device}")
         parameter_bytes = sum(
             parameter.numel() * parameter.element_size()
             for parameter in model.parameters()

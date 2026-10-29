@@ -10,6 +10,7 @@ from .factory import build_reranker
 from .training import (
     MinedPassage,
     prefilter_representations,
+    prepare_direct_chunk_candidate_handoff,
     prepare_direct_chunk_bce_training_data,
     prepare_pairwise_training_data_from_audit,
     select_aligned_positive_pools,
@@ -27,6 +28,7 @@ __all__ = [
     "build_reranker",
     "MinedPassage",
     "prefilter_representations",
+    "prepare_direct_chunk_candidate_handoff",
     "prepare_direct_chunk_bce_training_data",
     "prepare_pairwise_training_data_from_audit",
     "select_aligned_positive_pools",

@@ -11,6 +11,7 @@ import time
 from typing import Any, Sequence
 
 from drill_ir.data import Article, Query, RetrievalResult, iter_articles, load_queries
+from drill_ir.preprocessing import Chunk
 from drill_ir.retrieval import build_retriever
 from drill_ir.runtime_resources import release_stage_resources
 
@@ -23,6 +24,145 @@ class MinedPassage:
     chunk_id: str
     text: str
     score: float
+
+
+def _direct_chunk_handoff_metadata_path(path: Path) -> Path:
+    return path.with_name(path.stem + "_metadata.json")
+
+
+def prepare_direct_chunk_candidate_handoff(
+    config: dict[str, Any],
+    destination: str | Path,
+    *,
+    candidate_pool_size: int,
+    retrieved_chunk_depth: int,
+) -> Path:
+    """Materialize frozen chunk candidates, then let the retrieval process exit."""
+    if candidate_pool_size <= 0 or retrieved_chunk_depth < candidate_pool_size:
+        raise ValueError("Require retrieved_chunk_depth >= candidate_pool_size > 0")
+    destination = Path(destination)
+    metadata_path = _direct_chunk_handoff_metadata_path(destination)
+    if destination.is_file() and metadata_path.is_file():
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        expected = {
+            "schema_version": 1,
+            "candidate_pool_size": candidate_pool_size,
+            "retrieved_chunk_depth": retrieved_chunk_depth,
+            "seed": int(config["seed"]),
+        }
+        if all(metadata.get(key) == value for key, value in expected.items()):
+            print(
+                f"[direct-chunk-handoff] Reusing retrieval handoff: {destination}",
+                flush=True,
+            )
+            return destination
+        raise ValueError(f"Existing retrieval handoff metadata mismatch: {metadata}")
+
+    started = time.perf_counter()
+    articles = list(iter_articles(config["data"]["corpus_path"], include_blank=False))
+    all_queries = load_queries(config["data"]["train_path"])
+    train_queries, dev_queries = _training_split(
+        all_queries,
+        dev_fraction=float(config["data"]["dev_fraction"]),
+        seed=int(config["seed"]),
+    )
+    print(
+        f"[direct-chunk-handoff] Retrieval process start articles={len(articles):,} "
+        f"train_queries={len(train_queries):,}",
+        flush=True,
+    )
+    retriever = build_retriever("hybrid", config["retrieval"], config.get("runtime", {}))
+    retriever.fit(articles)
+    retriever.retrieve(train_queries, top_k=int(config["retrieval"]["top_k"]))
+    retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
+    if not callable(retrieve_chunks):
+        raise TypeError("Direct-chunk mining requires a retriever with chunk evidence")
+    candidates = retrieve_chunks(
+        train_queries,
+        top_k=candidate_pool_size,
+        dense_depth=retrieved_chunk_depth,
+    )
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with temporary.open("w", encoding="utf-8") as stream:
+        for result in candidates:
+            stream.write(
+                json.dumps(
+                    {
+                        "qid": result.qid,
+                        "chunks": [asdict(chunk) for chunk in result.chunks],
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    temporary.replace(destination)
+    metadata = {
+        "schema_version": 1,
+        "seed": int(config["seed"]),
+        "candidate_pool_size": candidate_pool_size,
+        "retrieved_chunk_depth": retrieved_chunk_depth,
+        "train_queries": len(train_queries),
+        "train_qids": [query.qid for query in train_queries],
+        "dev_queries_excluded": len(dev_queries),
+        "records": len(candidates),
+        "chunks": sum(len(result.chunks) for result in candidates),
+        "runtime_seconds": time.perf_counter() - started,
+    }
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(
+        f"[direct-chunk-handoff] Saved {len(candidates):,} query records to "
+        f"{destination}; retrieval process may now exit",
+        flush=True,
+    )
+    return destination
+
+
+def _load_direct_chunk_candidate_handoff(
+    path: str | Path,
+    *,
+    train_queries: Sequence[Query],
+    candidate_pool_size: int,
+    retrieved_chunk_depth: int,
+) -> dict[int, tuple[Chunk, ...]]:
+    path = Path(path)
+    metadata = json.loads(
+        _direct_chunk_handoff_metadata_path(path).read_text(encoding="utf-8")
+    )
+    if (
+        metadata.get("schema_version") != 1
+        or metadata.get("candidate_pool_size") != candidate_pool_size
+        or metadata.get("retrieved_chunk_depth") != retrieved_chunk_depth
+        or metadata.get("train_qids") != [query.qid for query in train_queries]
+    ):
+        raise ValueError(f"Retrieval handoff is incompatible: {metadata}")
+    by_qid: dict[int, tuple[Chunk, ...]] = {}
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            qid = int(row["qid"])
+            if qid in by_qid:
+                raise ValueError(f"Duplicate qid={qid} in handoff line {line_number}")
+            by_qid[qid] = tuple(
+                Chunk(
+                    **{
+                        **chunk,
+                        "structure_path": tuple(chunk.get("structure_path", ())),
+                        "source_spans": tuple(
+                            tuple(span) for span in chunk.get("source_spans", ())
+                        ),
+                    }
+                )
+                for chunk in row["chunks"]
+            )
+    expected_qids = {query.qid for query in train_queries}
+    if set(by_qid) != expected_qids:
+        raise ValueError("Retrieval handoff query coverage is incomplete")
+    return by_qid
 
 
 def select_fpt_semi_hard_negatives(
@@ -599,6 +739,7 @@ def prepare_direct_chunk_bce_training_data(
     config: dict[str, Any],
     destination: str | Path,
     *,
+    retrieval_handoff: str | Path | None = None,
     candidate_pool_size: int | None = None,
     retrieved_chunk_depth: int = 100,
     reranked_pool_size: int = 30,
@@ -644,30 +785,41 @@ def prepare_direct_chunk_bce_training_data(
     )
     stage(f"Loaded {len(articles):,} articles; train={len(train_queries):,}, dev excluded={len(dev_queries):,}")
 
-    retriever = build_retriever("hybrid", config["retrieval"], config.get("runtime", {}))
-    retriever.fit(articles)
-    stage("Retrieving article rankings required for sparse/dense chunk fusion")
-    retriever.retrieve(train_queries, top_k=int(config["retrieval"]["top_k"]))
-    retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
-    if not callable(retrieve_chunks):
-        raise TypeError("Direct-chunk mining requires a retriever with chunk evidence")
-    chunk_candidates = retrieve_chunks(
-        train_queries,
-        top_k=candidate_pool_size,
-        dense_depth=retrieved_chunk_depth,
-    )
-    chunks_by_qid = {result.qid: result.chunks for result in chunk_candidates}
-    stage(
-        f"Retrieved {candidate_pool_size} fused chunks at dense depth "
-        f"{retrieved_chunk_depth} for {len(chunk_candidates):,} train queries"
-    )
-    # Mining only needs the materialized CPU chunk records from this point on.
-    # Release dense encoders, FAISS GPU indexes, and CUDA IPC state before the
-    # cross-encoder teacher is loaded; otherwise both stages can overlap on
-    # cuda:0 and exhaust a Kaggle T4 even though cuda:1 remains mostly idle.
-    release_stage_resources(retriever, stage="direct_chunk_mining:retrieval")
-    retriever = None
-    stage("Released retrieval resources before loading the reranker teacher")
+    if retrieval_handoff is None:
+        retriever = build_retriever(
+            "hybrid", config["retrieval"], config.get("runtime", {})
+        )
+        retriever.fit(articles)
+        stage("Retrieving article rankings required for sparse/dense chunk fusion")
+        retriever.retrieve(train_queries, top_k=int(config["retrieval"]["top_k"]))
+        retrieve_chunks = getattr(retriever, "retrieve_chunks", None)
+        if not callable(retrieve_chunks):
+            raise TypeError("Direct-chunk mining requires a retriever with chunk evidence")
+        chunk_candidates = retrieve_chunks(
+            train_queries,
+            top_k=candidate_pool_size,
+            dense_depth=retrieved_chunk_depth,
+        )
+        chunks_by_qid = {result.qid: result.chunks for result in chunk_candidates}
+        stage(
+            f"Retrieved {candidate_pool_size} fused chunks at dense depth "
+            f"{retrieved_chunk_depth} for {len(chunk_candidates):,} train queries"
+        )
+        release_stage_resources(retriever, stage="direct_chunk_mining:retrieval")
+        retriever = None
+        stage("Released retrieval resources before loading the reranker teacher")
+    else:
+        stage(f"Loading CPU retrieval handoff: {retrieval_handoff}")
+        chunks_by_qid = _load_direct_chunk_candidate_handoff(
+            retrieval_handoff,
+            train_queries=train_queries,
+            candidate_pool_size=candidate_pool_size,
+            retrieved_chunk_depth=retrieved_chunk_depth,
+        )
+        stage(
+            f"Loaded frozen chunks for {len(chunks_by_qid):,} train queries; "
+            "this teacher process has not initialized the retriever"
+        )
 
     gold_aids = {aid for query in train_queries for aid in query.relevant_aids}
     missing = gold_aids - set(by_aid)
@@ -800,6 +952,8 @@ def prepare_direct_chunk_bce_training_data(
             "teacher_max_exact_frozen_gold_chunks_else_same_chunker_article_fallback"
         ),
         "negative_source": "exact_fused_retrieved_chunks_used_at_inference",
+        "retrieval_handoff": str(retrieval_handoff) if retrieval_handoff else None,
+        "retrieval_teacher_process_isolation": retrieval_handoff is not None,
         "total_scored_pairs": total_scored_pairs,
         "runtime_seconds": time.perf_counter() - started,
         "reranker": reranker.run_metadata(),
