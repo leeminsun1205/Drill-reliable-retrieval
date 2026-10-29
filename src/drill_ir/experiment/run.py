@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from dataclasses import asdict
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -167,6 +168,52 @@ def _exec_reranking_stage(handoff_path: Path) -> None:
     os.execvpe(sys.executable, [sys.executable, *sys.argv], environment)
 
 
+def _finish_retrieval_only(
+    handoff_path: Path,
+    *,
+    config: dict[str, Any],
+    expected_qids: set[int],
+) -> Path:
+    """Validate and freeze a retrieval handoff without loading a reranker."""
+    first_stage, chunks, components, _, retriever_metadata = _read_stage_handoff(
+        handoff_path
+    )
+    actual_qids = {result.qid for result in first_stage}
+    if actual_qids != expected_qids:
+        raise ValueError("Retrieval-only handoff query coverage is incomplete")
+    if chunks is None:
+        raise ValueError("Retrieval-only handoff has no chunk candidates")
+    run_dir = handoff_path.parent
+    config_path = run_dir / "config.yaml"
+    with config_path.open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
+    digest = hashlib.sha256(handoff_path.read_bytes()).hexdigest()
+    manifest = {
+        "schema_version": 1,
+        "selection": "frozen_dev_retrieval_handoff",
+        "handoff_file": handoff_path.name,
+        "handoff_sha256": digest,
+        "experiment_name": config["experiment_name"],
+        "seed": int(config["seed"]),
+        "dev_queries": len(actual_qids),
+        "first_stage_rows": len(first_stage),
+        "chunk_rows": len(chunks),
+        "chunk_candidates": sum(len(result.chunks) for result in chunks),
+        "component_names": sorted(components),
+        "retriever_metadata": retriever_metadata,
+        "config_file": config_path.name,
+    }
+    (run_dir / "retrieval_handoff_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(
+        "[experiment] Frozen retrieval-only handoff ready: "
+        f"{handoff_path} sha256={digest} queries={len(actual_qids)}",
+        flush=True,
+    )
+    return run_dir
+
+
 def run_experiment(config: dict[str, Any]) -> Path:
     started = time.perf_counter()
     cuda_snapshot("experiment:process_start")
@@ -287,6 +334,12 @@ def run_experiment(config: dict[str, Any]) -> Path:
             run_dir.mkdir(parents=True, exist_ok=True)
             handoff_path = run_dir / "retrieval_stage_handoff.json"
             _write_stage_handoff(handoff_path, first_stage=first_stage_ranked, chunks=None, components=component_results_data, feedback=feedback_data, metadata=retriever_metadata)
+            if bool(config.get("runtime", {}).get("stop_after_retrieval_handoff", False)):
+                return _finish_retrieval_only(
+                    handoff_path,
+                    config=config,
+                    expected_qids={query.qid for query in dev_queries},
+                )
             _exec_reranking_stage(handoff_path)
         elif candidate_source == "retrieved_chunks":
             dense_depth = int(reranking_config.get("retrieved_chunk_depth", candidate_pool_size))
@@ -305,6 +358,12 @@ def run_experiment(config: dict[str, Any]) -> Path:
             run_dir.mkdir(parents=True, exist_ok=True)
             handoff_path = run_dir / "retrieval_stage_handoff.json"
             _write_stage_handoff(handoff_path, first_stage=first_stage_ranked, chunks=retrieved_chunk_candidates, components=component_results_data, feedback=feedback_data, metadata=retriever_metadata)
+            if bool(config.get("runtime", {}).get("stop_after_retrieval_handoff", False)):
+                return _finish_retrieval_only(
+                    handoff_path,
+                    config=config,
+                    expected_qids={query.qid for query in dev_queries},
+                )
             _exec_reranking_stage(handoff_path)
         else:
             raise ValueError(

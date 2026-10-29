@@ -256,6 +256,15 @@ supervision without introducing a train/inference unit mismatch. Pool 50/100
 and pointwise BCE/pairwise logistic
 form a controlled 2x2 comparison; every run trains five epochs but model
 selection must use the matched development evaluation for every checkpoint.
+
+Development retrieval is frozen independently from fine-tuning and checkpoint
+evaluation. `notebooks/temp/kaggle_prepare_frozen_dev_handoff_pool50.ipynb` and
+`notebooks/temp/kaggle_prepare_frozen_dev_handoff_pool100.ipynb` create the two
+reference-on handoffs without loading a reranker. Each archive contains the
+handoff, resolved configuration, and a SHA-256 manifest covering exactly the
+persisted 438-query development split. Pointwise and pairwise checkpoints at a
+given pool size must reuse the matching handoff; this is an execution split,
+not a methodological change.
 5. **Query-adaptive fusion.** After the fixed-weight baseline, predict a small
    sparse/dense weight policy from deterministic query and component-agreement
    features using query-fold-safe tuning. Do not reopen an unconstrained weight
