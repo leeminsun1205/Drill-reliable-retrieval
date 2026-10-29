@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
+from pathlib import Path
 import time
 from typing import Any, Protocol, Sequence
 
@@ -12,6 +14,7 @@ import numpy as np
 from drill_ir.data.models import Article, Query, RetrievalResult
 from drill_ir.preprocessing import ArticleChunker, Chunk
 from drill_ir.retrieval.dense import ChunkRetrievalResult
+from drill_ir.runtime_resources import stage_heartbeat
 
 
 class PairScorer(Protocol):
@@ -47,6 +50,7 @@ class HFCrossEncoderScorer:
         self._model: Any = None
         self._primary_device = "cpu"
         self._resolved_devices: list[str] = []
+        self._score_call_count = 0
 
     def _resolve_devices(self, torch: Any) -> list[str]:
         if self.config.device == "cpu":
@@ -80,30 +84,54 @@ class HFCrossEncoderScorer:
         try:
             import torch
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
+            from transformers.utils import logging as transformers_logging
+            from huggingface_hub.utils import disable_progress_bars as disable_hub_progress_bars
         except ImportError as error:
             raise RuntimeError(
                 "Cross-encoder reranking requires dense dependencies. "
                 "Install with: python -m pip install -e '.[dense]'"
             ) from error
+        transformers_logging.disable_progress_bar()
+        disable_hub_progress_bars()
+        local_source = Path(self.config.model_name)
+        if local_source.is_dir():
+            weight_files = sorted(
+                path
+                for path in local_source.iterdir()
+                if path.is_file()
+                and (
+                    path.suffix in {".safetensors", ".bin"}
+                    or path.name.endswith(".safetensors.index.json")
+                    or path.name.endswith(".bin.index.json")
+                )
+            )
+            print(
+                "[reranker] Local checkpoint inventory: "
+                f"path={local_source} files="
+                f"{[(path.name, round(path.stat().st_size / 2**20, 1)) for path in weight_files]}",
+                flush=True,
+            )
         started = time.perf_counter()
         print(f"[reranker] Loading tokenizer: {self.config.model_name}", flush=True)
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self.config.model_name,
-            revision=self.config.revision,
-            trust_remote_code=self.config.trust_remote_code,
-            use_fast=True,
-        )
+        with stage_heartbeat("reranker_tokenizer_materialization"):
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                self.config.model_name,
+                revision=self.config.revision,
+                trust_remote_code=self.config.trust_remote_code,
+                use_fast=True,
+            )
         print(
             f"[reranker] Tokenizer ready in {time.perf_counter() - started:.1f}s",
             flush=True,
         )
         started = time.perf_counter()
         print(f"[reranker] Loading checkpoint on CPU: {self.config.model_name}", flush=True)
-        model = AutoModelForSequenceClassification.from_pretrained(
-            self.config.model_name,
-            revision=self.config.revision,
-            trust_remote_code=self.config.trust_remote_code,
-        )
+        with stage_heartbeat("reranker_checkpoint_cpu_materialization"):
+            model = AutoModelForSequenceClassification.from_pretrained(
+                self.config.model_name,
+                revision=self.config.revision,
+                trust_remote_code=self.config.trust_remote_code,
+            )
         print(
             f"[reranker] Checkpoint materialized on CPU in "
             f"{time.perf_counter() - started:.1f}s",
@@ -116,7 +144,8 @@ class HFCrossEncoderScorer:
             f"resolved_devices={self._resolved_devices}",
             flush=True,
         )
-        model.to(self._primary_device)
+        with stage_heartbeat("reranker_checkpoint_cpu_to_gpu"):
+            model.to(self._primary_device)
         if len(self._resolved_devices) > 1:
             model = torch.nn.DataParallel(
                 model,
@@ -153,10 +182,19 @@ class HFCrossEncoderScorer:
         if not pairs:
             return np.empty((0,), dtype=np.float32)
         torch, tokenizer, model = self._load()
+        self._score_call_count += 1
+        score_call = self._score_call_count
+        report_progress = score_call == 1 or score_call % 25 == 0
         scores: list[np.ndarray] = []
         use_fp16 = self.config.fp16 and self._primary_device.startswith("cuda:")
         for start in range(0, len(pairs), batch_size):
             batch = pairs[start : start + batch_size]
+            if report_progress and start == 0:
+                print(
+                    "[reranker] Tokenization start "
+                    f"call={score_call} pairs={len(batch)}",
+                    flush=True,
+                )
             encoded = tokenizer(
                 [query for query, _ in batch],
                 [document for _, document in batch],
@@ -165,14 +203,59 @@ class HFCrossEncoderScorer:
                 max_length=self.config.max_length,
                 return_tensors="pt",
             )
-            encoded = {key: value.to(self._primary_device) for key, value in encoded.items()}
+            if report_progress and start == 0:
+                shapes = {key: list(value.shape) for key, value in encoded.items()}
+                print(
+                    "[reranker] Tokenization complete "
+                    f"call={score_call} tensor_shapes={shapes}",
+                    flush=True,
+                )
+            if report_progress and start == 0:
+                print(
+                    f"[reranker] Tensor transfer start call={score_call} "
+                    f"device={self._primary_device}",
+                    flush=True,
+                )
+            transfer_context = (
+                stage_heartbeat("reranker_tensor_transfer")
+                if report_progress and start == 0
+                else nullcontext()
+            )
+            with transfer_context:
+                encoded = {
+                    key: value.to(self._primary_device) for key, value in encoded.items()
+                }
+            if report_progress and start == 0:
+                print(
+                    f"[reranker] Tensor transfer complete call={score_call}",
+                    flush=True,
+                )
             try:
-                with torch.inference_mode(), torch.autocast(
-                    device_type="cuda",
-                    dtype=torch.float16,
-                    enabled=use_fp16,
-                ):
-                    logits = model(**encoded).logits
+                if report_progress and start == 0:
+                    print(
+                        "[reranker] CUDA forward start "
+                        f"call={score_call} primary_device={self._primary_device} "
+                        f"resolved_devices={self._resolved_devices}",
+                        flush=True,
+                    )
+                forward_context = (
+                    stage_heartbeat("reranker_cuda_forward")
+                    if report_progress and start == 0
+                    else nullcontext()
+                )
+                with forward_context:
+                    with torch.inference_mode(), torch.autocast(
+                        device_type="cuda",
+                        dtype=torch.float16,
+                        enabled=use_fp16,
+                    ):
+                        logits = model(**encoded).logits
+                if report_progress and start == 0:
+                    print(
+                        "[reranker] CUDA forward complete "
+                        f"call={score_call} logits_shape={list(logits.shape)}",
+                        flush=True,
+                    )
             except BaseException as error:
                 memory = ""
                 if torch.cuda.is_available():
@@ -523,6 +606,15 @@ class CrossEncoderReranker:
         def flush() -> None:
             if not pairs:
                 return
+            call_number = self._scorer_calls + 1
+            report_progress = call_number == 1 or call_number % 25 == 0
+            if report_progress:
+                print(
+                    "[reranker] Packed retrieved-chunk forward start "
+                    f"call={call_number} pairs={len(pairs)} "
+                    f"queries_seen={len(plans)}/{len(queries)}",
+                    flush=True,
+                )
             scores = np.asarray(self.scorer.score(pairs), dtype=np.float32)
             if len(scores) != len(refs):
                 raise ValueError("Reranker returned an unexpected number of pair scores")
@@ -534,6 +626,12 @@ class CrossEncoderReranker:
                     best_ranks[chunk.aid] = rank
             self._scored_pairs += len(pairs)
             self._scorer_calls += 1
+            if report_progress:
+                print(
+                    "[reranker] Packed retrieved-chunk forward complete "
+                    f"call={call_number} total_scored={self._scored_pairs}",
+                    flush=True,
+                )
             pairs.clear()
             refs.clear()
 

@@ -17,6 +17,7 @@ from .training import (
     prepare_fpt_reranker_training_data,
     prepare_reranker_training_data,
     select_fpt_semi_hard_negatives,
+    select_fpt_chunk_negatives,
     select_best_passages,
 )
 
@@ -35,5 +36,6 @@ __all__ = [
     "prepare_fpt_reranker_training_data",
     "prepare_reranker_training_data",
     "select_fpt_semi_hard_negatives",
+    "select_fpt_chunk_negatives",
     "select_best_passages",
 ]

@@ -20,7 +20,7 @@ import numpy as np
 
 from drill_ir.data.models import Article, Query, RetrievalResult
 from drill_ir.preprocessing import ArticleChunker, ArticleTruncationChunker, Chunk
-from drill_ir.runtime_resources import cuda_snapshot
+from drill_ir.runtime_resources import cuda_snapshot, stage_heartbeat
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,12 +74,13 @@ def _isolated_sentence_transformer_encode(
         print(
             f"[dense-worker] Loading model on CPU: {config.model_name}", flush=True
         )
-        model = SentenceTransformer(
-            config.model_name,
-            revision=config.revision,
-            trust_remote_code=config.trust_remote_code,
-            device="cpu",
-        )
+        with stage_heartbeat("dense_checkpoint_cpu_materialization"):
+            model = SentenceTransformer(
+                config.model_name,
+                revision=config.revision,
+                trust_remote_code=config.trust_remote_code,
+                device="cpu",
+            )
         print(
             f"[dense-worker] Model materialized in "
             f"{time.perf_counter() - started:.1f}s; encoding "
@@ -144,19 +145,20 @@ class SentenceTransformerEncoder:
             ) from error
         started = time.perf_counter()
         print(f"[dense] Loading model: {self.config.model_name}", flush=True)
-        self._model = SentenceTransformer(
-            self.config.model_name,
-            revision=self.config.revision,
-            trust_remote_code=self.config.trust_remote_code,
-            # A list makes Sentence Transformers spawn one encoding worker per
-            # device.  Keep the source model in host memory so the parent does
-            # not occupy cuda:0 alongside its worker's model replica.
-            device=(
-                "cpu"
-                if isinstance(self.config.device, list)
-                else None if self.config.device == "auto" else self.config.device
-            ),
-        )
+        with stage_heartbeat("dense_checkpoint_materialization"):
+            self._model = SentenceTransformer(
+                self.config.model_name,
+                revision=self.config.revision,
+                trust_remote_code=self.config.trust_remote_code,
+                # A list makes Sentence Transformers spawn one encoding worker per
+                # device. Keep the source model in host memory so the parent does
+                # not occupy cuda:0 alongside its worker's model replica.
+                device=(
+                    "cpu"
+                    if isinstance(self.config.device, list)
+                    else None if self.config.device == "auto" else self.config.device
+                ),
+            )
         if self.config.max_seq_length is not None:
             self._model.max_seq_length = self.config.max_seq_length
         print(

@@ -1342,6 +1342,31 @@ as the BCE recovery notebook after fail-closed replacement of only the
 checkpoint root, step mapping, run identity, working directory, and archive
 name.
 
+The recovery evaluation notebooks retain the frozen `packed_stream` neural
+batch 256 setting. One Kaggle T4x2 run stopped making progress for more than
+3,100 seconds after the checkpoint was already ready; the late 59% weight line
+was a buffered ANSI replay, not evidence that a second model loaded. This
+single runtime incident is not sufficient evidence to change a batch size that
+completed in prior matched runs. Packed retrieved-chunk inference now logs
+before and after forward call 1 and every 25 calls so a stalled CUDA/DataParallel
+forward can be distinguished from model loading without changing the protocol.
+The scorer also disables the Transformers parameter-materialization progress
+bar, whose ANSI redraw buffer previously replayed a stale 59% line when a
+stalled process ended. For forward call 1 and every 25 calls it emits separate
+tokenization start/completion and CUDA forward start/completion records,
+including tensor and logit shapes.
+All blocking model boundaries additionally use a 30-second heartbeat: dense
+checkpoint materialization, reranker tokenizer materialization, reranker CPU
+checkpoint materialization, CPU-to-GPU movement, first/periodic tensor transfer,
+and first/periodic CUDA forward. Local reranker weight filenames and sizes are
+printed before loading. These diagnostics do not copy or hash checkpoint
+weights and therefore do not consume the Kaggle working-disk allowance.
+Each recovery notebook also prints a start/completion banner for every
+evaluation case with its ordinal, semantic label, exact model/checkpoint path,
+handoff availability, and output directory. This makes the warm-start control
+and adaptation epochs 1 through 6 unambiguous even when Papermill duplicates
+individual library log lines.
+
 `notebooks/temp/kaggle_evaluate_bce_pool50_checkpoints.ipynb` provides the
 corresponding pointwise BCE pool-50 recovery evaluation. It reads checkpoints
 at steps 1237, 2478, 3720, 4962, 6203, and 7445, retains retrieved chunk depth

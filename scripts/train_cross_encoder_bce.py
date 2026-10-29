@@ -76,6 +76,56 @@ def _load_pairwise_rows(path: Path) -> list[dict[str, str]]:
     return rows
 
 
+def _nonempty_passages(value: object, *, line_number: int, field: str) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"Line {line_number}: {field} must be a non-empty list")
+    passages = [str(item) for item in value]
+    if any(not item.strip() for item in passages):
+        raise ValueError(f"Line {line_number}: {field} contains blank text")
+    return passages
+
+
+def _load_mil_rows(path: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if set(row) != {"query", "passages", "label"}:
+                raise ValueError(f"Line {line_number}: invalid MIL fields")
+            if not isinstance(row["query"], str) or not row["query"].strip():
+                raise ValueError(f"Line {line_number}: query must be non-empty")
+            if row["label"] not in (0, 1, 0.0, 1.0):
+                raise ValueError(f"Line {line_number}: label must be binary")
+            rows.append({"query": row["query"], "passages": _nonempty_passages(
+                row["passages"], line_number=line_number, field="passages"
+            ), "label": float(row["label"])})
+    if not rows or {row["label"] for row in rows} != {0.0, 1.0}:
+        raise ValueError("MIL data must contain positive and negative article bags")
+    return rows
+
+
+def _load_pairwise_mil_rows(path: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            expected = {"query", "positive_passages", "negative_passages"}
+            if set(row) != expected:
+                raise ValueError(f"Line {line_number}: invalid pairwise MIL fields")
+            rows.append({
+                "query": str(row["query"]),
+                "positive_passages": _nonempty_passages(row["positive_passages"], line_number=line_number, field="positive_passages"),
+                "negative_passages": _nonempty_passages(row["negative_passages"], line_number=line_number, field="negative_passages"),
+            })
+    if not rows:
+        raise ValueError(f"No pairwise MIL rows found in {path}")
+    return rows
+
+
 def _checkpoint_step(path: Path) -> int:
     return int(path.name.rsplit("-", 1)[-1])
 
@@ -102,7 +152,7 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument(
         "--objective",
-        choices=("pointwise_bce", "pairwise_logistic"),
+        choices=("pointwise_bce", "pairwise_logistic", "pointwise_mil_bce", "pairwise_mil_logistic"),
         default="pointwise_bce",
     )
     parser.add_argument("--max-length", type=int, default=1024)
@@ -199,11 +249,13 @@ def main() -> None:
         for loading_rank in range(world_size):
             if rank == loading_rank:
                 stage(f"loading training rows from {args.train_data}")
-                pairs = (
-                    _load_pairs(args.train_data)
-                    if args.objective == "pointwise_bce"
-                    else _load_pairwise_rows(args.train_data)
-                )
+                loaders = {
+                    "pointwise_bce": _load_pairs,
+                    "pairwise_logistic": _load_pairwise_rows,
+                    "pointwise_mil_bce": _load_mil_rows,
+                    "pairwise_mil_logistic": _load_pairwise_mil_rows,
+                }
+                pairs = loaders[args.objective](args.train_data)
                 train_data_sha256 = _sha256(args.train_data)
                 stage(
                     f"training rows ready rows={len(pairs):,} "
@@ -237,6 +289,26 @@ def main() -> None:
             raise RuntimeError("Tokenizer was not materialized on this rank")
 
         def collate(rows: list[dict[str, object]]) -> dict[str, torch.Tensor]:
+            if args.objective == "pointwise_mil_bce":
+                queries, passages, bag_ids = [], [], []
+                for bag_id, row in enumerate(rows):
+                    for passage in row["passages"]:
+                        queries.append(str(row["query"])); passages.append(str(passage)); bag_ids.append(bag_id)
+                encoded = tokenizer(queries, passages, padding=True, truncation="only_second", max_length=args.max_length, return_tensors="pt")
+                encoded["bag_ids"] = torch.tensor(bag_ids, dtype=torch.long)
+                encoded["labels"] = torch.tensor([float(row["label"]) for row in rows], dtype=torch.float32)
+                return encoded
+            if args.objective == "pairwise_mil_logistic":
+                output = {}
+                for prefix, field in (("positive", "positive_passages"), ("negative", "negative_passages")):
+                    queries, passages, bag_ids = [], [], []
+                    for bag_id, row in enumerate(rows):
+                        for passage in row[field]:
+                            queries.append(str(row["query"])); passages.append(str(passage)); bag_ids.append(bag_id)
+                    encoded = tokenizer(queries, passages, padding=True, truncation="only_second", max_length=args.max_length, return_tensors="pt")
+                    output.update({f"{prefix}_{key}": value for key, value in encoded.items()})
+                    output[f"{prefix}_bag_ids"] = torch.tensor(bag_ids, dtype=torch.long)
+                return output
             if args.objective == "pointwise_bce":
                 encoded = tokenizer(
                     [str(row["query"]) for row in rows],
@@ -510,7 +582,15 @@ def main() -> None:
                             labels = batch.pop("labels")
                             logits = train_model(**batch).logits.view(-1)
                             raw_loss = criterion(logits, labels)
+                        elif args.objective == "pointwise_mil_bce":
+                            labels = batch.pop("labels")
+                            bag_ids = batch.pop("bag_ids")
+                            chunk_scores = train_model(**batch).logits.view(-1)
+                            logits = torch.stack([chunk_scores[bag_ids == index].max() for index in range(labels.numel())])
+                            raw_loss = criterion(logits, labels)
                         else:
+                            positive_bag_ids = batch.pop("positive_bag_ids", None)
+                            negative_bag_ids = batch.pop("negative_bag_ids", None)
                             positive_batch = {
                                 key.removeprefix("positive_"): value
                                 for key, value in batch.items()
@@ -523,6 +603,13 @@ def main() -> None:
                             }
                             positive_scores = train_model(**positive_batch).logits.view(-1)
                             negative_scores = train_model(**negative_batch).logits.view(-1)
+                            if args.objective == "pairwise_mil_logistic":
+                                bag_count = max(
+                                    int(positive_bag_ids.max().item()),
+                                    int(negative_bag_ids.max().item()),
+                                ) + 1
+                                positive_scores = torch.stack([positive_scores[positive_bag_ids == index].max() for index in range(bag_count)])
+                                negative_scores = torch.stack([negative_scores[negative_bag_ids == index].max() for index in range(bag_count)])
                             raw_loss = torch.nn.functional.softplus(
                                 negative_scores - positive_scores
                             ).mean()

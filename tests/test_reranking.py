@@ -17,6 +17,7 @@ from drill_ir.reranking import (
     prepare_pairwise_training_data_from_audit,
     select_aligned_positive_pools,
     select_fpt_semi_hard_negatives,
+    select_fpt_chunk_negatives,
     select_best_passages,
 )
 from drill_ir.retrieval import ChunkRetrievalResult
@@ -86,11 +87,11 @@ class CrossEncoderRerankerTest(unittest.TestCase):
         audit_row = {
             "qid": 7,
             "positive": [
-                {"aid": 10, "chunk_id": "10:0", "text": "đúng", "score": 2.0}
+                {"aid": 10, "passages": [{"text": "đúng 1"}, {"text": "đúng 2"}]}
             ],
             "negative": [
-                {"aid": 20, "chunk_id": "20:0", "text": "nhiễu 1", "score": 1.0},
-                {"aid": 30, "chunk_id": "30:0", "text": "nhiễu 2", "score": 0.5},
+                {"aid": 20, "passages": [{"text": "nhiễu 1"}]},
+                {"aid": 30, "passages": [{"text": "nhiễu 2"}]},
             ],
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -108,8 +109,8 @@ class CrossEncoderRerankerTest(unittest.TestCase):
         self.assertEqual(
             rows,
             [
-                {"query": "mức phạt", "positive": "đúng", "negative": "nhiễu 1"},
-                {"query": "mức phạt", "positive": "đúng", "negative": "nhiễu 2"},
+                {"query": "mức phạt", "positive_passages": ["đúng 1", "đúng 2"], "negative_passages": ["nhiễu 1"]},
+                {"query": "mức phạt", "positive_passages": ["đúng 1", "đúng 2"], "negative_passages": ["nhiễu 2"]},
             ],
         )
 
@@ -263,6 +264,32 @@ class CrossEncoderRerankerTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(len(first), 10)
         self.assertTrue(set(first).isdisjoint({1, 2, 3, 4, 5}))
+
+    def test_fpt_chunk_negatives_deduplicate_aids_before_sampling(self) -> None:
+        chunks = []
+        scores = []
+        for aid in range(20):
+            chunks.extend(
+                [
+                    Chunk(f"{aid}:low", aid, "L", 0, "diem", "low", 0, 1, 1),
+                    Chunk(f"{aid}:high", aid, "L", 1, "diem", "high", 0, 1, 1),
+                ]
+            )
+            scores.extend([float(aid), float(aid) + 0.5])
+        selected = select_fpt_chunk_negatives(
+            chunks,
+            scores,
+            top_n=20,
+            skip_top=5,
+            large_pool_threshold=15,
+            large_sample_size=10,
+            small_sample_size=5,
+            rng=random.Random(42),
+        )
+        self.assertEqual(len(selected), 5)
+        self.assertEqual(len({chunk.aid for chunk, _ in selected}), 5)
+        self.assertTrue(all(chunk.chunk_id.endswith(":high") for chunk, _ in selected))
+        self.assertTrue({chunk.aid for chunk, _ in selected}.isdisjoint({15, 16, 17, 18, 19}))
 
     def test_training_mining_selects_best_chunk_per_aid_with_stable_ties(self) -> None:
         chunks = {

@@ -8,8 +8,50 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import time
+from contextlib import contextmanager
 from typing import Any
+
+
+@contextmanager
+def stage_heartbeat(label: str, *, interval_seconds: float = 30.0):
+    """Emit elapsed-time heartbeats while a blocking native/library call runs."""
+    if interval_seconds <= 0:
+        raise ValueError("interval_seconds must be positive")
+    started = time.perf_counter()
+    stopped = threading.Event()
+    print(
+        f"[stage-heartbeat] start stage={label} pid={os.getpid()}",
+        flush=True,
+    )
+
+    def report() -> None:
+        while not stopped.wait(interval_seconds):
+            print(
+                f"[stage-heartbeat] alive stage={label} pid={os.getpid()} "
+                f"elapsed={time.perf_counter() - started:.1f}s",
+                flush=True,
+            )
+
+    reporter = threading.Thread(
+        target=report,
+        name=f"drill-heartbeat-{label}",
+        daemon=True,
+    )
+    reporter.start()
+    status = "failed"
+    try:
+        yield
+        status = "completed"
+    finally:
+        stopped.set()
+        reporter.join(timeout=1.0)
+        print(
+            f"[stage-heartbeat] stop stage={label} pid={os.getpid()} "
+            f"status={status} elapsed={time.perf_counter() - started:.1f}s",
+            flush=True,
+        )
 
 
 def _process_identity(pid: int) -> dict[str, Any]:

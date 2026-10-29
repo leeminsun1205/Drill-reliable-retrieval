@@ -241,6 +241,21 @@ reranking, learned fusion, or final selection.
    only evidence-bearing gold chunks as positives, and compare pointwise with
    pairwise/listwise objectives. Near-positive same-law or same-article chunks
    must be treated explicitly rather than silently mislabeled.
+
+The active 2026-10-30 reranker treatment is FPT-inspired article-labelled
+multiple-instance learning (MIL): training and inference both score the frozen
+Khoản–Điểm chunks and aggregate each article by maximum chunk logit.
+For each non-gold `aid`, mining retains only its maximum-teacher-score chunk,
+takes the top 30 unique articles, drops the five highest-ranked uncertain
+articles, and deterministically samples 10 negatives when more than 15 remain
+or 5 otherwise. Every gold `aid` is a positive bag containing its exposed
+chunks, or deterministic same-chunker fallback chunks when absent; the teacher
+does not select positives. Pointwise BCE and pairwise logistic operate on the
+maximum chunk logit of each article bag. This uses FPT's article-level gold
+supervision without introducing a train/inference unit mismatch. Pool 50/100
+and pointwise BCE/pairwise logistic
+form a controlled 2x2 comparison; every run trains five epochs but model
+selection must use the matched development evaluation for every checkpoint.
 5. **Query-adaptive fusion.** After the fixed-weight baseline, predict a small
    sparse/dense weight policy from deterministic query and component-agreement
    features using query-fold-safe tuning. Do not reopen an unconstrained weight

@@ -23,7 +23,9 @@ def main() -> None:
     parser.add_argument("--retrieved-chunk-depth", type=int, default=100)
     parser.add_argument("--reranked-pool-size", type=int, default=30)
     parser.add_argument("--skip-top-negatives", type=int, default=5)
-    parser.add_argument("--negatives-per-query", type=int, default=10)
+    parser.add_argument("--large-pool-threshold", type=int, default=15)
+    parser.add_argument("--large-sample-size", type=int, default=10)
+    parser.add_argument("--small-sample-size", type=int, default=5)
     parser.add_argument("--max-positive-representations-per-aid", type=int, default=32)
     parser.add_argument(
         "--retrieval-handoff",
@@ -92,7 +94,9 @@ def main() -> None:
         retrieved_chunk_depth=args.retrieved_chunk_depth,
         reranked_pool_size=args.reranked_pool_size,
         skip_top_negatives=args.skip_top_negatives,
-        negatives_per_query=args.negatives_per_query,
+        large_pool_threshold=args.large_pool_threshold,
+        large_sample_size=args.large_sample_size,
+        small_sample_size=args.small_sample_size,
         max_positive_representations_per_aid=args.max_positive_representations_per_aid,
     ))
 

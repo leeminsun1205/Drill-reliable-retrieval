@@ -206,6 +206,47 @@ def select_fpt_semi_hard_negatives(
     return tuple(rng.sample(list(pool), requested))
 
 
+def select_fpt_chunk_negatives(
+    chunks: Sequence[Chunk],
+    scores: Sequence[float],
+    *,
+    top_n: int = 30,
+    skip_top: int = 5,
+    large_pool_threshold: int = 15,
+    large_sample_size: int = 10,
+    small_sample_size: int = 5,
+    rng: random.Random,
+) -> tuple[tuple[Chunk, float], ...]:
+    """Select FPT-style negatives while preserving chunk-aligned inference.
+
+    Multiple chunks from one article collapse to the maximum teacher score,
+    with stable ``chunk_id`` ties, before top-N, skip, and random sampling.
+    """
+    if len(chunks) != len(scores):
+        raise ValueError("Chunk/score length mismatch during negative selection")
+    if top_n <= 0 or not 0 <= skip_top < top_n:
+        raise ValueError("Require top_n > skip_top >= 0")
+    if min(large_pool_threshold, large_sample_size, small_sample_size) <= 0:
+        raise ValueError("FPT-inspired negative sampling sizes must be positive")
+    best_by_aid: dict[int, tuple[Chunk, float]] = {}
+    for chunk, raw_score in zip(chunks, scores):
+        candidate = (chunk, float(raw_score))
+        current = best_by_aid.get(chunk.aid)
+        if current is None or (-candidate[1], chunk.chunk_id) < (
+            -current[1], current[0].chunk_id
+        ):
+            best_by_aid[chunk.aid] = candidate
+    ranked = sorted(
+        best_by_aid.values(),
+        key=lambda item: (-item[1], item[0].aid, item[0].chunk_id),
+    )[:top_n]
+    pool = ranked[skip_top:]
+    requested = large_sample_size if len(pool) > large_pool_threshold else small_sample_size
+    if len(pool) < requested:
+        return ()
+    return tuple(rng.sample(pool, requested))
+
+
 def _training_split(
     queries: Sequence[Query], *, dev_fraction: float, seed: int
 ) -> tuple[list[Query], list[Query]]:
@@ -744,7 +785,9 @@ def prepare_direct_chunk_bce_training_data(
     retrieved_chunk_depth: int = 100,
     reranked_pool_size: int = 30,
     skip_top_negatives: int = 5,
-    negatives_per_query: int = 10,
+    large_pool_threshold: int = 15,
+    large_sample_size: int = 10,
+    small_sample_size: int = 5,
     max_positive_representations_per_aid: int = 32,
 ) -> Path:
     """Mine BCE pairs aligned with direct retrieved-chunk inference.
@@ -768,8 +811,8 @@ def prepare_direct_chunk_bce_training_data(
         raise ValueError("candidate_pool_size must be >= reranked_pool_size")
     if not 0 <= skip_top_negatives < reranked_pool_size:
         raise ValueError("Require reranked_pool_size > skip_top_negatives >= 0")
-    if negatives_per_query <= 0:
-        raise ValueError("negatives_per_query must be positive")
+    if min(large_pool_threshold, large_sample_size, small_sample_size) <= 0:
+        raise ValueError("FPT-inspired negative sampling sizes must be positive")
     started = time.perf_counter()
 
     def stage(message: str) -> None:
@@ -860,10 +903,7 @@ def prepare_direct_chunk_bce_training_data(
             negative_chunks = tuple(
                 chunk for chunk in chunks_by_qid[query.qid] if chunk.aid not in set(query_gold_aids)
             )
-            positive_flat = [
-                chunk for aid in query_gold_aids for chunk in positive_chunks_by_aid[aid]
-            ]
-            pairs = [(query.question, chunk.text) for chunk in positive_flat + list(negative_chunks)]
+            pairs = [(query.question, chunk.text) for chunk in negative_chunks]
             heartbeat = (
                 query_index == 1
                 or query_index % 25 == 0
@@ -882,26 +922,24 @@ def prepare_direct_chunk_bce_training_data(
                     f"Teacher finished query {query_index:,}/{len(train_queries):,} "
                     f"qid={query.qid} total_scored={total_scored_pairs:,}"
                 )
-            positive_scores = scores[: len(positive_flat)]
-            negative_scores = scores[len(positive_flat) :]
-            positives = select_best_passages(
-                query_gold_aids,
-                positive_chunks_by_aid,
-                positive_scores,
+            negative_scores = scores
+            selected_negatives = select_fpt_chunk_negatives(
+                negative_chunks,
+                negative_scores,
+                top_n=reranked_pool_size,
+                skip_top=skip_top_negatives,
+                large_pool_threshold=large_pool_threshold,
+                large_sample_size=large_sample_size,
+                small_sample_size=small_sample_size,
+                rng=rng,
             )
-            ranked_negatives = sorted(
-                zip(negative_chunks, negative_scores),
-                key=lambda item: (-float(item[1]), item[0].chunk_id),
-            )[:reranked_pool_size]
-            semi_hard_pool = ranked_negatives[skip_top_negatives:]
-            if len(semi_hard_pool) < negatives_per_query:
+            if not selected_negatives:
                 skipped.append(query.qid)
                 continue
-            selected_negatives = rng.sample(semi_hard_pool, negatives_per_query)
             for aid in query_gold_aids:
                 train_stream.write(json.dumps({
                     "query": query.question,
-                    "passage": positives[aid].text,
+                    "passages": [chunk.text for chunk in positive_chunks_by_aid[aid]],
                     "label": 1.0,
                 }, ensure_ascii=False) + "\n")
                 positive_pairs += 1
@@ -909,21 +947,32 @@ def prepare_direct_chunk_bce_training_data(
                     exposed_positive_pairs += 1
                 else:
                     fallback_positive_pairs += 1
+            negative_chunks_by_aid: dict[int, list[Chunk]] = {}
+            for chunk in negative_chunks:
+                negative_chunks_by_aid.setdefault(chunk.aid, []).append(chunk)
             for chunk, score in selected_negatives:
                 train_stream.write(json.dumps({
                     "query": query.question,
-                    "passage": chunk.text,
+                    "passages": [item.text for item in negative_chunks_by_aid[chunk.aid]],
                     "label": 0.0,
                 }, ensure_ascii=False) + "\n")
                 negative_pairs += 1
             audit_stream.write(json.dumps({
                 "qid": query.qid,
                 "positive": [
-                    {**asdict(positives[aid]), "source": positive_sources[aid]}
+                    {
+                        "aid": aid,
+                        "passages": [asdict(chunk) for chunk in positive_chunks_by_aid[aid]],
+                        "source": positive_sources[aid],
+                    }
                     for aid in query_gold_aids
                 ],
                 "negative": [
-                    {"aid": chunk.aid, "chunk_id": chunk.chunk_id, "text": chunk.text, "score": float(score)}
+                    {
+                        "aid": chunk.aid,
+                        "passages": [asdict(item) for item in negative_chunks_by_aid[chunk.aid]],
+                        "teacher_max_score": float(score),
+                    }
                     for chunk, score in selected_negatives
                 ],
             }, ensure_ascii=False) + "\n")
@@ -931,7 +980,7 @@ def prepare_direct_chunk_bce_training_data(
     train_tmp.replace(destination)
     audit_tmp.replace(audit_path)
     metadata = {
-        "selection": "aligned_frozen_candidate_positive_bce_semihard_v2",
+        "selection": "article_labelled_chunk_mil_fpt_semihard_v1",
         "seed": int(config["seed"]),
         "train_queries": len(train_queries),
         "train_qids": [query.qid for query in train_queries],
@@ -947,11 +996,14 @@ def prepare_direct_chunk_bce_training_data(
         "retrieved_chunk_depth": retrieved_chunk_depth,
         "reranked_pool_size": reranked_pool_size,
         "skip_top_negatives": skip_top_negatives,
-        "negatives_per_query": negatives_per_query,
-        "positive_selection": (
-            "teacher_max_exact_frozen_gold_chunks_else_same_chunker_article_fallback"
-        ),
-        "negative_source": "exact_fused_retrieved_chunks_used_at_inference",
+        "negative_deduplication": "maximum_teacher_score_chunk_per_aid",
+        "large_pool_threshold": large_pool_threshold,
+        "large_sample_size": large_sample_size,
+        "small_sample_size": small_sample_size,
+        "positive_selection": "gold_aid_bag_exact_frozen_chunks_else_same_chunker_fallback",
+        "training_unit": "article_bag_of_chunks",
+        "training_aggregation": "max_chunk_logit",
+        "negative_source": "exact_fused_chunks_deduplicated_to_inference_article_unit",
         "retrieval_handoff": str(retrieval_handoff) if retrieval_handoff else None,
         "retrieval_teacher_process_isolation": retrieval_handoff is not None,
         "total_scored_pairs": total_scored_pairs,
@@ -971,7 +1023,7 @@ def prepare_pairwise_training_data_from_audit(
     query_path: str | Path,
     destination: str | Path,
 ) -> Path:
-    """Expand audited direct-chunk positives/negatives into ranking pairs.
+    """Expand audited article bags into pairwise MIL rows.
 
     Each selected gold passage is paired with every audited semi-hard negative
     for the same train query. The source audit remains the provenance record;
@@ -995,8 +1047,14 @@ def prepare_pairwise_training_data_from_audit(
             query = queries.get(qid)
             if query is None:
                 raise ValueError(f"Audit line {line_number}: unknown qid={qid}")
-            positives = [str(item["text"]) for item in record["positive"]]
-            negatives = [str(item["text"]) for item in record["negative"]]
+            positives = [
+                [str(passage["text"]) for passage in item["passages"]]
+                for item in record["positive"]
+            ]
+            negatives = [
+                [str(passage["text"]) for passage in item["passages"]]
+                for item in record["negative"]
+            ]
             if not positives or not negatives:
                 raise ValueError(
                     f"Audit line {line_number}: positives and negatives are required"
@@ -1007,8 +1065,8 @@ def prepare_pairwise_training_data_from_audit(
                         json.dumps(
                             {
                                 "query": query.question,
-                                "positive": positive,
-                                "negative": negative,
+                                "positive_passages": positive,
+                                "negative_passages": negative,
                             },
                             ensure_ascii=False,
                         )
@@ -1020,7 +1078,7 @@ def prepare_pairwise_training_data_from_audit(
         raise ValueError(f"No pairwise rows were derived from {audit_path}")
     temporary.replace(destination)
     metadata = {
-        "selection": "audited_direct_chunk_positive_x_semihard_negative_v1",
+        "selection": "audited_article_chunk_bag_positive_x_semihard_negative_mil_v1",
         "source_audit": str(audit_path),
         "queries": len(qids),
         "unique_queries": len(set(qids)),
