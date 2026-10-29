@@ -1314,6 +1314,28 @@ warm start, and training settings while changing only the candidate budget and
 artifact identity. They are cost/ceiling ablations, not replacements for the
 pool-50 main treatments.
 
+For staged execution, run
+`notebooks/kaggle_prepare_reranker_mining_pool50.ipynb` and
+`notebooks/kaggle_prepare_reranker_mining_pool100.ipynb` before either training
+objective. They stop after deterministic teacher mining and create,
+respectively,
+`/kaggle/working/vietnamese_reranker_mining_pool50_refon.tar.gz` and
+`/kaggle/working/vietnamese_reranker_mining_pool100_refon.tar.gz`. Each archive
+contains the pointwise rows, shared audit rows, metadata, resolved/frozen
+configuration, warm-start digest, wall times, and a manifest with per-file
+SHA-256 values. It contains no model weights, embedding caches, or optimizer
+state. BCE consumes the pointwise rows directly; pairwise deterministically
+expands the same audit rows, so one archive per pool preserves an objective-only
+comparison.
+
+The four training notebooks search `/kaggle/input` for the matching archive
+name before mining. When exactly one is attached, they extract it into their
+own working directory, verify candidate budget, treatment ID, graph digest,
+warm-start weight digest, and SHA-256 for the training/audit/metadata files,
+then skip retrieval and teacher mining. With no attached archive they retain
+the self-contained fallback and mine locally; multiple matching archives or
+any provenance mismatch fail closed.
+
 Direct-chunk mining performs retrieval and teacher scoring in one process.
 After fused chunks have been materialized as CPU records, the reusable miner
 must call `release_stage_resources()` on the retriever before loading the
@@ -1323,3 +1345,13 @@ can OOM even while `cuda:1` remains mostly free. The expected log sequence is
 `direct_chunk_mining:retrieval:before_close`, then `after_close`, followed by
 `Released retrieval resources before loading the reranker teacher` and only
 then the reranker checkpoint load.
+
+On the first post-handoff Kaggle rerun, `cuda:0` still retained about 14.21 GiB
+while `cuda:1` had about 11.85 GiB free; the teacher again selected `cuda:0`
+and failed its first 50-pair forward allocation. This shows that closing Python
+retrieval owners does not guarantee reclamation of all non-PyTorch CUDA/FAISS
+state inside the mining process. The fine-tuning notebooks therefore keep
+`runtime.devices=2` for retrieval but pass the mining-only CLI option
+`--reranker-device cuda:1`. A successful mining artifact must record
+`resolved_devices: [cuda:1]`. This phase-specific pin does not alter candidate
+generation, mining labels, optimization, or later matched evaluation.

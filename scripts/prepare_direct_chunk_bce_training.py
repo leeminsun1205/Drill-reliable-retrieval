@@ -23,11 +23,17 @@ def main() -> None:
     parser.add_argument("--skip-top-negatives", type=int, default=5)
     parser.add_argument("--negatives-per-query", type=int, default=10)
     parser.add_argument("--max-positive-representations-per-aid", type=int, default=32)
+    parser.add_argument(
+        "--reranker-device",
+        help="Mining-only cross-encoder device, for example cuda:1",
+    )
     parser.add_argument("--set", action="append", default=[], metavar="PATH=VALUE")
     args = parser.parse_args()
     config = apply_config_overrides(load_config(args.config), args.set)
     config["data"]["corpus_path"] = str(args.corpus_path)
     config["data"]["train_path"] = str(args.train_path)
+    if args.reranker_device:
+        config["reranking"]["device"] = args.reranker_device
     print(prepare_direct_chunk_bce_training_data(
         config,
         args.output,
