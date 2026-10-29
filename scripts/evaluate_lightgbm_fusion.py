@@ -30,6 +30,13 @@ def main() -> None:
         help="Reranker-row depths to compare before LightGBM; use 'all' for no cutoff",
     )
     parser.add_argument(
+        "--score-gap-maximum-cutoffs",
+        nargs="+",
+        type=int,
+        default=(3, 4, 5, 6, 7, 8, 9, 10),
+        help="Maximum output-prefix sizes considered by score-gap tuning",
+    )
+    parser.add_argument(
         "--adaptive-selection",
         choices=("disabled", "score_gap"),
         default="disabled",
@@ -50,6 +57,7 @@ def main() -> None:
         folds=args.folds,
         seed=args.seed,
         include_score_gap=args.adaptive_selection == "score_gap",
+        score_gap_maximum_cutoffs=tuple(args.score_gap_maximum_cutoffs),
         progress_label="all",
     )
     depth_specs: list[tuple[str, int | None]] = []
@@ -76,6 +84,7 @@ def main() -> None:
                 folds=args.folds,
                 seed=args.seed,
                 include_score_gap=args.adaptive_selection == "score_gap",
+                score_gap_maximum_cutoffs=tuple(args.score_gap_maximum_cutoffs),
                 progress_label=f"depth_{name}",
             )
         ablation[name] = {
