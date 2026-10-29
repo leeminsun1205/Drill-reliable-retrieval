@@ -1334,6 +1334,14 @@ pinned Vietnamese warm start. The warm-start evaluation creates the frozen
 retrieval handoff and epochs 1 through 6 reuse it. The notebook neither mines
 training pairs nor performs optimizer updates.
 
+The matching pairwise recovery notebook is
+`notebooks/temp/kaggle_evaluate_pairwise_pool100_checkpoints.ipynb`. It reads
+the pool-100 pairwise checkpoints at steps 1460, 2925, 4389, 5854, 7319, and
+8783. To prevent protocol drift, it executes the same audited evaluation cells
+as the BCE recovery notebook after fail-closed replacement of only the
+checkpoint root, step mapping, run identity, working directory, and archive
+name.
+
 For staged execution, run
 `notebooks/kaggle_prepare_reranker_mining_pool50.ipynb` and
 `notebooks/kaggle_prepare_reranker_mining_pool100.ipynb` before either training
