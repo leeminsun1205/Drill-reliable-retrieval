@@ -178,7 +178,7 @@ def main() -> None:
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
     if distributed:
-        dist.init_process_group(backend="nccl")
+        dist.init_process_group(backend="nccl", device_id=device)
 
     def stage(message: str) -> None:
         print(
@@ -533,8 +533,20 @@ def main() -> None:
                     continue
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                scale_before_step = scaler.get_scale()
                 scaler.step(optimizer)
                 scaler.update()
+                optimizer_step_skipped = scaler.get_scale() < scale_before_step
+                if optimizer_step_skipped:
+                    optimizer.zero_grad(set_to_none=True)
+                    if rank == 0:
+                        print(
+                            f"epoch={epoch + 1} optimizer_step_skipped "
+                            f"batch={batch_index + 1}/{len(loader)} "
+                            f"amp_scale={scaler.get_scale():.1f}",
+                            flush=True,
+                        )
+                    continue
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1

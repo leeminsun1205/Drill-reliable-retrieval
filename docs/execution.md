@@ -1413,3 +1413,13 @@ the real `torchrun` duplicated checkpoint loading and did not guarantee that the
 fresh full-training process would start. The smoke remains an explicit debug
 switch; skipping it changes no training data, optimizer, schedule, seed, or
 checkpoint selection.
+
+The notebook sets `OMP_NUM_THREADS=1` explicitly before `torchrun`, matching
+PyTorch's safe default without its repeated launcher warning. NCCL process-group
+initialization receives the rank's explicit CUDA `device_id`, so barriers never
+guess rank-to-device placement. During mixed-precision training,
+`GradScaler.step()` may intentionally skip an optimizer update after detecting
+non-finite gradients. The scheduler and `global_step` now advance only when the
+optimizer update actually occurred; skipped updates are logged with the current
+AMP scale. Advancing the scheduler after a skipped update is a protocol error,
+not a warning to suppress.
