@@ -1342,6 +1342,19 @@ as the BCE recovery notebook after fail-closed replacement of only the
 checkpoint root, step mapping, run identity, working directory, and archive
 name.
 
+`notebooks/temp/kaggle_evaluate_bce_pool50_checkpoints.ipynb` provides the
+corresponding pointwise BCE pool-50 recovery evaluation. It reads checkpoints
+at steps 1237, 2478, 3720, 4962, 6203, and 7445, retains retrieved chunk depth
+100, and changes the reranker candidate budget to 50. All other frozen
+retrieval, graph, weighting, scoring, and output-policy settings remain matched
+to the pool-100 evaluation.
+
+`notebooks/temp/kaggle_evaluate_pairwise_pool50_checkpoints.ipynb` completes
+the recovery matrix for the pairwise pool-50 treatment. It reads checkpoints
+at steps 1459, 2924, 4389, 5854, 7318, and 8783, uses candidate pool 50 with
+retrieved chunk depth 100, and otherwise shares the same warm-start control,
+frozen reference-on retrieval handoff, metrics, and output policies.
+
 For staged execution, run
 `notebooks/kaggle_prepare_reranker_mining_pool50.ipynb` and
 `notebooks/kaggle_prepare_reranker_mining_pool100.ipynb` before either training
