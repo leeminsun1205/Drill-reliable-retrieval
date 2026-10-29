@@ -274,6 +274,11 @@ def build_retriever(
     encoder = SentenceTransformerEncoder(
         SentenceTransformerEncoderConfig(
             model_name=str(encoder_config["model_name"]),
+            cache_model_name=(
+                str(encoder_config["cache_model_name"])
+                if encoder_config.get("cache_model_name") is not None
+                else None
+            ),
             revision=(
                 str(encoder_config["revision"])
                 if encoder_config.get("revision") is not None

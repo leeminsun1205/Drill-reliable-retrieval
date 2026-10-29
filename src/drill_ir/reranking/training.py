@@ -116,6 +116,45 @@ def prefilter_representations(
     return tuple(sorted(chunks, key=key)[:maximum])
 
 
+def select_aligned_positive_pools(
+    query: str,
+    relevant_aids: Sequence[int],
+    candidate_chunks: Sequence[Any],
+    fallback_chunks_by_aid: dict[int, Sequence[Any]],
+    *,
+    maximum_per_aid: int,
+) -> tuple[dict[int, tuple[Any, ...]], dict[int, str]]:
+    """Prefer gold chunks exposed to the inference reranker.
+
+    Article-level labels do not identify a gold passage. When the frozen first
+    stage exposes one or more chunks from a relevant article, restrict teacher
+    selection to those exact chunks so training and inference share the same
+    evidence. Only relevant articles absent from the candidate pool fall back
+    to deterministic representations from the full article.
+    """
+    relevant = tuple(dict.fromkeys(int(aid) for aid in relevant_aids))
+    relevant_set = set(relevant)
+    exposed: dict[int, list[Any]] = {aid: [] for aid in relevant}
+    for chunk in candidate_chunks:
+        if chunk.aid in relevant_set:
+            exposed[chunk.aid].append(chunk)
+    pools: dict[int, tuple[Any, ...]] = {}
+    sources: dict[int, str] = {}
+    for aid in relevant:
+        candidates = exposed[aid]
+        source = "frozen_candidate" if candidates else "gold_article_fallback"
+        representations = candidates or list(fallback_chunks_by_aid[aid])
+        if not representations:
+            raise ValueError(f"No positive representation available for aid={aid}")
+        pools[aid] = prefilter_representations(
+            query,
+            representations,
+            maximum=maximum_per_aid,
+        )
+        sources[aid] = source
+    return pools, sources
+
+
 def prepare_reranker_training_data(
     config: dict[str, Any],
     destination: str | Path,
@@ -569,11 +608,13 @@ def prepare_direct_chunk_bce_training_data(
     """Mine BCE pairs aligned with direct retrieved-chunk inference.
 
     Negatives are the exact fused chunks exposed to the inference reranker.
-    Because supervision is article-level, the zero-shot teacher selects one
-    same-chunker representation inside each gold article as a weakly supervised
-    positive. The most suspicious five non-gold reranker hits are excluded
-    before deterministic sampling, following the false-negative safeguard from
-    FPT.AI while retaining the project's 448/64 chunk unit.
+    Because supervision is article-level, the teacher selects one weakly
+    supervised passage per gold article. It first scores the exact gold chunks
+    exposed to the inference reranker; only a gold article absent from the
+    frozen pool falls back to its full same-chunker representations. The most
+    suspicious five non-gold reranker hits are excluded before deterministic
+    sampling, following the false-negative safeguard from FPT.AI while
+    retaining the project's 448/64 chunk unit.
     """
     if candidate_pool_size is None:
         candidate_pool_size = retrieved_chunk_depth
@@ -634,6 +675,7 @@ def prepare_direct_chunk_bce_training_data(
     train_tmp = destination.with_suffix(destination.suffix + ".tmp")
     audit_tmp = audit_path.with_suffix(audit_path.suffix + ".tmp")
     written_queries = positive_pairs = negative_pairs = total_scored_pairs = 0
+    exposed_positive_pairs = fallback_positive_pairs = 0
     skipped: list[int] = []
     try:
         from tqdm.auto import tqdm
@@ -645,14 +687,16 @@ def prepare_direct_chunk_bce_training_data(
     ) as audit_stream:
         for query in query_iterator:
             query_gold_aids = tuple(dict.fromkeys(query.relevant_aids))
-            positive_chunks_by_aid = {
-                aid: prefilter_representations(
-                    query.question,
-                    reranker.representations_for_aid(aid),
-                    maximum=max_positive_representations_per_aid,
-                )
-                for aid in query_gold_aids
-            }
+            positive_chunks_by_aid, positive_sources = select_aligned_positive_pools(
+                query.question,
+                query_gold_aids,
+                chunks_by_qid[query.qid],
+                {
+                    aid: reranker.representations_for_aid(aid)
+                    for aid in query_gold_aids
+                },
+                maximum_per_aid=max_positive_representations_per_aid,
+            )
             negative_chunks = tuple(
                 chunk for chunk in chunks_by_qid[query.qid] if chunk.aid not in set(query_gold_aids)
             )
@@ -685,6 +729,10 @@ def prepare_direct_chunk_bce_training_data(
                     "label": 1.0,
                 }, ensure_ascii=False) + "\n")
                 positive_pairs += 1
+                if positive_sources[aid] == "frozen_candidate":
+                    exposed_positive_pairs += 1
+                else:
+                    fallback_positive_pairs += 1
             for chunk, score in selected_negatives:
                 train_stream.write(json.dumps({
                     "query": query.question,
@@ -694,7 +742,10 @@ def prepare_direct_chunk_bce_training_data(
                 negative_pairs += 1
             audit_stream.write(json.dumps({
                 "qid": query.qid,
-                "positive": [asdict(positives[aid]) for aid in query_gold_aids],
+                "positive": [
+                    {**asdict(positives[aid]), "source": positive_sources[aid]}
+                    for aid in query_gold_aids
+                ],
                 "negative": [
                     {"aid": chunk.aid, "chunk_id": chunk.chunk_id, "text": chunk.text, "score": float(score)}
                     for chunk, score in selected_negatives
@@ -704,7 +755,7 @@ def prepare_direct_chunk_bce_training_data(
     train_tmp.replace(destination)
     audit_tmp.replace(audit_path)
     metadata = {
-        "selection": "direct_retrieved_chunks_bce_semi_hard_v1",
+        "selection": "aligned_frozen_candidate_positive_bce_semihard_v2",
         "seed": int(config["seed"]),
         "train_queries": len(train_queries),
         "train_qids": [query.qid for query in train_queries],
@@ -713,13 +764,17 @@ def prepare_direct_chunk_bce_training_data(
         "written_queries": written_queries,
         "skipped_qids": skipped,
         "positive_pairs": positive_pairs,
+        "frozen_candidate_positive_pairs": exposed_positive_pairs,
+        "gold_article_fallback_positive_pairs": fallback_positive_pairs,
         "negative_pairs": negative_pairs,
         "candidate_pool_size": candidate_pool_size,
         "retrieved_chunk_depth": retrieved_chunk_depth,
         "reranked_pool_size": reranked_pool_size,
         "skip_top_negatives": skip_top_negatives,
         "negatives_per_query": negatives_per_query,
-        "positive_selection": "zero_shot_max_same_448_64_chunker",
+        "positive_selection": (
+            "teacher_max_exact_frozen_gold_chunks_else_same_chunker_article_fallback"
+        ),
         "negative_source": "exact_fused_retrieved_chunks_used_at_inference",
         "total_scored_pairs": total_scored_pairs,
         "runtime_seconds": time.perf_counter() - started,

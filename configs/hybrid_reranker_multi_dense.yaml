@@ -157,7 +157,9 @@ reranking:
   fp16: true
 
 evaluation:
-  output_k_values: [1, 2, 3, 4, 5]
+  # Deep cutoffs are diagnostics from the same saved ranking; they do not
+  # change the final output policy or trigger additional reranker inference.
+  output_k_values: [1, 2, 3, 4, 5, 10, 20, 30, 50]
   threshold_sweep:
     enabled: true
     fallback_k_values: [1, 2]

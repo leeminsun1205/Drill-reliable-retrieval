@@ -403,7 +403,7 @@ remain required controls.
 
 ### Multi-dense peer notebook
 
-`notebooks/kaggle_multi_dense_weight_selection.ipynb` accepts a list of peer
+`notebooks/archive/kaggle_multi_dense_weight_selection.ipynb` accepts a list of peer
 dense components without a privileged anchor. The active two-model run is
 `mainguyen9/vietlegal-harrier-0.6b` plus
 `intfloat/multilingual-e5-large`. Each entry carries its own model identifier,
@@ -481,6 +481,18 @@ extraction, working-disk duplication, and accidentally attaching multiple
 versions of the same slug. Do not rebuild dense embeddings merely because the
 reranker batch size changed: reranker batching is absent from the dense cache
 identity.
+
+Current Kaggle reranker controls and warm-start notebooks load the dense query
+encoders from the attached local snapshots
+`/kaggle/input/models/lmnhnht125/vietlegal-harrier-0-6b/pytorch/default/1`
+and
+`/kaggle/input/models/lmnhnht125/multilingual-e5-large/pytorch/default/1`.
+Their resolved encoder configs retain `cache_model_name` as the original Hub
+identifiers `mainguyen9/vietlegal-harrier-0.6b` and
+`intfloat/multilingual-e5-large`. The local path controls weight loading while
+the stable identifier controls embedding-cache validation, avoiding both a
+network download and an unnecessary corpus-cache rebuild. A missing local
+directory fails preflight; the notebooks do not silently fall back online.
 
 Dense `embeddings.npy` files are loaded read-only with NumPy memory mapping.
 This preserves the exact float32 matrix while avoiding an eager anonymous-RAM
@@ -571,7 +583,7 @@ article-rechunk configs, which retain their separately safe batches.
 count, and scorer-call count.
 
 For the smallest useful batch-size decision, run
-`notebooks/kaggle_reranker_batch_benchmark.ipynb`. It loads the selected
+`notebooks/archive/kaggle_reranker_batch_benchmark.ipynb`. It loads the selected
 checkpoint once, builds ten deterministic question-length-stratified query
 groups with 50 real legal Khoản/Điểm candidates each, warms up batch sizes 8,
 64, and 128, and rotates
@@ -1060,7 +1072,7 @@ by exact contribution to the macro Recall@50 deficit.
 `query_diagnostics.jsonl` retains gold ranks and attribution, and `summary.json`
 contains compact aggregate results. The multi-dense notebook runs this audit
 automatically and packages the outputs and required development rankings.
-Use `notebooks/kaggle_query_recall50_analysis.ipynb` to inspect those artifacts
+Use `notebooks/archive/kaggle_query_recall50_analysis.ipynb` to inspect those artifacts
 separately. It accepts one compatible `multi_dense_results.tar.gz`, performs no
 model inference, displays only focused tables, and produces the lightweight
 `query_recall50_diagnostics.tar.gz` download.
@@ -1092,7 +1104,7 @@ resolved config and retriever metadata record the selected policy. This test
 maximizes distinct-article coverage within the existing chunk-scored pool; it
 is not the later treatment that guarantees the article-level fused top 50.
 
-The tracked `notebooks/kaggle_multi_dense_weight_selection.ipynb` has returned
+The archived `notebooks/archive/kaggle_multi_dense_weight_selection.ipynb` has returned
 to the measured `top_chunks` control after the negative `best_per_aid`
 ablation. It uses packed-stream reranking with batch size 256 and writes under
 `/kaggle/working/multi_dense_wrrf_reference`, packaging
@@ -1194,7 +1206,7 @@ scope, parameters, and every accepted expansion.
 
 ### Harrier + BGE-M3 multi-dense notebook
 
-Run `notebooks/kaggle_multi_dense_harrier_bge.ipynb` on Kaggle T4 x2 for the
+Run `notebooks/archive/kaggle_multi_dense_harrier_bge.ipynb` on Kaggle T4 x2 for the
 no-reference dense-peer control. Attach the same corpus, query, reranker, BM25,
 Harrier, and chunk-cache inputs as the main multi-dense notebook. Attach a
 verified `bge_m3` retrieval cache when available; otherwise the notebook builds
@@ -1212,10 +1224,10 @@ multilingual-E5 run is a cross-model treatment comparison, not a parity check.
 The two follow-up launchers use the same execution contract and separate output
 roots:
 
-- `notebooks/kaggle_multi_dense_harrier_vietlegal_e5.ipynb` writes
+- `notebooks/archive/kaggle_multi_dense_harrier_vietlegal_e5.ipynb` writes
   `/kaggle/working/multi_dense_harrier_vietlegal_e5_results.tar.gz` and requires
   the verified `vietlegal_e5` cache (or builds only that missing cache).
-- `notebooks/kaggle_multi_dense_harrier_e5_retuned.ipynb` writes
+- `notebooks/archive/kaggle_multi_dense_harrier_e5_retuned.ipynb` writes
   `/kaggle/working/multi_dense_harrier_e5_retuned_results.tar.gz` and reuses the
   verified `multilingual_e5_large` cache.
 
@@ -1226,7 +1238,7 @@ the same session as another GPU experiment.
 
 ### Frozen first-stage 2-by-2 gate
 
-Use `notebooks/kaggle_main_frozen_first_stage.ipynb` for the final candidate
+Use `notebooks/archive/kaggle_main_frozen_first_stage.ipynb` for the final candidate
 distribution gate. At the top of its configuration cell, change only:
 
 ```python

@@ -645,6 +645,17 @@ flag (the default `disabled`) exactly preserves the original top-2 and global-
 threshold handoff. Keep the flag explicit so the older policies remain
 reproducible controls.
 
+Post-freeze diagnostics also report fixed reranker and LightGBM cutoffs at
+1/2/3/4/5/10/20/30/50. These are views of the same saved rankings and do not
+change the primary final policy. `scripts/evaluate_lightgbm_fusion.py` compares
+LightGBM input depths 10, 20, 30, and all reranked article rows; each depth is
+fit and evaluated independently with the same query-grouped folds. Score-gap
+tuning now permits `maximum_k` from 3 through 10 and reports a prefix-at-10
+oracle. Treat the depth matrix and wider score-gap search as post-freeze
+selector ablations: select with nested OOF, preserve the previous all-row,
+maximum-5 score-gap result as the historical control, and do not use public or
+private scores to choose among them.
+
 Report three score-gap views separately: pooled OOF tuning supplies the frozen
 deployment parameters; nested OOF evaluation estimates transfer by generating
 inner-OOF scores and tuning only within each outer-training fold; and the
@@ -1954,7 +1965,7 @@ separate stage because 50 chunks can represent fewer than 50 unique articles.
 
 ### Planned Harrier + BGE-M3 multi-dense control
 
-`notebooks/kaggle_multi_dense_harrier_bge.ipynb` is the controlled dense-peer
+`notebooks/archive/kaggle_multi_dense_harrier_bge.ipynb` is the controlled dense-peer
 replacement experiment for the current multi-dense pipeline. It replaces
 multilingual-E5 with `BAAI/bge-m3`, while retaining BM25S with VnCoreNLP,
 VietLegal-Harrier, the persisted seed-42 split, `top_chunks`, the epoch-3

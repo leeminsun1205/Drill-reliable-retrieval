@@ -3,11 +3,30 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from drill_ir.analysis import build_ltr_examples
+import numpy as np
+
+from drill_ir.analysis import build_ltr_examples, limit_ltr_examples
 from drill_ir.data import Query
 
 
 class LtrFeatureTest(unittest.TestCase):
+    def test_limits_rows_by_saved_reranker_rank(self) -> None:
+        examples = {
+            "feature_names": ("score",),
+            "features": np.asarray([[3.0], [2.0], [1.0]]),
+            "labels": np.asarray([1, 0, 1]),
+            "qids": np.asarray([1, 1, 2]),
+            "aids": np.asarray([10, 20, 30]),
+            "original_ranks": np.asarray([1, 2, 1]),
+        }
+        limited = limit_ltr_examples(examples, 1)
+        self.assertEqual(limited["aids"].tolist(), [10, 30])
+        self.assertEqual(limited["labels"].tolist(), [1, 1])
+        self.assertEqual(limited["feature_names"], ("score",))
+        self.assertIs(limit_ltr_examples(examples, None), examples)
+        with self.assertRaises(ValueError):
+            limit_ltr_examples(examples, 0)
+
     def test_builds_aligned_features_from_saved_run_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

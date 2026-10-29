@@ -46,6 +46,9 @@ class TextEncoder(Protocol):
 @dataclass(frozen=True, slots=True)
 class SentenceTransformerEncoderConfig:
     model_name: str
+    # Optional stable hub identifier used only for cache compatibility when
+    # ``model_name`` is an equivalent local Kaggle snapshot path.
+    cache_model_name: str | None = None
     revision: str | None = None
     batch_size: int = 32
     query_prefix: str = ""
@@ -105,7 +108,7 @@ class SentenceTransformerEncoder:
     def cache_key(self) -> str:
         payload = {
             "backend": "sentence_transformers",
-            "model_name": self.config.model_name,
+            "model_name": self.config.cache_model_name or self.config.model_name,
             "revision": self.config.revision,
             "document_prefix": self.config.document_prefix,
             "max_seq_length": self.config.max_seq_length,

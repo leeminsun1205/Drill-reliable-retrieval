@@ -667,25 +667,42 @@ freeze the winning candidate distribution, mine its hard negatives, and train
 the next reranker. Do not run further dense-model, BM25, WRRF, HyDE, generated-
 title, external-crawl, or large-LLM experiments before that reranker comparison.
 
-The post-freeze reranker comparison has two predeclared treatments. Direction A
-warm-starts from the existing epoch-3 model weights and retains the aligned
-direct-chunk pointwise-BCE recipe: one teacher-selected positive passage per
-gold aid, a top-30 non-gold teacher pool, the five most suspicious hits
-excluded, and ten deterministically sampled semi-hard negatives. Direction B
-uses the same audited passages but forms every selected positive-negative pair
-and optimizes pairwise logistic loss, targeting the measured failure to promote
-available gold candidates into the first few ranks. Both treatments must mine
-from the selected Harrier + multilingual-E5-large candidate distribution with
-its final pool and graph setting, exclude the persisted 438 development qids,
-and compare fixed top-1/2/3 on identical candidates before LightGBM is used for
-downstream diagnosis.
+The post-freeze reranker comparison has two predeclared treatments. Following
+the checkpoint-only gate, both directions warm-start from the attached
+`AITeamVN/Vietnamese_Reranker` weights so their comparison isolates the
+objective rather than confounding objective and initialization. Direction A
+retains aligned direct-chunk pointwise BCE. Direction B forms every audited
+positive-negative pair and uses pairwise logistic loss, targeting the measured
+failure to promote available gold candidates into the first few ranks. Mining
+uses the same teacher and exact frozen candidate distribution in both: for each
+gold aid, select the teacher-best chunk among gold chunks actually exposed to
+the reranker, falling back to same-chunker representations from the full gold
+article only when that aid is absent. Rank non-gold candidate chunks, exclude
+the five most suspicious of the top 30, and deterministically sample ten
+semi-hard negatives. Both treatments exclude the persisted 438 development
+qids and compare fixed top-1/2/3 on identical development candidates before
+LightGBM is used for downstream diagnosis. Epoch 3 remains the established
+task-fine-tuned control; this two-run gate does not claim a matched
+initialization ablation against retraining epoch 3 on the new distribution.
 
-The Kaggle epoch-3 artifact contains inference weights, not the former
-optimizer, scheduler, scaler, or RNG state. These treatments are therefore
-weights-only warm starts with a fresh six-epoch schedule. Their snapshots are
-named adaptation epochs 1--6 and must not be described as an exact continuation
-or as epochs 4--9. Six is a maximum checkpoint horizon rather than an assumption
-that the last snapshot will win; retain and evaluate every epoch.
+The attached Vietnamese checkpoint contains inference weights, not optimizer,
+scheduler, scaler, or RNG state. These treatments are therefore weights-only
+warm starts with a fresh six-epoch schedule. Their snapshots are named
+adaptation epochs 1--6 and must not be described as continuation epochs. Six is
+a maximum checkpoint horizon rather than an assumption that the last snapshot
+will win; retain and evaluate every epoch. Record the attached safetensors
+SHA-256 before mining, and retain exact-resume state only for the latest new
+adaptation checkpoint while keeping inference weights for every epoch.
+
+Scoring semantics remain deliberately simple. Pointwise training applies
+binary cross-entropy directly to the model's single raw logit with targets one
+and zero. Pairwise training applies `softplus(score_negative - score_positive)`
+to the same one-logit head; no sigmoid is required for ranking. Inference keeps
+the existing maximum chunk logit per `aid`. Because pointwise and especially
+pairwise adaptation can shift the absolute logit scale, fixed top 2 is the
+primary checkpoint gate, fixed top 1/3 are required diagnostics, and every
+threshold is retuned on development per checkpoint rather than inherited from
+the Vietnamese or epoch-3 controls.
 
 ### Final first-stage gate: pool 50 with same-document references
 
@@ -749,3 +766,57 @@ candidate/reference settings, fixed output cutoffs, and fresh query-grouped
 five-fold OOF LightGBM. This is an initialization/checkpoint ablation, not a
 reopening of first-stage selection. Do not run public/private inference or
 reuse epoch-3 score thresholds before the development comparison is complete.
+
+The checkpoint-only screen completed on 2026-10-28. The seed-42 split,
+component rankings, fused article rankings, and 21,900 reranker chunk pairs
+were byte-identical to the frozen epoch-3 pool-50/reference-on control; the
+resolved configs differed only in output identity, graph file location, and
+reranker checkpoint path. At fixed top 2, the Vietnamese checkpoint improved
+precision/recall/F2 from `0.358447/0.607002/0.533073` to
+`0.367580/0.615830/0.542546`. It won/lost/tied query recall on `43/36/359`
+queries, but a 5,000-sample paired query bootstrap placed the F2 difference
+95% interval at `[-0.019728, 0.039223]`; treat the gain as promising rather
+than conclusive. Top-1 F2 improved from `0.514270` to `0.521022`, while top-3
+F2 decreased from `0.521322` to `0.519751`.
+
+Fresh five-fold OOF LightGBM fixed top-2 F2 improved from `0.577226` to
+`0.597223`, and its development-tuned threshold/fallback-2 F2 improved from
+`0.639982` to `0.646085`. The leakage-controlled nested-OOF score-gap estimate,
+however, decreased from `0.643605` to `0.639257`. The checkpoint also handled
+the thirteen gold article pairs introduced only by reference expansion worse:
+epoch 3 placed three within top 5, including one at top 1, whereas the
+Vietnamese checkpoint placed only one within top 5 and none within top 3; its
+median rank was 25 versus 15. Therefore retain epoch 3 as the established
+control and qualify `AITeamVN/Vietnamese_Reranker` as a promising alternative
+fine-tuning initialization, especially for a matched initialization ablation.
+Do not claim that it has already learned the frozen graph-expanded candidate
+distribution. The attached Kaggle checkpoint was recorded as revision
+`f536976248403314225d7fdfdbc87f0e9516a54e`, but the run artifact does not
+contain an independently verified weight-file digest.
+
+Before fine-tuning, run two final no-reference deployment controls with the
+same pinned Vietnamese checkpoint and packed-stream batch 256: the historical
+WRRF setting (`rrf_k=20`, BM25/Harrier/E5 `0.10/0.50/0.40`) and the retuned
+setting (`rrf_k=10`, `0.15/0.55/0.30`). The completed reference-on Vietnamese
+run is not a substitute for the latter. Keep pool 50, component depth 100,
+`top_chunks`, split, fixed output cutoffs, and fresh five-fold OOF LightGBM
+unchanged. This pair separates the fusion-weight effect from reference
+expansion and preserves the historical stronger downstream configuration as a
+deployment control; it does not reopen another WRRF grid.
+
+The historical-weight Vietnamese no-reference control completed on 2026-10-29.
+Its split, component rankings, fused first-stage predictions, and 21,900 chunk
+candidates were byte-identical to the corresponding epoch-3 historical-weight
+artifact. Vietnamese reranking improved fixed top-1/2/3 F2 over epoch 3 from
+`0.513268/0.529209/0.513440` to `0.518732/0.543752/0.523416`; the top-2 paired
+query bootstrap difference was `+0.014543` with a 95% interval
+`[-0.013332, 0.043143]`. Its own threshold/fallback-2 F2 was `0.585713`.
+
+Fresh LightGBM reached fixed top-2 F2 `0.591939`, threshold/fallback-2
+`0.650012`, pooled score-gap `0.654008`, and leakage-controlled nested-OOF
+score-gap `0.649468`. Relative to the completed new-weight/reference-on
+Vietnamese run, raw reranker top-2 improved only `0.001206`, while nested-OOF
+score-gap improved `0.010211`. The result confirms that the historical fusion
+remains a serious deployment control, but it does not yet isolate weights from
+reference expansion; await the new-weight/no-reference cell before changing
+the fine-tuning distribution.

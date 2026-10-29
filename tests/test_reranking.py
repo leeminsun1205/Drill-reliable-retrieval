@@ -15,6 +15,7 @@ from drill_ir.reranking import (
     HFCrossEncoderScorer,
     prefilter_representations,
     prepare_pairwise_training_data_from_audit,
+    select_aligned_positive_pools,
     select_fpt_semi_hard_negatives,
     select_best_passages,
 )
@@ -60,6 +61,26 @@ class FakeScorer:
 
 
 class CrossEncoderRerankerTest(unittest.TestCase):
+    def test_aligned_positive_pools_prefer_exposed_gold_chunks_and_fallback(self) -> None:
+        exposed = Chunk("10:retrieved", 10, "L", 3, "diem", "candidate", 0, 9, 2)
+        ignored = Chunk("20:retrieved", 20, "L", 0, "diem", "negative", 0, 8, 1)
+        fallback_10 = Chunk("10:fallback", 10, "L", 0, "diem", "other", 0, 5, 1)
+        fallback_30 = Chunk("30:fallback", 30, "L", 0, "diem", "fallback", 0, 8, 1)
+
+        pools, sources = select_aligned_positive_pools(
+            "question",
+            (10, 30),
+            (exposed, ignored),
+            {10: (fallback_10,), 30: (fallback_30,)},
+            maximum_per_aid=32,
+        )
+
+        self.assertEqual(pools, {10: (exposed,), 30: (fallback_30,)})
+        self.assertEqual(
+            sources,
+            {10: "frozen_candidate", 30: "gold_article_fallback"},
+        )
+
     def test_pairwise_training_rows_expand_audited_positive_negative_cross_product(self) -> None:
         query = Query(7, "mức phạt", (10,))
         audit_row = {

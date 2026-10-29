@@ -223,6 +223,18 @@ class DenseRetrieverTest(unittest.TestCase):
 
         self.assertEqual(calls[0]["device"], "cpu")
 
+    def test_local_snapshot_can_preserve_hub_cache_identity(self) -> None:
+        local = SentenceTransformerEncoder(
+            SentenceTransformerEncoderConfig(
+                model_name="/kaggle/input/models/owner/model/pytorch/default/1",
+                cache_model_name="owner/model",
+            )
+        )
+        hub = SentenceTransformerEncoder(
+            SentenceTransformerEncoderConfig(model_name="owner/model")
+        )
+        self.assertEqual(local.cache_key, hub.cache_key)
+
     def test_single_device_source_model_keeps_requested_device(self) -> None:
         calls: list[dict[str, object]] = []
 

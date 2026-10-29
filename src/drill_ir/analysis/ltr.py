@@ -211,6 +211,34 @@ def build_ltr_examples(
     }
 
 
+def limit_ltr_examples(
+    examples: dict[str, Any], maximum_reranker_rank: int | None
+) -> dict[str, Any]:
+    """Return an LTR-row view restricted to an upstream reranker depth.
+
+    ``None`` preserves every reranked article. The operation is deliberately
+    applied after feature construction so every depth ablation uses identical
+    saved retrieval/reranker artifacts and changes only which rows LightGBM may
+    inspect.
+    """
+    if maximum_reranker_rank is None:
+        return examples
+    if (
+        isinstance(maximum_reranker_rank, bool)
+        or not isinstance(maximum_reranker_rank, int)
+        or maximum_reranker_rank <= 0
+    ):
+        raise ValueError("maximum_reranker_rank must be a positive integer or None")
+    mask = examples["original_ranks"] <= maximum_reranker_rank
+    limited = {
+        key: value[mask]
+        for key, value in examples.items()
+        if key in {"features", "labels", "qids", "aids", "original_ranks"}
+    }
+    limited["feature_names"] = examples["feature_names"]
+    return limited
+
+
 def evaluate_oof_lightgbm(
     examples: dict[str, Any],
     queries: Sequence[Query],
@@ -218,6 +246,8 @@ def evaluate_oof_lightgbm(
     folds: int = 5,
     seed: int = 42,
     include_score_gap: bool = False,
+    fixed_output_cutoffs: Sequence[int] = (1, 2, 3, 4, 5, 10, 20, 30, 50),
+    score_gap_maximum_cutoffs: Sequence[int] = (3, 4, 5, 6, 7, 8, 9, 10),
 ) -> dict[str, Any]:
     """Produce query-grouped out-of-fold pointwise LightGBM predictions."""
     if folds < 2:
@@ -271,7 +301,9 @@ def evaluate_oof_lightgbm(
 
     gold = {query.qid: query.relevant_aids for query in queries}
     fixed = evaluate_fixed_cutoffs(
-        gold, {qid: values[0] for qid, values in rankings.items()}, range(1, 6)
+        gold,
+        {qid: values[0] for qid, values in rankings.items()},
+        fixed_output_cutoffs,
     )
     thresholds = tune_score_thresholds(gold, rankings, [1, 2])
     result = {
@@ -297,7 +329,9 @@ def evaluate_oof_lightgbm(
         "rankings": rankings,
     }
     if include_score_gap:
-        score_gap = tune_score_gap(gold, rankings)
+        score_gap = tune_score_gap(
+            gold, rankings, maximum_cutoffs=score_gap_maximum_cutoffs
+        )
 
         # Fully nest selector tuning: inner OOF scores use outer-training qids
         # only, then the selected policy is applied to the outer OOF ranking.
@@ -361,6 +395,7 @@ def evaluate_oof_lightgbm(
             tuned = tune_score_gap(
                 {qid: gold[qid] for qid in tuning_qids},
                 tuning_rankings,
+                maximum_cutoffs=score_gap_maximum_cutoffs,
             )
             policy = tuned["best"]
             selected = select_by_score_gap(
@@ -390,7 +425,9 @@ def evaluate_oof_lightgbm(
                     "outer-training queries and applied to the outer-held-out fold."
                 ),
             },
-            "oracle_prefix_at_5": evaluate_oracle_prefix(gold, rankings, maximum_k=5),
+            "oracle_prefix_at_10": evaluate_oracle_prefix(
+                gold, rankings, maximum_k=max(score_gap_maximum_cutoffs)
+            ),
         }
     return result
 
