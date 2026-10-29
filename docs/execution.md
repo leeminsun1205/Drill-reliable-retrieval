@@ -1336,6 +1336,18 @@ then skip retrieval and teacher mining. With no attached archive they retain
 the self-contained fallback and mine locally; multiple matching archives or
 any provenance mismatch fail closed.
 
+Kaggle may expose an uploaded ZIP as loose files instead of preserving the ZIP
+or tar archive. The training notebooks therefore first accept the explicit
+dataset directory
+`/kaggle/input/datasets/lmnhnht125/drill-vietnamese-reranker-mining-pool{50|100}-refon`
+when it contains the final training JSONL, audit JSONL, metadata, frozen
+selection, resolved contract, and warm-start provenance. They validate the
+budget, reference-graph digest, warm-start weight digest, and file hashes before
+reuse. A supplied `mining_manifest.json` remains authoritative; when the loose
+dataset came from the pre-packaging recovery run, the notebook creates a local
+import manifest with computed SHA-256 values. Partial `.tmp` files are never
+accepted. Archive discovery remains the fallback after loose-dataset discovery.
+
 Direct-chunk mining performs retrieval and teacher scoring in one process.
 After fused chunks have been materialized as CPU records, the reusable miner
 must call `release_stage_resources()` on the retriever before loading the
