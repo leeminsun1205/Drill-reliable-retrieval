@@ -170,10 +170,18 @@ silently guessed. The historical thirteen-feature LightGBM path expects one
 component named `dense`. Multi-dense runs extend that base schema with a
 raw-score and reciprocal-rank pair for each stable `dense:<name>` component,
 ordered by component name; a two-dense run therefore had 15 base features. The
-active enhanced schema appends 26 deterministic features covering within-query
+The `base_v1` schema exposes those 15 historical features directly for a
+two-dense run. The historical enhanced-v1 schema appends 26 deterministic
+features covering within-query
 normalization and adjacent score gaps, retriever agreement, explicit-reference
 provenance, chunk fusion statistics, and query legal-marker counts. A two-dense
-run therefore has 41 features. Missing optional retrieval feedback maps only
+run therefore has 41 features. Enhanced-v2 adds 20 features derived from the
+actual scored reranker chunks: score distribution and margin, best-chunk input
+position, chunk lengths, query/chunk lexical coverage, and legal-citation
+overlap. Enhanced-v3 adds eight corpus-static article features: character and
+token counts, vocabulary size, structural marker counts, legal-citation count,
+and digit-token fraction. The corresponding two-dense schemas contain 61 and
+69 features. Missing optional retrieval feedback maps only
 the reference-provenance fields to zero and never changes feature order. Dev
 and test component schemas must match exactly, and every multi-dense treatment
 requires fresh query-grouped OOF training rather than reuse of the baseline
@@ -631,15 +639,19 @@ not an unbiased test estimate.
 For the active pointwise reranker experiment, LightGBM is a post-reranking
 selector rather than part of checkpoint selection. First choose the pool-50 or
 pool-100 checkpoint using the matched fixed-top-2 development gate. Then fit
-LightGBM only for the selected finalist, comparing the historical 15-feature
-base against the enhanced 41-feature schema. The enhanced additions are grouped
-as within-query normalization/gaps, retriever agreement, explicit-reference
-provenance, chunk fusion statistics, and query legal markers. Report split/gain
-importance, but decide removal with nested query-fold OOF group ablations; a
-low importance value from one fit is not sufficient evidence to remove a
-feature. The current artifacts do not contain per-chunk reranker logits or
-article text/token lengths, so those proposed statistics remain unavailable
-rather than being imputed or fabricated.
+LightGBM only for the selected finalist. `base_v1` preserves the historical
+15-feature base for the current two-dense configuration, `enhanced_v1` preserves
+the 41-feature comparison, and `enhanced_v2`/`enhanced_v3` are the new 61- and
+69-feature treatments. New reranking runs persist each scored chunk's reranker
+logit, input rank, length, lexical overlap, and citation overlap, so v2/v3 fail
+closed rather than silently imputing these fields from old artifacts. The v3
+article-static fields are generated deterministically from the same flattened
+corpus with `scripts/build_ltr_static_features.py` and may be uploaded as a
+small Kaggle Input. Report both split and gain importance, but decide removal
+with query-grouped OOF feature-group ablations; a low importance value from one
+fit is not sufficient evidence to remove a feature. These schemas are
+implemented treatments, not measured improvements; their dev results must be
+recorded before choosing one for test inference.
 
 `scripts/run_lightgbm_fusion.py` extends that diagnostic into a submission
 handoff. It first reports the same query-grouped OOF result, then fits one final
@@ -2041,3 +2053,14 @@ snapshot. Fixed top-2 is the primary checkpoint comparison. The score-threshold
 fallback-2 result is a development-tuned calibration diagnostic and must not be
 reported as an untouched test estimate. No checkpoint result is measured until
 the corresponding notebook run completes.
+
+Measured checkpoint evaluation completed on 2026-10-30 for both frozen
+handoffs. Under the predeclared fixed-top-2 gate, pool 50 epoch 1 is the overall
+winner: precision `0.393836`, recall `0.657610`, and F2 `0.579928`. Pool 100's
+best fixed-top-2 checkpoint is epoch 2: precision `0.385845`, recall `0.639612`,
+and F2 `0.565259`. Thus pool 50 epoch 1 is the reranker finalist for subsequent
+LightGBM comparisons. As a non-selection diagnostic, the best tuned
+threshold/fallback-2 result is also pool 50 epoch 1 with F2 `0.623556`; pool
+100's best is epoch 1 with F2 `0.610202`. Sources are the two archived
+`checkpoint_scoreboard.csv` files in
+`pointwise_mil_pool{50,100}_checkpoint_eval_metrics.tar.gz`.

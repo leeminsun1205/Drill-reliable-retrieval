@@ -5,7 +5,9 @@ from pathlib import Path
 import yaml
 
 from drill_ir.experiment.checkpoint_evaluation import (
+    REQUIRED_RESULTS,
     build_cases,
+    evaluate_selected_checkpoint,
     expected_contract,
     load_and_validate_handoff,
 )
@@ -87,3 +89,51 @@ def test_checkpoint_cases_preserve_explicit_epoch_order(tmp_path: Path) -> None:
         "adaptation_epoch_5",
     ]
     assert cases[-1].model_path.name == "checkpoint-50"
+
+
+def test_selected_checkpoint_reuses_only_complete_materialized_run(
+    tmp_path: Path,
+) -> None:
+    model = tmp_path / "checkpoint-1208"
+    model.mkdir()
+    (model / "config.json").write_text("{}", encoding="utf-8")
+    (model / "model.safetensors").write_bytes(b"weights")
+    (model / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    handoff = tmp_path / "handoff"
+    handoff.mkdir()
+    payload = handoff / "retrieval_stage_handoff.json"
+    payload.write_text("{}", encoding="utf-8")
+    (handoff / "config.yaml").write_text(
+        yaml.safe_dump(_config(50), sort_keys=False), encoding="utf-8"
+    )
+    (handoff / "retrieval_handoff_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "experiment_name": "frozen_dev_handoff_pool50_refon_articlemilv1",
+                "dev_queries": 438,
+                "handoff_file": payload.name,
+                "handoff_sha256": hashlib.sha256(payload.read_bytes()).hexdigest(),
+                "config_file": "config.yaml",
+                "retrieval_contract": expected_contract(50),
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    run_dir = output / "pointwise_mil_pool50_selected"
+    run_dir.mkdir(parents=True)
+    for name in REQUIRED_RESULTS:
+        (run_dir / name).write_text("{}", encoding="utf-8")
+
+    resolved = evaluate_selected_checkpoint(
+        pool_size=50,
+        model_path=model,
+        label="selected",
+        handoff_root=handoff,
+        corpus_path=tmp_path / "corpus.parquet",
+        train_path=tmp_path / "train.parquet",
+        output_root=output,
+    )
+
+    assert resolved == run_dir

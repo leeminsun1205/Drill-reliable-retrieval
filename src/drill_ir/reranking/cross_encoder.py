@@ -327,6 +327,7 @@ class CrossEncoderReranker:
         self._retrieved_chunk_pairs = 0
         self._scored_pairs = 0
         self._scorer_calls = 0
+        self._chunk_scores_by_qid: dict[int, tuple[float, ...]] = {}
 
     def _score_global_pairs(
         self,
@@ -573,6 +574,9 @@ class CrossEncoderReranker:
             self._scorer_calls += 1
             if len(pair_scores) != len(chunks):
                 raise ValueError("Reranker returned an unexpected number of pair scores")
+            self._chunk_scores_by_qid[query.qid] = tuple(
+                float(score) for score in pair_scores
+            )
             aid_scores: dict[int, float] = {}
             best_chunk_rank: dict[int, int] = {}
             for rank, (chunk, score) in enumerate(zip(chunks, pair_scores)):
@@ -599,7 +603,9 @@ class CrossEncoderReranker:
         queries: Sequence[Query],
         by_qid: dict[int, ChunkRetrievalResult],
     ) -> list[RetrievalResult]:
-        plans: list[tuple[Query, tuple[Chunk, ...], dict[int, float], dict[int, int]]] = []
+        plans: list[
+            tuple[Query, tuple[Chunk, ...], dict[int, float], dict[int, int], list[float]]
+        ] = []
         pairs: list[tuple[str, str]] = []
         refs: list[tuple[int, int, Chunk]] = []
 
@@ -619,8 +625,9 @@ class CrossEncoderReranker:
             if len(scores) != len(refs):
                 raise ValueError("Reranker returned an unexpected number of pair scores")
             for (plan_index, rank, chunk), score in zip(refs, scores):
-                aid_scores, best_ranks = plans[plan_index][2:]
+                aid_scores, best_ranks, chunk_scores = plans[plan_index][2:]
                 value = float(score)
+                chunk_scores[rank] = value
                 if value > aid_scores.get(chunk.aid, -float("inf")):
                     aid_scores[chunk.aid] = value
                     best_ranks[chunk.aid] = rank
@@ -651,7 +658,7 @@ class CrossEncoderReranker:
             if candidate is None:
                 raise ValueError(f"Missing retrieved chunks for qid={query.qid}")
             chunks = candidate.chunks[: self.candidate_pool_size]
-            plans.append((query, chunks, {}, {}))
+            plans.append((query, chunks, {}, {}, [float("nan")] * len(chunks)))
             plan_index = len(plans) - 1
             for rank, chunk in enumerate(chunks):
                 pairs.append((query.question, chunk.text))
@@ -660,13 +667,17 @@ class CrossEncoderReranker:
                     flush()
             self._retrieved_chunk_pairs += len(chunks)
         flush()
+        for query, chunks, _aid_scores, _best_ranks, chunk_scores in plans:
+            if len(chunk_scores) != len(chunks) or any(np.isnan(chunk_scores)):
+                raise RuntimeError(f"Incomplete per-chunk reranker scores for qid={query.qid}")
+            self._chunk_scores_by_qid[query.qid] = tuple(chunk_scores)
         return [
             RetrievalResult(
                 qid=query.qid,
                 aids=tuple(aid for aid, _ in ordered),
                 scores=tuple(score for _, score in ordered),
             )
-            for query, _chunks, aid_scores, best_ranks in plans
+            for query, _chunks, aid_scores, best_ranks, _chunk_scores in plans
             for ordered in [
                 sorted(
                     aid_scores.items(),
@@ -702,6 +713,9 @@ class CrossEncoderReranker:
                 if value > aid_scores.get(chunk.aid, -float("inf")):
                     aid_scores[chunk.aid] = value
                     best_chunk_rank[chunk.aid] = rank
+            self._chunk_scores_by_qid[query.qid] = tuple(
+                float(score) for score in all_scores[start:end]
+            )
             ordered = sorted(
                 aid_scores.items(),
                 key=lambda item: (-item[1], best_chunk_rank[item[0]], item[0]),
@@ -715,6 +729,10 @@ class CrossEncoderReranker:
             )
             self._retrieved_chunk_pairs += len(chunks)
         return reranked
+
+    def chunk_scores_by_qid(self) -> dict[int, tuple[float, ...]]:
+        """Return per-candidate chunk logits from the most recent chunk rerank."""
+        return dict(self._chunk_scores_by_qid)
 
     def run_metadata(self) -> dict[str, Any]:
         scorer_metadata = getattr(self.scorer, "metadata", None)

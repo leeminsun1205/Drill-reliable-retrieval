@@ -5,11 +5,41 @@ import unittest
 
 import numpy as np
 
-from drill_ir.analysis import build_ltr_examples, limit_ltr_examples
+from drill_ir.analysis import (
+    build_ltr_examples,
+    drop_ltr_features,
+    limit_ltr_examples,
+    ltr_feature_groups,
+)
 from drill_ir.data import Query
 
 
 class LtrFeatureTest(unittest.TestCase):
+    def test_feature_groups_are_complete_and_support_column_ablation(self) -> None:
+        examples = {
+            "feature_names": (
+                "reranker_score",
+                "chunk_reranker_mean",
+                "article_character_count",
+                "query_chunk_overlap_mean",
+            ),
+            "features": np.asarray([[1.0, 2.0, 3.0, 4.0]]),
+            "labels": np.asarray([1]),
+            "qids": np.asarray([1]),
+            "aids": np.asarray([10]),
+            "original_ranks": np.asarray([1]),
+            "feature_schema": "enhanced_v3",
+        }
+        groups = ltr_feature_groups(examples["feature_names"])
+        grouped_names = [name for names in groups.values() for name in names]
+        self.assertCountEqual(grouped_names, examples["feature_names"])
+        reduced = drop_ltr_features(
+            examples, groups["chunk_reranker_distribution"]
+        )
+        self.assertEqual(reduced["features"].shape, (1, 3))
+        self.assertNotIn("chunk_reranker_mean", reduced["feature_names"])
+        self.assertEqual(reduced["feature_schema"], "enhanced_v3")
+
     def test_limits_rows_by_saved_reranker_rank(self) -> None:
         examples = {
             "feature_names": ("score",),
@@ -165,6 +195,15 @@ class LtrFeatureTest(unittest.TestCase):
                 examples["features"][0, examples["feature_names"].index("dense_vietlegal_e5_score")],
                 0.9,
             )
+            base_examples = build_ltr_examples(
+                root,
+                [Query(1, "query", (10,))],
+                feature_schema="base_v1",
+            )
+            self.assertEqual(base_examples["features"].shape, (1, 15))
+            self.assertEqual(len(base_examples["feature_names"]), 15)
+            self.assertNotIn("reranker_score_z", base_examples["feature_names"])
+            self.assertEqual(base_examples["feature_schema"], "base_v1")
 
     def test_adds_reference_provenance_without_using_gold(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -190,6 +229,81 @@ class LtrFeatureTest(unittest.TestCase):
             self.assertEqual(row[names.index("reference_base_reciprocal_rank")], 0.5)
             self.assertEqual(row[names.index("reference_seed_first_stage_reciprocal_rank")], 1.0)
             self.assertEqual(row[names.index("query_has_explicit_legal_reference")], 1.0)
+
+    def test_enhanced_v2_adds_persisted_chunk_neural_and_lexical_features(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def write(name: str, row: dict) -> None:
+                (root / name).write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+            write("predictions.jsonl", {"qid": 1, "retrieved_aids": [10], "scores": [4.0]})
+            write("first_stage_predictions.jsonl", {"qid": 1, "retrieved_aids": [10], "scores": [0.4]})
+            write(
+                "component_rankings.jsonl",
+                {"qid": 1, "components": {
+                    "sparse": {"retrieved_aids": [10], "scores": [2.0]},
+                    "dense:harrier": {"retrieved_aids": [10], "scores": [0.8]},
+                    "dense:e5": {"retrieved_aids": [10], "scores": [0.9]},
+                }},
+            )
+            base = {
+                "aid": 10,
+                "chunk_type": "diem",
+                "fusion_score": 0.3,
+                "character_count": 100,
+                "normalized_token_count": 20,
+                "query_chunk_overlap_count": 3,
+                "query_token_coverage": 0.75,
+                "chunk_token_coverage": 0.15,
+                "legal_citation_overlap_count": 1,
+            }
+            write(
+                "reranker_chunk_candidates.jsonl",
+                {"qid": 1, "chunks": [
+                    {**base, "chunk_id": "10:0", "chunk_index": 0, "reranker_score": 4.0},
+                    {**base, "chunk_id": "10:1", "chunk_index": 1, "reranker_score": 2.0,
+                     "character_count": 80, "normalized_token_count": 16},
+                ]},
+            )
+
+            examples = build_ltr_examples(
+                root,
+                [Query(1, "Điều 3 quy định gì", (10,))],
+                feature_schema="enhanced_v2",
+            )
+
+            self.assertEqual(examples["features"].shape, (1, 61))
+            names = examples["feature_names"]
+            row = examples["features"][0]
+            self.assertEqual(row[names.index("chunk_reranker_mean")], 3.0)
+            self.assertEqual(row[names.index("chunk_reranker_top1_top2_gap")], 2.0)
+            self.assertEqual(row[names.index("query_token_coverage_max")], 0.75)
+            self.assertEqual(row[names.index("legal_citation_overlap_max")], 1.0)
+
+            static = {
+                "aid": 10,
+                "article_character_count": 1000,
+                "article_whitespace_token_count": 200,
+                "article_normalized_token_count": 210,
+                "article_unique_token_count": 120,
+                "article_clause_marker_count": 3,
+                "article_point_marker_count": 5,
+                "article_legal_citation_count": 2,
+                "article_digit_token_fraction": 0.1,
+            }
+            write("static.jsonl", static)
+            v3 = build_ltr_examples(
+                root,
+                [Query(1, "Điều 3 quy định gì", (10,))],
+                feature_schema="enhanced_v3",
+                static_article_features=root / "static.jsonl",
+            )
+            self.assertEqual(v3["features"].shape, (1, 69))
+            self.assertEqual(
+                v3["features"][0, v3["feature_names"].index("article_character_count")],
+                1000,
+            )
 
 
 if __name__ == "__main__":

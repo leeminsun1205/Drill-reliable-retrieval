@@ -51,6 +51,20 @@ def main() -> None:
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--feature-schema",
+        choices=("base_v1", "enhanced_v1", "enhanced_v2", "enhanced_v3"),
+        default="enhanced_v3",
+        help=(
+            "base_v1 is the historical base (15 features with two dense models); "
+            "v2 adds persisted chunk evidence; v3 also requires static article features"
+        ),
+    )
+    parser.add_argument(
+        "--static-article-features",
+        type=Path,
+        help="JSONL made by scripts/build_ltr_static_features.py; required for enhanced_v3",
+    )
+    parser.add_argument(
         "--adaptive-selection",
         choices=("disabled", "score_gap"),
         default="disabled",
@@ -66,7 +80,12 @@ def main() -> None:
 
     output = args.output_dir
     output.mkdir(parents=True, exist_ok=True)
-    dev_examples = build_ltr_examples(args.dev_run_dir, dev_queries)
+    dev_examples = build_ltr_examples(
+        args.dev_run_dir,
+        dev_queries,
+        feature_schema=args.feature_schema,
+        static_article_features=args.static_article_features,
+    )
     oof = evaluate_oof_lightgbm(
         dev_examples,
         dev_queries,
@@ -98,7 +117,13 @@ def main() -> None:
     summaries = {}
     for name, (query_path, prefix) in test_sets.items():
         queries = load_queries(query_path)
-        examples = build_ltr_examples(args.test_run_dir, queries, prefix=prefix)
+        examples = build_ltr_examples(
+            args.test_run_dir,
+            queries,
+            prefix=prefix,
+            feature_schema=args.feature_schema,
+            static_article_features=args.static_article_features,
+        )
         rankings, fitted_model = fit_lightgbm_and_rank(
             dev_examples, examples, seed=args.seed
         )
@@ -132,6 +157,10 @@ def main() -> None:
     inputs = {}
     for path in sorted(args.dev_run_dir.glob("*.jsonl")):
         inputs[str(path)] = _sha256(path)
+    if args.static_article_features is not None:
+        inputs[str(args.static_article_features)] = _sha256(
+            args.static_article_features
+        )
     provenance = {
         "protocol": "query-grouped OOF evaluation; final fit on all labeled dev candidates",
         "seed": args.seed,
@@ -141,6 +170,7 @@ def main() -> None:
         "dev_run_dir": str(args.dev_run_dir),
         "test_run_dir": str(args.test_run_dir),
         "feature_names": list(dev_examples["feature_names"]),
+        "feature_schema": args.feature_schema,
         "development": {
             "queries": len(dev_queries),
             "candidate_rows": len(dev_examples["labels"]),

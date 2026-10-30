@@ -17,6 +17,7 @@ from drill_ir.data import iter_articles, load_queries
 from drill_ir.reranking import build_reranker
 from drill_ir.retrieval import build_retriever
 from drill_ir.runtime_resources import cuda_snapshot, release_stage_resources
+from drill_ir.text_features import chunk_pair_features
 
 from .run import _read_stage_handoff, _write_stage_handoff
 from .submission import package_submission, package_threshold_submission
@@ -218,6 +219,7 @@ def run_submission_inference(
         named_feedback = {}
     final_rankings = first_stage
     reranker = None
+    named_chunk_scores: dict[str, dict[int, tuple[float, ...]]] = {}
     if method == "hybrid_reranker":
         if not isinstance(reranking_config, dict):
             raise ValueError("hybrid_reranker requires a reranking mapping")
@@ -299,10 +301,18 @@ def run_submission_inference(
                 retriever = None
                 gc.collect()
             reranker = build_reranker(reranking_config, config.get("runtime", {}))
-            final_rankings = {
-                name: reranker.rerank_chunks(named_queries[name], chunk_candidates[name])
-                for name in named_queries
-            }
+            final_rankings = {}
+            for name in named_queries:
+                final_rankings[name] = reranker.rerank_chunks(
+                    named_queries[name], chunk_candidates[name]
+                )
+                score_getter = getattr(reranker, "chunk_scores_by_qid", None)
+                all_scores = score_getter() if callable(score_getter) else {}
+                named_chunk_scores[name] = {
+                    query.qid: all_scores[query.qid]
+                    for query in named_queries[name]
+                    if query.qid in all_scores
+                }
         else:
             raise ValueError(
                 "reranking.candidate_source must be 'article_rechunk' or 'retrieved_chunks'"
@@ -374,10 +384,21 @@ def run_submission_inference(
                 first_stage[name],
             )
             if candidate_source == "retrieved_chunks":
+                query_by_qid = {query.qid: query for query in named_queries[name]}
+                reranker_chunk_scores = named_chunk_scores.get(name, {})
                 with (output_dir / f"{name}_reranker_chunk_candidates.jsonl").open(
                     "w", encoding="utf-8"
                 ) as stream:
                     for result in chunk_candidates[name]:
+                        scores = reranker_chunk_scores.get(result.qid)
+                        if scores is None or not scores or len(scores) > len(result.chunks):
+                            raise RuntimeError(
+                                "Missing aligned per-chunk reranker scores for "
+                                f"split={name} qid={result.qid}"
+                            )
+                        query = query_by_qid[result.qid]
+                        scored_chunks = result.chunks[: len(scores)]
+                        fusion_scores = result.scores[: len(scores)]
                         stream.write(
                             json.dumps(
                                 {
@@ -388,10 +409,17 @@ def run_submission_inference(
                                             "aid": chunk.aid,
                                             "chunk_index": chunk.chunk_index,
                                             "chunk_type": chunk.chunk_type,
+                                            "char_start": chunk.char_start,
+                                            "char_end": chunk.char_end,
+                                            "token_count": chunk.token_count,
                                             "fusion_score": score,
+                                            "reranker_score": reranker_score,
+                                            **chunk_pair_features(
+                                                query.question, chunk.text
+                                            ),
                                         }
-                                        for chunk, score in zip(
-                                            result.chunks, result.scores
+                                        for chunk, score, reranker_score in zip(
+                                            scored_chunks, fusion_scores, scores
                                         )
                                     ],
                                 },

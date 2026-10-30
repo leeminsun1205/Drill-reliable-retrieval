@@ -70,6 +70,50 @@ DERIVED_FEATURE_NAMES = (
     "query_legal_marker_count",
 )
 
+ENHANCED_V2_FEATURE_NAMES = (
+    "chunk_reranker_mean",
+    "chunk_reranker_std",
+    "chunk_reranker_min",
+    "chunk_reranker_second_max",
+    "chunk_reranker_top1_top2_gap",
+    "chunk_reranker_range",
+    "chunk_reranker_strong_fraction",
+    "chunk_reranker_best_input_reciprocal_rank",
+    "chunk_reranker_best_chunk_index",
+    "chunk_character_count_mean",
+    "chunk_character_count_max",
+    "chunk_token_count_mean",
+    "chunk_token_count_max",
+    "query_chunk_overlap_mean",
+    "query_chunk_overlap_max",
+    "query_token_coverage_mean",
+    "query_token_coverage_max",
+    "chunk_token_coverage_mean",
+    "chunk_token_coverage_max",
+    "legal_citation_overlap_max",
+)
+
+ENHANCED_V2_CHUNK_FIELDS = (
+    "reranker_score",
+    "character_count",
+    "normalized_token_count",
+    "query_chunk_overlap_count",
+    "query_token_coverage",
+    "chunk_token_coverage",
+    "legal_citation_overlap_count",
+)
+
+STATIC_ARTICLE_FEATURE_NAMES = (
+    "article_character_count",
+    "article_whitespace_token_count",
+    "article_normalized_token_count",
+    "article_unique_token_count",
+    "article_clause_marker_count",
+    "article_point_marker_count",
+    "article_legal_citation_count",
+    "article_digit_token_fraction",
+)
+
 LEGAL_REFERENCE_PATTERN = re.compile(
     r"\b(?:điều|khoản|điểm|luật|nghị\s+định|thông\s+tư|bộ\s+luật)\b",
     flags=re.IGNORECASE,
@@ -165,6 +209,24 @@ def _load_reference_provenance(path: Path) -> dict[tuple[int, int], dict[str, An
     return provenance
 
 
+def _load_static_article_features(path: str | Path) -> dict[int, dict[str, float]]:
+    rows = _read_jsonl(Path(path))
+    features: dict[int, dict[str, float]] = {}
+    for row in rows:
+        aid = int(row["aid"])
+        if aid in features:
+            raise ValueError(f"Duplicate aid in static article features: {aid}")
+        missing = [name for name in STATIC_ARTICLE_FEATURE_NAMES if name not in row]
+        if missing:
+            raise ValueError(f"Static article feature row aid={aid} is missing {missing}")
+        features[aid] = {
+            name: float(row[name]) for name in STATIC_ARTICLE_FEATURE_NAMES
+        }
+    if not features:
+        raise ValueError("Static article feature artifact is empty")
+    return features
+
+
 def _dense_feature_schema(
     components: dict[int, dict[str, dict[int, tuple[float, float]]]],
 ) -> tuple[list[str], list[str]]:
@@ -186,13 +248,84 @@ def _dense_feature_schema(
     return ordered, feature_names
 
 
+def _enhanced_v2_chunk_aggregates(
+    values: Sequence[tuple[int, dict[str, Any]]],
+) -> dict[str, float]:
+    """Aggregate persisted per-chunk neural, length, and lexical evidence."""
+    reranker_scores = [float(item["reranker_score"]) for _, item in values]
+    ordered_scores = sorted(reranker_scores, reverse=True)
+    maximum = ordered_scores[0]
+    second = ordered_scores[1] if len(ordered_scores) > 1 else maximum
+    best_position = max(
+        range(len(values)), key=lambda index: (reranker_scores[index], -values[index][0])
+    )
+    best_rank, best_item = values[best_position]
+    character_counts = [float(item["character_count"]) for _, item in values]
+    token_counts = [
+        float(
+            item["token_count"]
+            if item.get("token_count") is not None
+            else item["normalized_token_count"]
+        )
+        for _, item in values
+    ]
+    overlaps = [float(item["query_chunk_overlap_count"]) for _, item in values]
+    query_coverages = [float(item["query_token_coverage"]) for _, item in values]
+    chunk_coverages = [float(item["chunk_token_coverage"]) for _, item in values]
+    legal_overlaps = [float(item["legal_citation_overlap_count"]) for _, item in values]
+    strong_boundary = maximum - 0.1 * max(1e-12, abs(maximum))
+    return {
+        "chunk_reranker_mean": float(np.mean(reranker_scores)),
+        "chunk_reranker_std": float(np.std(reranker_scores)),
+        "chunk_reranker_min": min(reranker_scores),
+        "chunk_reranker_second_max": second,
+        "chunk_reranker_top1_top2_gap": maximum - second,
+        "chunk_reranker_range": maximum - min(reranker_scores),
+        "chunk_reranker_strong_fraction": float(
+            np.mean([score >= strong_boundary for score in reranker_scores])
+        ),
+        "chunk_reranker_best_input_reciprocal_rank": 1.0 / best_rank,
+        "chunk_reranker_best_chunk_index": float(best_item.get("chunk_index", 0)),
+        "chunk_character_count_mean": float(np.mean(character_counts)),
+        "chunk_character_count_max": max(character_counts),
+        "chunk_token_count_mean": float(np.mean(token_counts)),
+        "chunk_token_count_max": max(token_counts),
+        "query_chunk_overlap_mean": float(np.mean(overlaps)),
+        "query_chunk_overlap_max": max(overlaps),
+        "query_token_coverage_mean": float(np.mean(query_coverages)),
+        "query_token_coverage_max": max(query_coverages),
+        "chunk_token_coverage_mean": float(np.mean(chunk_coverages)),
+        "chunk_token_coverage_max": max(chunk_coverages),
+        "legal_citation_overlap_max": max(legal_overlaps),
+    }
+
+
 def build_ltr_examples(
     result_dir: str | Path,
     queries: Sequence[Query],
     *,
     prefix: str = "",
+    feature_schema: str = "enhanced_v1",
+    static_article_features: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build one feature row per reranked candidate from saved run artifacts."""
+    if feature_schema not in {
+        "base_v1",
+        "enhanced_v1",
+        "enhanced_v2",
+        "enhanced_v3",
+    }:
+        raise ValueError(
+            "feature_schema must be 'base_v1', 'enhanced_v1', "
+            "'enhanced_v2', or 'enhanced_v3'"
+        )
+    if feature_schema == "enhanced_v3" and static_article_features is None:
+        raise ValueError("enhanced_v3 requires static_article_features")
+    static_features = (
+        _load_static_article_features(static_article_features)
+        if feature_schema == "enhanced_v3" and static_article_features is not None
+        else {}
+    )
     result_dir = Path(result_dir)
     required = {
         "predictions": result_dir / f"{prefix}predictions.jsonl",
@@ -219,36 +352,54 @@ def build_ltr_examples(
         }
     chunks: dict[int, dict[int, dict[str, float]]] = {}
     for row in _read_jsonl(required["chunks"]):
-        by_aid: defaultdict[int, list[tuple[int, float, str]]] = defaultdict(list)
+        by_aid: defaultdict[int, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
         for rank, chunk in enumerate(row["chunks"], start=1):
-            by_aid[int(chunk["aid"])].append(
-                (rank, float(chunk["fusion_score"]), str(chunk.get("chunk_type", "")))
-            )
+            if feature_schema in {"enhanced_v2", "enhanced_v3"}:
+                missing_fields = [
+                    name for name in ENHANCED_V2_CHUNK_FIELDS if name not in chunk
+                ]
+                if missing_fields:
+                    raise ValueError(
+                        "enhanced_v2 requires reranker-produced chunk metadata; "
+                        f"qid={row['qid']} chunk_id={chunk.get('chunk_id')} "
+                        f"missing={missing_fields}"
+                    )
+            by_aid[int(chunk["aid"])].append((rank, chunk))
         chunks[int(row["qid"])] = {
             aid: {
-                "max": max(score for _, score, _ in values),
-                "best_rr": 1.0 / min(rank for rank, _, _ in values),
+                "max": max(float(item["fusion_score"]) for _, item in values),
+                "best_rr": 1.0 / min(rank for rank, _ in values),
                 "count": float(len(values)),
-                "mean": float(np.mean([score for _, score, _ in values])),
-                "std": float(np.std([score for _, score, _ in values])),
-                "min": min(score for _, score, _ in values),
+                "mean": float(np.mean([float(item["fusion_score"]) for _, item in values])),
+                "std": float(np.std([float(item["fusion_score"]) for _, item in values])),
+                "min": min(float(item["fusion_score"]) for _, item in values),
                 "top_gap": (
-                    sorted((score for _, score, _ in values), reverse=True)[0]
-                    - sorted((score for _, score, _ in values), reverse=True)[1]
+                    sorted((float(item["fusion_score"]) for _, item in values), reverse=True)[0]
+                    - sorted((float(item["fusion_score"]) for _, item in values), reverse=True)[1]
                     if len(values) > 1
                     else 0.0
                 ),
                 "strong_fraction": float(
                     np.mean(
                         [
-                            score
-                            >= max(item[1] for item in values)
-                            - 0.1 * max(1e-12, abs(max(item[1] for item in values)))
-                            for _, score, _ in values
+                            float(item["fusion_score"])
+                            >= max(float(value["fusion_score"]) for _, value in values)
+                            - 0.1 * max(
+                                1e-12,
+                                abs(max(float(value["fusion_score"]) for _, value in values)),
+                            )
+                            for _, item in values
                         ]
                     )
                 ),
-                "type_count": float(len({chunk_type for _, _, chunk_type in values})),
+                "type_count": float(
+                    len({str(item.get("chunk_type", "")) for _, item in values})
+                ),
+                **(
+                    _enhanced_v2_chunk_aggregates(values)
+                    if feature_schema in {"enhanced_v2", "enhanced_v3"}
+                    else {}
+                ),
             }
             for aid, values in by_aid.items()
         }
@@ -265,11 +416,20 @@ def build_ltr_examples(
             raise ValueError(f"{name} qids do not match the supplied query set")
 
     dense_components, dense_feature_names = _dense_feature_schema(components)
-    feature_names = (
+    base_feature_names = (
         FEATURE_NAMES[:7]
         + tuple(dense_feature_names)
         + FEATURE_NAMES[9:]
-        + DERIVED_FEATURE_NAMES
+    )
+    feature_names = (
+        base_feature_names
+        + (DERIVED_FEATURE_NAMES if feature_schema != "base_v1" else ())
+        + (
+            ENHANCED_V2_FEATURE_NAMES
+            if feature_schema in {"enhanced_v2", "enhanced_v3"}
+            else ()
+        )
+        + (STATIC_ARTICLE_FEATURE_NAMES if feature_schema == "enhanced_v3" else ())
     )
 
     features: list[list[float]] = []
@@ -298,6 +458,8 @@ def build_ltr_examples(
         for rank, (aid, reranker_score) in enumerate(
             zip(ranked_aids, reranker_scores), start=1
         ):
+            if feature_schema == "enhanced_v3" and aid not in static_features:
+                raise ValueError(f"Missing static article features for candidate aid={aid}")
             first_score, first_rr = first_stage[qid].get(aid, (0.0, 0.0))
             sparse_score, sparse_rr = sparse.get(aid, (0.0, 0.0))
             dense_values: list[float] = []
@@ -328,8 +490,7 @@ def build_ltr_examples(
             seed_rr = 0.0
             if reference is not None:
                 seed_rr = first_stage[qid].get(int(reference["seed_aid"]), (0.0, 0.0))[1]
-            features.append(
-                [
+            row = [
                     reranker_score,
                     1.0 / rank,
                     top_score - reranker_score,
@@ -368,8 +529,18 @@ def build_ltr_examples(
                     float(chunk.get("type_count", 0.0)),
                     float(bool(legal_markers)),
                     float(len(legal_markers)),
+                    *(
+                        [float(chunk.get(name, 0.0)) for name in ENHANCED_V2_FEATURE_NAMES]
+                        if feature_schema in {"enhanced_v2", "enhanced_v3"}
+                        else []
+                    ),
+                    *(
+                        [static_features[aid][name] for name in STATIC_ARTICLE_FEATURE_NAMES]
+                        if feature_schema == "enhanced_v3"
+                        else []
+                    ),
                 ]
-            )
+            features.append(row[: len(feature_names)])
             labels.append(int(aid in gold))
             qids.append(qid)
             aids.append(aid)
@@ -382,6 +553,7 @@ def build_ltr_examples(
         "qids": np.asarray(qids, dtype=np.int64),
         "aids": np.asarray(aids, dtype=np.int64),
         "original_ranks": np.asarray(original_ranks, dtype=np.int64),
+        "feature_schema": feature_schema,
     }
 
 
@@ -410,7 +582,75 @@ def limit_ltr_examples(
         if key in {"features", "labels", "qids", "aids", "original_ranks"}
     }
     limited["feature_names"] = examples["feature_names"]
+    limited["feature_schema"] = examples.get("feature_schema", "unknown")
     return limited
+
+
+def ltr_feature_groups(feature_names: Sequence[str]) -> dict[str, tuple[str, ...]]:
+    """Return interpretable, non-overlapping feature groups for OOF ablation."""
+    names = tuple(feature_names)
+    group_for: dict[str, str] = {}
+    for name in names:
+        if name.startswith("chunk_reranker_"):
+            group = "chunk_reranker_distribution"
+        elif name.startswith("article_"):
+            group = "article_static"
+        elif name.startswith("chunk_character_") or name.startswith("chunk_token_"):
+            group = "chunk_length"
+        elif (
+            name.startswith("query_chunk_")
+            or name.startswith("query_token_coverage")
+            or name.startswith("chunk_token_coverage")
+            or name == "legal_citation_overlap_max"
+        ):
+            group = "query_chunk_lexical"
+        elif name.startswith("reference_") or name == "is_reference_expanded":
+            group = "reference_provenance"
+        elif name.startswith("retriever_") or name.endswith("_agreement"):
+            group = "retriever_agreement"
+        elif name.startswith("chunk_fusion_") or name in {
+            "chunk_max_fusion_score",
+            "chunk_reciprocal_best_rank",
+            "chunk_count",
+            "chunk_top1_top2_gap",
+            "chunk_strong_fraction",
+            "chunk_type_count",
+        }:
+            group = "chunk_fusion"
+        elif name.endswith("_z") or name.endswith("_minmax") or name.endswith("_percentile") or "gap_from" in name or name == "reranker_gap_to_next":
+            group = "within_query_calibration"
+        elif name.startswith("query_"):
+            group = "query_shape"
+        elif name.startswith("reranker_"):
+            group = "reranker_article"
+        else:
+            group = "first_stage_components"
+        group_for[name] = group
+    grouped: defaultdict[str, list[str]] = defaultdict(list)
+    for name in names:
+        grouped[group_for[name]].append(name)
+    return {group: tuple(values) for group, values in sorted(grouped.items())}
+
+
+def drop_ltr_features(
+    examples: dict[str, Any], feature_names: Sequence[str]
+) -> dict[str, Any]:
+    """Copy examples while removing named columns for a controlled ablation."""
+    removed = set(feature_names)
+    unknown = removed - set(examples["feature_names"])
+    if unknown:
+        raise ValueError(f"Unknown LTR features: {sorted(unknown)}")
+    kept_indices = [
+        index
+        for index, name in enumerate(examples["feature_names"])
+        if name not in removed
+    ]
+    if not kept_indices:
+        raise ValueError("Cannot remove every LTR feature")
+    result = dict(examples)
+    result["feature_names"] = tuple(examples["feature_names"][index] for index in kept_indices)
+    result["features"] = examples["features"][:, kept_indices]
+    return result
 
 
 def evaluate_oof_lightgbm(
@@ -444,7 +684,8 @@ def evaluate_oof_lightgbm(
     random.Random(seed).shuffle(shuffled)
     fold_by_qid = {qid: index % folds for index, qid in enumerate(shuffled)}
     probabilities = np.zeros(len(labels), dtype=np.float64)
-    importance = np.zeros(features.shape[1], dtype=np.float64)
+    split_importance = np.zeros(features.shape[1], dtype=np.float64)
+    gain_importance = np.zeros(features.shape[1], dtype=np.float64)
 
     print(
         f"[lightgbm:{progress_label}] start rows={len(labels)} "
@@ -472,7 +713,12 @@ def evaluate_oof_lightgbm(
         probabilities[validation] = _predict_positive_probability(
             model, features[validation]
         )
-        importance += model.feature_importances_
+        split_importance += model.booster_.feature_importance(
+            importance_type="split"
+        )
+        gain_importance += model.booster_.feature_importance(
+            importance_type="gain"
+        )
         print(
             f"[lightgbm:{progress_label}] outer_oof_fit_complete "
             f"{fold + 1}/{folds} seconds={time.perf_counter() - started:.2f}",
@@ -523,7 +769,15 @@ def evaluate_oof_lightgbm(
         "feature_names": list(examples["feature_names"]),
         "mean_feature_importance": {
             name: float(value / folds)
-            for name, value in zip(examples["feature_names"], importance)
+            for name, value in zip(examples["feature_names"], split_importance)
+        },
+        "mean_split_importance": {
+            name: float(value / folds)
+            for name, value in zip(examples["feature_names"], split_importance)
+        },
+        "mean_gain_importance": {
+            name: float(value / folds)
+            for name, value in zip(examples["feature_names"], gain_importance)
         },
         "fixed_output_k": {
             str(cutoff): metrics.to_dict() for cutoff, metrics in fixed.items()

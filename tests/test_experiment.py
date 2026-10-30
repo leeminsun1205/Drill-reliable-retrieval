@@ -86,8 +86,15 @@ class ExperimentTest(unittest.TestCase):
                 return {}
 
         class FakeReranker:
+            def __init__(self):
+                self.scores = {}
+
             def rerank_chunks(self, queries, candidates):
+                self.scores.update({query.qid: (2.0,) for query in queries})
                 return [RetrievalResult(query.qid, (10,), (2.0,)) for query in queries]
+
+            def chunk_scores_by_qid(self):
+                return dict(self.scores)
 
             def run_metadata(self):
                 return {}

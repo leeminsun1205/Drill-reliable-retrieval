@@ -25,6 +25,11 @@ Only current execution entry points live in this directory:
   evaluation-only entry point for the five completed pool-100 checkpoints.
   Both evaluation notebooks run warm start and epochs 1--5 in separate,
   sequential subprocesses so model and CUDA state are released between cases.
+- `kaggle_pool50_epoch1_lightgbm_feature_screen.ipynb`: post-selection entry
+  point for checkpoint 1208. It reuses the verified pool-50 handoff, creates
+  complete enriched development artifacts once, precomputes corpus-static
+  article features, and compares the 15/41/61/69-feature LightGBM schemas with
+  identical query-grouped OOF folds and selection policies.
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
   cache artifact per process.
 - `kaggle_multi_dense_weight_selection.ipynb`: current BM25S + Harrier +

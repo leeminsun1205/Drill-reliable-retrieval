@@ -2,6 +2,7 @@
 """Evaluate out-of-fold LightGBM fusion from a saved development run."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -10,10 +11,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from drill_ir.analysis import (
     build_ltr_examples,
+    drop_ltr_features,
     evaluate_oof_lightgbm,
     limit_ltr_examples,
+    ltr_feature_groups,
 )
 from drill_ir.data import load_queries
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def main() -> None:
@@ -23,6 +34,20 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--feature-schema",
+        choices=("base_v1", "enhanced_v1", "enhanced_v2", "enhanced_v3"),
+        default="enhanced_v3",
+        help=(
+            "base_v1 is the historical base (15 features with two dense models); "
+            "v2 adds persisted chunk evidence; v3 also requires static article features"
+        ),
+    )
+    parser.add_argument(
+        "--static-article-features",
+        type=Path,
+        help="JSONL made by scripts/build_ltr_static_features.py; required for enhanced_v3",
+    )
     parser.add_argument(
         "--input-depths",
         nargs="+",
@@ -41,6 +66,12 @@ def main() -> None:
         choices=("disabled", "score_gap"),
         default="disabled",
     )
+    parser.add_argument(
+        "--feature-group-ablation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run query-grouped OOF after dropping each interpretable feature group",
+    )
     args = parser.parse_args()
 
     expected_qids = set(
@@ -50,7 +81,12 @@ def main() -> None:
     if {query.qid for query in queries} != expected_qids:
         raise ValueError("Saved dev qids do not match the labeled query dataset")
 
-    examples = build_ltr_examples(args.run_dir, queries)
+    examples = build_ltr_examples(
+        args.run_dir,
+        queries,
+        feature_schema=args.feature_schema,
+        static_article_features=args.static_article_features,
+    )
     result = evaluate_oof_lightgbm(
         examples,
         queries,
@@ -96,10 +132,45 @@ def main() -> None:
             "score_gap": depth_result.get("score_gap"),
         }
     result["lightgbm_input_depth_ablation"] = ablation
+    result["feature_schema"] = args.feature_schema
+    result["static_article_features"] = (
+        {
+            "path": str(args.static_article_features),
+            "sha256": _sha256(args.static_article_features),
+        }
+        if args.static_article_features is not None
+        else None
+    )
+    feature_group_ablation = {}
+    if args.feature_group_ablation:
+        for group, names in ltr_feature_groups(examples["feature_names"]).items():
+            reduced = drop_ltr_features(examples, names)
+            group_result = evaluate_oof_lightgbm(
+                reduced,
+                queries,
+                folds=args.folds,
+                seed=args.seed,
+                include_score_gap=args.adaptive_selection == "score_gap",
+                score_gap_maximum_cutoffs=tuple(args.score_gap_maximum_cutoffs),
+                progress_label=f"drop_{group}",
+            )
+            group_result.pop("rankings")
+            feature_group_ablation[group] = {
+                "dropped_features": list(names),
+                "remaining_feature_count": len(reduced["feature_names"]),
+                "fixed_output_k": group_result["fixed_output_k"],
+                "threshold": group_result["threshold"],
+                "score_gap": group_result.get("score_gap"),
+            }
+    result["feature_group_ablation"] = feature_group_ablation
     args.output_dir.mkdir(parents=True, exist_ok=True)
     rankings = result.pop("rankings")
     (args.output_dir / "lightgbm_input_depth_ablation.json").write_text(
         json.dumps(ablation, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (args.output_dir / "feature_group_ablation.json").write_text(
+        json.dumps(feature_group_ablation, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     (args.output_dir / "metrics.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"

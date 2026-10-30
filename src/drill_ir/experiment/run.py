@@ -27,6 +27,7 @@ from drill_ir.retrieval import build_retriever, ChunkRetrievalResult
 from drill_ir.data.models import RetrievalResult
 from drill_ir.preprocessing import Chunk
 from drill_ir.runtime_resources import cuda_snapshot
+from drill_ir.text_features import chunk_pair_features
 
 
 def _git_info() -> dict[str, Any]:
@@ -489,10 +490,21 @@ def run_experiment(config: dict[str, Any]) -> Path:
                 }
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")
     if retrieved_chunk_candidates is not None:
+        query_by_qid = {query.qid: query for query in dev_queries}
+        score_getter = getattr(reranker, "chunk_scores_by_qid", None)
+        reranker_chunk_scores = score_getter() if callable(score_getter) else {}
         with (run_dir / "reranker_chunk_candidates.jsonl").open(
             "w", encoding="utf-8"
         ) as stream:
             for result in retrieved_chunk_candidates:
+                scores = reranker_chunk_scores.get(result.qid)
+                if scores is None or not scores or len(scores) > len(result.chunks):
+                    raise RuntimeError(
+                        f"Missing aligned per-chunk reranker scores for qid={result.qid}"
+                    )
+                scored_chunks = result.chunks[: len(scores)]
+                fusion_scores = result.scores[: len(scores)]
+                query = query_by_qid[result.qid]
                 record = {
                     "qid": result.qid,
                     "chunks": [
@@ -501,9 +513,16 @@ def run_experiment(config: dict[str, Any]) -> Path:
                             "aid": chunk.aid,
                             "chunk_index": chunk.chunk_index,
                             "chunk_type": chunk.chunk_type,
+                            "char_start": chunk.char_start,
+                            "char_end": chunk.char_end,
+                            "token_count": chunk.token_count,
                             "fusion_score": score,
+                            "reranker_score": reranker_score,
+                            **chunk_pair_features(query.question, chunk.text),
                         }
-                        for chunk, score in zip(result.chunks, result.scores)
+                        for chunk, score, reranker_score in zip(
+                            scored_chunks, fusion_scores, scores
+                        )
                     ],
                 }
                 stream.write(json.dumps(record, ensure_ascii=False) + "\n")

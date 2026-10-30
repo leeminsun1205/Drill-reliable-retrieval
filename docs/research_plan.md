@@ -140,8 +140,8 @@ legal corpus
   -> epoch-3 cross-encoder, pair length 512, global-stream (batch 64 for the
      active T4x2 lifecycle verification; batch 128 remains the isolated winner)
   -> max score aggregation to aid
-  -> query-grouped OOF LightGBM with 41 features (15 historical base plus 26
-     deterministic normalization, agreement, reference, chunk, and query features)
+  -> query-grouped OOF LightGBM with an explicit feature schema: historical
+     base_v1 (15), enhanced_v1 (41), enhanced_v2 (61), or enhanced_v3 (69)
   -> threshold/fallback or query-adaptive score-gap final selection
   -> official qid/relevant_laws submission
 ```
@@ -279,13 +279,14 @@ methodological change.
 The execution order is frozen as follows: finish both pointwise runs; evaluate
 the warm start and all five checkpoints on their matching handoffs; select the
 pool/checkpoint finalist by development fixed-top-2 F2 with fixed top 1/3 and
-cost as required diagnostics; and only then train the enhanced 41-feature
-LightGBM selector. Do not train LightGBM independently for every checkpoint,
+cost as required diagnostics; and only then train the LightGBM selector. Do not
+train LightGBM independently for every checkpoint,
 because doing so would confound neural-checkpoint selection with selector
-capacity and multiply development selection. The final selector compares the
-historical 15-feature schema with the full 41-feature schema and group-removal
-ablations for normalization, retriever agreement, reference provenance, chunk
-statistics, and query cues. Feature importance is descriptive only: remove a
+capacity and multiply development selection. The final selector compares
+`base_v1` against the enhanced schemas with group-removal ablations for
+normalization, retriever agreement, reference provenance, per-chunk reranker
+evidence, length/lexical evidence, article-static features, chunk statistics,
+and query cues. Feature importance is descriptive only: remove a
 feature group only when nested query-fold OOF shows no material F2 loss and no
 meaningful increase in fold variance. Public/private test scores must not choose
 the feature set, input depth, threshold, or score-gap policy.

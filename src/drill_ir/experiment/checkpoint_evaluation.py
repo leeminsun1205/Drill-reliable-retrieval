@@ -315,3 +315,81 @@ def evaluate_checkpoints(
         )
     _write_scoreboard(run_dirs, output_root)
 
+
+def evaluate_selected_checkpoint(
+    *,
+    pool_size: int,
+    model_path: Path,
+    label: str,
+    handoff_root: Path,
+    corpus_path: Path,
+    train_path: Path,
+    output_root: Path,
+    devices: int = 2,
+) -> Path:
+    """Materialize complete artifacts for one already-selected checkpoint."""
+    if devices <= 0:
+        raise ValueError(f"devices must be positive, found {devices}")
+    if not label or any(character in label for character in "/\\"):
+        raise ValueError("label must be a non-empty path-safe name")
+    _validate_model_directory(model_path, label)
+    config, handoff_path, manifest = load_and_validate_handoff(
+        handoff_root, pool_size
+    )
+    output_root.mkdir(parents=True, exist_ok=True)
+    run_dir = output_root / f"pointwise_mil_pool{pool_size}_{label}"
+    if _complete(run_dir):
+        print(f"[selected-reranker] run_reused label={label} dir={run_dir}", flush=True)
+        return run_dir
+
+    selected_config = json.loads(json.dumps(config))
+    selected_config["method"] = "hybrid_reranker"
+    selected_config["experiment_name"] = run_dir.name
+    selected_config["reranking"]["model_name"] = str(model_path)
+    selected_config["reranking"]["batching"] = "packed_stream"
+    selected_config["reranking"]["batch_size"] = 256
+    selected_config.setdefault("runtime", {})[
+        "process_handoff_before_reranking"
+    ] = False
+    selected_config["runtime"]["stop_after_retrieval_handoff"] = False
+    config_path = output_root / f"{label}.yaml"
+    config_path.write_text(
+        yaml.safe_dump(selected_config, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    provenance = {
+        "selection": "selected_reranker_artifact_materialization",
+        "pool_size": pool_size,
+        "label": label,
+        "model_path": str(model_path),
+        "handoff_root": str(handoff_root),
+        "handoff_sha256": manifest["handoff_sha256"],
+        "corpus_path": str(corpus_path),
+        "train_path": str(train_path),
+        "devices": devices,
+    }
+    (output_root / f"{label}_provenance.json").write_text(
+        json.dumps(provenance, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    command = [
+        sys.executable,
+        "scripts/run_experiment.py",
+        "--config",
+        str(config_path),
+        "--corpus-path",
+        str(corpus_path),
+        "--train-path",
+        str(train_path),
+        "--output-root",
+        str(output_root),
+        "--devices",
+        str(devices),
+    ]
+    env = dict(os.environ)
+    env["DRILL_RETRIEVAL_HANDOFF"] = str(handoff_path)
+    _stream(command, env)
+    missing = [name for name in REQUIRED_RESULTS if not (run_dir / name).is_file()]
+    if missing:
+        raise RuntimeError(f"Incomplete selected reranker evaluation: {missing}")
+    return run_dir
+

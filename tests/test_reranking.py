@@ -386,6 +386,10 @@ class CrossEncoderRerankerTest(unittest.TestCase):
         )[0]
         self.assertEqual(result.aids, (10, 20))
         self.assertEqual(len(scorer.seen_pairs), 3)
+        self.assertEqual(
+            reranker.chunk_scores_by_qid()[1],
+            (np.float32(0.1), np.float32(0.5), np.float32(0.9)),
+        )
 
 
 if __name__ == "__main__":

@@ -214,6 +214,15 @@ Source: [EDM working-notes paper](https://aclanthology.org/2025.vlsp-1.19/).
 No public GitHub repository was found in the paper or targeted searches as of
 2026-09-28.
 
+The published EDM feature inventory additionally motivates inexpensive length,
+retriever/reranker, similarity, generated-title, and reference features. This
+project adopts only the directly reproducible subset: score distributions,
+length/coverage statistics, explicit-reference provenance, and legal-citation
+overlap. It does not add generated titles, HyDE, or LLM judgments to the main
+comparison because those would simultaneously change representation, candidate
+generation, and the final selector. The resulting LightGBM treatment is an
+EDM-inspired controlled ablation, not an EDM reproduction.
+
 ### FPT IS — rank 2
 
 FPT IS followed a data-centric pipeline: Qwen2.5-7B-Instruct generated missing
@@ -237,6 +246,13 @@ skipping the first five high-scoring non-gold candidates.
 
 Source: [simple two-stage framework paper](https://aclanthology.org/2025.vlsp-1.20/).
 No confirmed public GitHub repository was found.
+
+For the present feature-engineering step, FPT IS and CUDO mainly reinforce two
+already separated decisions: preserve legal hierarchy/chunk provenance and
+tune a variable-size final selection rule. Neither paper publishes a richer
+reusable tabular feature schema than EDM. Their title augmentation and hard-
+negative mining therefore remain separate representation/training treatments,
+not hidden additions to the LightGBM comparison.
 
 ### IUH.TD / ViDRILL — rank 5
 
