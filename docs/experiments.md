@@ -2064,3 +2064,126 @@ threshold/fallback-2 result is also pool 50 epoch 1 with F2 `0.623556`; pool
 100's best is epoch 1 with F2 `0.610202`. Sources are the two archived
 `checkpoint_scoreboard.csv` files in
 `pointwise_mil_pool{50,100}_checkpoint_eval_metrics.tar.gz`.
+
+### Pool-50 epoch-1 LightGBM feature screen
+
+The post-selection feature screen completed on 2026-10-30 using checkpoint
+`1208`, the verified pool-50 handoff, 438 development queries, and 13,348
+candidate rows containing 522 positive rows. All four schemas use identical
+query-grouped five-fold OOF assignments. The measured results are:
+
+| Schema | Features | Fixed top-2 F2 | Pooled threshold/fallback-2 F2 | Nested-OOF score-gap F2 |
+|---|---:|---:|---:|---:|
+| `base_v1` | 15 | 0.583262 | 0.664100 | 0.648388 |
+| `enhanced_v1` | 41 | 0.594233 | **0.669570** | 0.649468 |
+| `enhanced_v2` | 61 | 0.594233 | 0.663271 | **0.658333** |
+| `enhanced_v3` | 69 | **0.597850** | 0.662563 | 0.657139 |
+
+The frozen reranker alone scored fixed-top-2 F2 `0.579928` and tuned
+threshold/fallback-2 F2 `0.623556`. Thus every LightGBM schema improved the
+fixed-top-2 ranking, while the 61-feature schema produced the strongest
+leakage-controlled selector estimate available in this screen. Because four
+schemas were compared on the same development data, even this nested estimate
+inherits method-selection uncertainty and is not an untouched test estimate.
+The 69-feature schema improved fixed top-2 by `0.003616` over 61 features but
+reduced nested score-gap
+F2 by `0.001194`; removing its eight article-static fields exactly recovers the
+61-feature result. The current primary choice is therefore `enhanced_v2` for
+score-gap selection, with `enhanced_v3` retained as the fixed-top-2 control.
+
+Group removal is exploratory because many groups were screened on the same
+development split. The best observed nested score-gap ablation was
+`enhanced_v3` without query/chunk lexical features at F2 `0.664216`; the best
+61-feature ablation removed retriever-agreement features at F2 `0.661736`.
+These should be treated as hypotheses for one confirmatory reduced-schema run,
+not as already selected winners. Split/gain importance likewise remains
+descriptive. The source archive is
+`pool50_epoch1_lightgbm_feature_screen.tar.gz`; its static table contains
+59,628 unique article IDs and records corpus and output SHA-256 hashes.
+
+The complete `enhanced_v2` group-removal screen was:
+
+| Removed feature group | Nested-OOF score-gap F2 | Change from full 61 features |
+|---|---:|---:|
+| None (full `enhanced_v2`) | 0.658333 | 0.000000 |
+| Retriever agreement | 0.661736 | +0.003403 |
+| Query/chunk lexical | 0.660375 | +0.002043 |
+| First-stage components | 0.658642 | +0.000309 |
+| Chunk fusion | 0.657927 | -0.000406 |
+| Reference | 0.657108 | -0.001225 |
+| Per-chunk reranker distribution | 0.655033 | -0.003299 |
+| Query shape | 0.653771 | -0.004561 |
+| Chunk length/coverage | 0.651151 | -0.007181 |
+| Within-query calibration | 0.640962 | -0.017371 |
+
+Positive changes are observed development differences, not confidence-tested
+improvements. The archive retains the corresponding predictions and the full
+ablation output for the other schemas.
+
+For `enhanced_v2`, normalized gain importance is dominated by within-query
+calibration (`64.00%`), followed by article-level reranker features (`8.95%`),
+first-stage components (`7.60%`), chunk fusion (`6.08%`), chunk length/coverage
+(`3.91%`), and per-chunk reranker distribution (`3.77%`). The largest individual
+features are reranker min-max normalization (`40.01%`), reranker z-score
+(`17.20%`), and margin from the reranker top score (`6.52%`). Importance and
+ablation do not always agree: first-stage and retriever-agreement groups carry
+nonzero gain but their removal slightly improves nested score-gap F2, whereas
+the low-gain query-shape group reduces nested F2 when removed. This confirms
+that pruning decisions must use held-out group ablation rather than a raw gain
+cutoff.
+
+### Experiment ledger: current pointwise finalist
+
+This ledger freezes the executed sequence as of 2026-10-30. Values in the
+`Measured outcome` column come from retained artifacts; rows marked exploratory
+must not be presented as confirmatory findings.
+
+| Stage | Frozen treatment | Artifact or checkpoints | Status | Measured outcome / decision |
+|---|---|---|---|---|
+| Pointwise MIL adaptation, pool 50 | Reference on; WRRF `k=10`; BM25/Harrier/E5 `0.15/0.55/0.30`; Vietnamese reranker warm start; five epochs; deterministic seeded-cycle sampling of at most four article chunks per epoch | `1208, 2418, 3630, 4842, 6054` | Completed | All five checkpoints and final model were saved. Training loss is an optimization diagnostic only; there is no separate pair-level `eval_loss`. |
+| Pointwise MIL adaptation, pool 100 | Same treatment, changing only the candidate budget and artifact identity | `1238, 2479, 3721, 4961, 6203` | Completed | All five checkpoints and final model were saved. This is the candidate-budget ceiling ablation. |
+| Matched checkpoint screen, pool 50 | One checksummed retrieval handoff reused by the warm start and five checkpoints; sequential fresh reranker subprocesses; packed-stream inference batch 256 | `pointwise_mil_pool50_checkpoint_eval_metrics.tar.gz` | Completed | Epoch 1 / checkpoint `1208` won the predeclared fixed-top-2 gate at P/R/F2 `0.393836/0.657610/0.579928`. Its pooled tuned threshold diagnostic was F2 `0.623556`. |
+| Matched checkpoint screen, pool 100 | Same protocol with the pool-100 handoff | `pointwise_mil_pool100_checkpoint_eval_metrics.tar.gz` | Completed | Epoch 2 / checkpoint `2479` was the pool-100 fixed-top-2 winner at P/R/F2 `0.385845/0.639612/0.565259`; pool-100 epoch 1 had the best pooled threshold diagnostic at F2 `0.610202`. Pool 100 did not displace pool 50. |
+| LightGBM schema screen | Pool-50 checkpoint `1208`; 438 fixed development queries; 13,348 rows, 522 positives; identical five query-grouped folds and seed 42 | `pool50_epoch1_lightgbm_feature_screen.tar.gz` | Completed | `enhanced_v2` (61 features) had the strongest nested-OOF score-gap F2, `0.658333`; `enhanced_v3` (69) had the strongest fixed-top-2 F2, `0.597850`; `enhanced_v1` (41) had the strongest pooled threshold diagnostic, `0.669570`. |
+| Feature-group removal and importance | Same saved rows, folds, schemas, and policy search | Ablation and importance files inside the LightGBM archive | Completed, exploratory | Best observed removal was `enhanced_v3` without query/chunk lexical features at nested F2 `0.664216`; best 61-feature removal dropped retriever agreement at `0.661736`. These are hypotheses, not selected winners. |
+
+The LightGBM screen used binary classification with 200 trees, learning rate
+`0.03`, 15 leaves, maximum depth 4, minimum child samples 20, full row and
+column sampling, L1 `0.1`, L2 `1.0`, and fold-specific deterministic random
+states derived from seed 42. `base_v1`, `enhanced_v1`, `enhanced_v2`, and
+`enhanced_v3` are nested 15/41/61/69-feature supersets. The static feature
+artifact covers 59,628 unique `aid` values and retains its corpus/output hashes.
+
+The selection hierarchy is deliberately asymmetric:
+
+1. Fixed top 2 selected the neural checkpoint and candidate budget, because it
+   does not add a learned output-set policy.
+2. Nested query-fold OOF score-gap F2 compares learned selectors and is the
+   primary generalization estimate for LightGBM.
+3. Pooled OOF threshold/fallback-2 and pooled score-gap optima are development
+   diagnostics. They may supply frozen deployment parameters only after the
+   method is chosen; they are not unbiased estimates of that choice.
+4. Gain importance is descriptive. Group-removal ablation is stronger pruning
+   evidence, but the many removals in this screen still require confirmation.
+
+Current decision: carry pool-50 epoch 1 / checkpoint `1208` forward. Retain the
+full 61-feature `enhanced_v2` schema as the primary LightGBM model and the full
+69-feature `enhanced_v3` fixed-top-2 ranking as a control. If compute permits
+one more development run, test exactly one predeclared reduced schema informed
+by the exploratory ablations; do not continue open-ended single-feature search.
+
+Not yet measured in this branch are an independently confirmed reduced schema,
+LightGBM hyperparameter tuning, LambdaRank or another learner, a nested
+threshold-policy estimate, uncertainty intervals for the final comparison, and
+an official public/private evaluation of the newly fine-tuned finalist. Do not
+report any of those as completed or infer leaderboard gains from the 438-query
+development results.
+
+The official-inference launcher is now prepared at
+`notebooks/kaggle_pool50_epoch1_lightgbm_submission.ipynb`. It freezes
+checkpoint `1208`, `enhanced_v2`, seed 42, and score-gap maximum cutoffs
+`{3,4,5}`, reproduces the nested-OOF F2 gate before packaging, and emits
+public/private score-gap submissions plus fixed-top-2 and pooled-threshold
+controls. This records an executable plan, not an executed result: official
+scores remain unmeasured until the notebook completes and Codabench returns a
+recorded evaluation.

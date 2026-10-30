@@ -34,6 +34,23 @@ an official improvement. Repeated public-leaderboard submissions used to choose
 a method make that leaderboard a tuning signal; never treat it as an untouched
 test afterward. Keep the private test final and do not use it to iterate.
 
+## Current pointwise selection protocol
+
+As of 2026-10-30, checkpoint selection and learned final-set selection are two
+separate decisions. Compare the pool-50 and pool-100 pointwise MIL snapshots on
+the same frozen retrieval handoff and select the neural snapshot by fixed-top-2
+development F2. This gate selected pool-50 epoch 1 / checkpoint `1208`. A
+threshold tuned on those same 438 queries is diagnostic and must not determine
+the checkpoint while also being reported as an unbiased result.
+
+After the checkpoint is frozen, compare LightGBM feature schemas using the same
+query-grouped five-fold assignments. Use nested-OOF score-gap F2 as the primary
+estimate for the learned output-set policy. Report pooled OOF threshold and
+pooled score-gap results separately as tuning/deployment diagnostics. Feature
+importance does not validate a feature; feature-group removal is stronger but
+remains exploratory when many groups are tried on the same development split.
+An official test score is required before claiming external confirmation.
+
 ## Metrics
 
 The primary DRiLL-compatible metrics are Precision, Recall, and F2, aggregated

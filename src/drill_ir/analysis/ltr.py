@@ -925,6 +925,32 @@ def evaluate_oof_lightgbm(
                 gold, rankings, maximum_k=max(score_gap_maximum_cutoffs)
             ),
         }
+    fixed_top2 = result["fixed_output_k"].get("2")
+    threshold_top2 = result["threshold"].get("best_by_fallback_k", {}).get("2")
+    summary: dict[str, Any] = {
+        "event": "case_summary",
+        "label": progress_label,
+        "features": len(examples["feature_names"]),
+        "rows": len(labels),
+        "fixed_top2": fixed_top2,
+        "threshold_fallback2": threshold_top2,
+    }
+    if "score_gap" in result:
+        pooled = result["score_gap"]["pooled_oof_tuning_for_deployment"]["best"]
+        nested = result["score_gap"]["nested_oof_estimate"]
+        summary["score_gap_pooled"] = {
+            key: pooled[key]
+            for key in ("precision", "recall", "f2")
+            if key in pooled
+        }
+        summary["score_gap_nested"] = {
+            key: nested[key] for key in ("precision", "recall", "f2")
+        }
+    print(
+        f"[lightgbm:{progress_label}] summary "
+        + json.dumps(summary, ensure_ascii=False, sort_keys=True),
+        flush=True,
+    )
     print(f"[lightgbm:{progress_label}] complete", flush=True)
     return result
 

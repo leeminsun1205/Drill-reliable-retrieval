@@ -1018,6 +1018,20 @@ Use `--feature-schema base_v1` for the historical base-only treatment. It has
 components are schema-derived, a one-dense run correctly has 13 columns and
 must not be compared as if it were the same 15-feature treatment.
 
+After the feature screen is frozen, run
+`notebooks/kaggle_pool50_epoch1_lightgbm_submission.ipynb` for official
+public/private inference. Attach the pool-50 fine-tuning notebook output, the
+retained `pool50_epoch1_lightgbm_feature_screen` artifact, graph-v3 reference
+dataset, retrieval caches/models, corpus/train dataset, and official test
+dataset. The notebook fails closed unless the dev run is the 438-query
+`pointwise_mil_pool50_adaptation_epoch_1_checkpoint_1208` treatment. It reuses
+that run's resolved config, overrides only environment paths, reranks each test
+split once, and fits `enhanced_v2` with seed 42 and the frozen score-gap maximum
+cutoffs `{3,4,5}`. The primary deliverables are
+`public_lightgbm_score_gap_results.zip` and
+`private_lightgbm_score_gap_results.zip`; fixed-top-2 and pooled-threshold ZIPs
+are retained as controls and must not be selected after inspecting test scores.
+
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired
 training script and rerun the training cell in the same Kaggle session. Do not
@@ -1600,3 +1614,16 @@ non-finite gradients. The scheduler and `global_step` now advance only when the
 optimizer update actually occurred; skipped updates are logged with the current
 AMP scale. Advancing the scheduler after a skipped update is a protocol error,
 not a warning to suppress.
+
+The retained result archives for the current pointwise finalist are
+`results/pointwise_mil_pool50_checkpoint_eval_metrics.tar.gz`,
+`results/pointwise_mil_pool100_checkpoint_eval_metrics.tar.gz`, and
+`results/pool50_epoch1_lightgbm_feature_screen.tar.gz`. Preserve these together
+with their manifests, scoreboards, OOF predictions, feature metadata,
+importance files, and group-ablation outputs. The first two establish the
+fixed-top-2 checkpoint gate; the third establishes the four nested feature
+schemas and their nested-OOF selector comparison. Re-running a notebook is not
+required merely to write the report, but any new comparison must reuse the
+recorded 438-query split, seed 42, frozen pool-50 handoff, checkpoint `1208`,
+and identical LightGBM folds unless the changed factor is explicitly the
+subject of the experiment.

@@ -70,6 +70,16 @@ def main() -> None:
         default="disabled",
         help="Optionally package a score-gap submission in addition to unchanged baselines",
     )
+    parser.add_argument(
+        "--score-gap-maximum-cutoffs",
+        type=int,
+        nargs="+",
+        default=(3, 4, 5, 6, 7, 8, 9, 10),
+        help=(
+            "Maximum output-prefix sizes considered by pooled and nested "
+            "score-gap tuning"
+        ),
+    )
     args = parser.parse_args()
 
     dev_qids_path = args.dev_run_dir / "split_dev_qids.json"
@@ -92,6 +102,7 @@ def main() -> None:
         folds=args.folds,
         seed=args.seed,
         include_score_gap=args.adaptive_selection == "score_gap",
+        score_gap_maximum_cutoffs=args.score_gap_maximum_cutoffs,
     )
     oof_rankings = oof.pop("rankings")
     (output / "oof_metrics.json").write_text(
@@ -181,6 +192,7 @@ def main() -> None:
         "selected_oof_policy": selected,
         "adaptive_selection": {
             "mode": args.adaptive_selection,
+            "score_gap_maximum_cutoffs": args.score_gap_maximum_cutoffs,
             "selected_oof_policy": (
                 score_gap_policy if args.adaptive_selection == "score_gap" else None
             ),

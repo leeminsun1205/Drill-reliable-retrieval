@@ -968,3 +968,16 @@ These runs test whether matched training can exploit the larger ceiling; they
 do not replace pool 50 as the predeclared main treatment unless their fixed
 top-2 and subsequent nested-OOF finalist comparisons justify the doubled
 reranking cost.
+
+Measured update, 2026-10-30: pool 100 did not justify the doubled candidate
+budget. The matched fixed-top-2 checkpoint screen selected pool-50 epoch 1 /
+checkpoint `1208` at F2 `0.579928`; pool 100's best checkpoint reached
+`0.565259`. The subsequent controlled LightGBM feature screen selected the full
+61-feature `enhanced_v2` schema as the primary learned selector by nested-OOF
+score-gap F2 `0.658333`. The full 69-feature `enhanced_v3` schema remains a
+fixed-top-2 control at F2 `0.597850`. These results supersede the older
+epoch-3/`0.10/0.50/0.40` architecture checkpoint only for the current
+pointwise-finalist branch; that historical pipeline remains a frozen baseline,
+not a silently rewritten configuration. The next allowed feature-pruning step
+is one predeclared confirmatory reduced-schema comparison, not an open-ended
+search over individual fields.
