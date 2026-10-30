@@ -10,6 +10,7 @@ import os
 import random
 from pathlib import Path
 import shutil
+import time
 
 
 def _sha256(path: Path) -> str:
@@ -562,6 +563,20 @@ def main() -> None:
             if sampler is not None:
                 sampler.set_epoch(epoch)
             for batch_index, batch in enumerate(loader):
+                batch_number = batch_index + 1
+                trace_batch = batch_number <= 100 or batch_number % 25 == 0
+                batch_started = time.perf_counter()
+                if trace_batch:
+                    tensor_shapes = {
+                        key: list(value.shape)
+                        for key, value in batch.items()
+                        if hasattr(value, "shape")
+                    }
+                    stage(
+                        f"batch_start epoch={epoch + 1} "
+                        f"batch={batch_number}/{len(loader)} "
+                        f"optimizer_step={global_step} shapes={tensor_shapes}"
+                    )
                 group_start = (
                     batch_index // args.gradient_accumulation_steps
                 ) * args.gradient_accumulation_steps
@@ -619,6 +634,14 @@ def main() -> None:
                             ).mean()
                         loss = raw_loss / group_size
                     scaler.scale(loss).backward()
+
+                if trace_batch:
+                    stage(
+                        f"batch_backward_complete epoch={epoch + 1} "
+                        f"batch={batch_number}/{len(loader)} "
+                        f"seconds={time.perf_counter() - batch_started:.1f} "
+                        f"will_optimizer_step={should_step}"
+                    )
 
                 if not should_step:
                     continue

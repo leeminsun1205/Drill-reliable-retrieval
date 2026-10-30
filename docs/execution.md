@@ -1455,6 +1455,13 @@ fresh full-training process would start. The smoke remains an explicit debug
 switch; skipping it changes no training data, optimizer, schedule, seed, or
 checkpoint selection.
 
+MIL training logs the tensor shape, rank, epoch, batch index, and backward
+completion time for the first 100 batches and every 25th batch thereafter.
+The fine-tuning notebooks also print every optimizer step. This is
+observability-only: an article bag can expand one DataLoader row into many
+query--chunk sequences, so the additional records distinguish a costly bag
+from a DDP stall without changing sampling, loss, gradients, or checkpoints.
+
 The notebook sets `OMP_NUM_THREADS=1` explicitly before `torchrun`, matching
 PyTorch's safe default without its repeated launcher warning. NCCL process-group
 initialization receives the rank's explicit CUDA `device_id`, so barriers never
