@@ -1335,6 +1335,37 @@ train five adaptation epochs, and evaluate the Vietnamese warm start plus all
 five checkpoints on that one handoff. There is no supported fallback that
 rebuilds retrieval or mining inside a fine-tuning notebook.
 
+Training consumes the frozen article-bag mining rows with
+`--mil-passage-sampling seeded_cycle --mil-max-passages-per-epoch 4`. For each
+input row and positive/negative field, SHA-256 deterministically shuffles the
+bag into cycles. Each epoch consumes the next non-overlapping slice of at most
+four chunks; the final slice may be smaller, and only the following epoch starts
+a newly shuffled cycle. Thus a bag of 20 or fewer chunks is completely covered
+within the five-epoch run, while larger bags expose 20 distinct chunks before
+any repetition. Pointwise and pairwise fields use independent orders. The
+selection is deterministic across runs and exact epoch-boundary resumes. This
+replaces max-pooling every article chunk inside one DDP training step, which
+produced unbounded variable bags and an observed rank stall on shape `[8, 464]`;
+the new upper bound is four chunks per model forward. It does not alter mining
+artifacts or matched
+evaluation: inference continues to score all frozen candidate chunks and max
+aggregate them to `aid`. The trainer retains `all` as the backward-compatible
+default, records the selected mode in provenance/checkpoints, and rejects a
+resume whose sampling mode or maximum differs.
+
+Training loss observability is global across DDP ranks rather than rank-0-only.
+At every successful optimizer step, console output and
+`training_metrics.jsonl` record the observation-weighted group loss,
+rolling-50 successful-step loss, epoch-to-date average loss, pre-clipping
+gradient norm, AMP scale, and learning rate. AMP-skipped attempts are recorded
+separately with their loss and gradient norm. Each epoch ends with average,
+minimum, and maximum attempted-step loss, successful and skipped step counts,
+global observation count, wall time, and observations/second. The epoch average
+includes AMP-skipped attempts so numerical instability remains visible; rolling
+loss includes successful steps only. Exact resume trims records from any
+interrupted post-checkpoint epoch before replay, and the four notebooks package
+this compact JSONL with their metrics archives.
+
 Matched evaluation retains the frozen `packed_stream` neural batch 256 setting.
 Packed retrieved-chunk inference logs before and after forward call 1 and every
 25 calls so a stalled CUDA/DataParallel forward can be distinguished from model

@@ -11,10 +11,13 @@ Only current execution entry points live in this directory:
   adaptation. It warm-starts from the pinned Vietnamese reranker, consumes
   the separately prepared FPT-inspired mining artifact, and reuses a frozen
   development retrieval handoff. It trains pointwise BCE for
-  exactly five new adaptation epochs, and evaluates every snapshot.
+  exactly five new adaptation epochs with the next seed-determined slice of at
+  most four article chunks per epoch, and evaluates every snapshot over all
+  frozen candidate chunks.
 - `kaggle_finetune_reranker_warmstart_pairwise.ipynb`: promotion-oriented
   treatment using the same audited candidates and Vietnamese warm start, but
-  expanding positive-negative pairs and optimizing pairwise logistic loss.
+  expanding positive-negative pairs and optimizing pairwise logistic loss with
+  independent, non-repeating positive and negative chunk slices per epoch.
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
   cache artifact per process.
 - `kaggle_multi_dense_weight_selection.ipynb`: current BM25S + Harrier +

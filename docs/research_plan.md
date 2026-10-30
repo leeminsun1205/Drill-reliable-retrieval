@@ -243,16 +243,21 @@ reranking, learned fusion, or final selection.
    must be treated explicitly rather than silently mislabeled.
 
 The active 2026-10-30 reranker treatment is FPT-inspired article-labelled
-multiple-instance learning (MIL): training and inference both score the frozen
-Khoản–Điểm chunks and aggregate each article by maximum chunk logit.
+supervision over frozen Khoản–Điểm chunk bags. During each training epoch, the
+next non-overlapping slice of at most four chunks is selected from a
+deterministically shuffled cycle for each article and positive/negative field;
+inference still scores every frozen candidate chunk and aggregates each article
+by maximum chunk logit. This bounded representation retains article-level gold
+labels, covers a bag before repeating it, and avoids unbounded all-chunk DDP
+steps; the permanent mining rows continue to contain every chunk.
 For each non-gold `aid`, mining retains only its maximum-teacher-score chunk,
 takes the top 30 unique articles, drops the five highest-ranked uncertain
 articles, and deterministically samples 10 negatives when more than 15 remain
 or 5 otherwise. Every gold `aid` is a positive bag containing its exposed
 chunks, or deterministic same-chunker fallback chunks when absent; the teacher
-does not select positives. Pointwise BCE and pairwise logistic operate on the
-maximum chunk logit of each article bag. This uses FPT's article-level gold
-supervision without introducing a train/inference unit mismatch. Pool 50/100
+does not select positives. Pointwise BCE max-pools within the selected slice;
+pairwise logistic independently max-pools the selected positive and negative
+slices. Pool 50/100
 and pointwise BCE/pairwise logistic
 form a controlled 2x2 comparison; every run trains five epochs but model
 selection must use the matched development evaluation for every checkpoint.
