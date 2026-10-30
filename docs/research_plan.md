@@ -140,7 +140,8 @@ legal corpus
   -> epoch-3 cross-encoder, pair length 512, global-stream (batch 64 for the
      active T4x2 lifecycle verification; batch 128 remains the isolated winner)
   -> max score aggregation to aid
-  -> query-grouped OOF LightGBM with 15 features
+  -> query-grouped OOF LightGBM with 41 features (15 historical base plus 26
+     deterministic normalization, agreement, reference, chunk, and query features)
   -> threshold/fallback or query-adaptive score-gap final selection
   -> official qid/relevant_laws submission
 ```
@@ -255,27 +256,45 @@ takes the top 30 unique articles, drops the five highest-ranked uncertain
 articles, and deterministically samples 10 negatives when more than 15 remain
 or 5 otherwise. Every gold `aid` is a positive bag containing its exposed
 chunks, or deterministic same-chunker fallback chunks when absent; the teacher
-does not select positives. Pointwise BCE max-pools within the selected slice;
-pairwise logistic independently max-pools the selected positive and negative
-slices. Pool 50/100
-and pointwise BCE/pairwise logistic
-form a controlled 2x2 comparison; every run trains five epochs but model
-selection must use the matched development evaluation for every checkpoint.
+does not select positives. Pointwise BCE max-pools within the selected slice.
+Pool 50 and pool 100 form the active controlled candidate-budget comparison;
+every run trains five epochs but model selection must use the matched
+development evaluation for every checkpoint.
+
+Pairwise pool-50 and pool-100 training is deferred after repeated observed DDP
+stalls. This is an execution-reliability decision, not a measured conclusion
+about pairwise quality. Before revival, the separate positive/negative DDP
+forwards must be replaced by one combined forward and validated in an isolated
+multi-GPU smoke test.
 
 Development retrieval is frozen independently from fine-tuning and checkpoint
 evaluation. `notebooks/temp/kaggle_prepare_frozen_dev_handoff_pool50.ipynb` and
 `notebooks/temp/kaggle_prepare_frozen_dev_handoff_pool100.ipynb` create the two
 reference-on handoffs without loading a reranker. Each archive contains the
 handoff, resolved configuration, and a SHA-256 manifest covering exactly the
-persisted 438-query development split. Pointwise and pairwise checkpoints at a
-given pool size must reuse the matching handoff; this is an execution split,
-not a methodological change.
+persisted 438-query development split. Every pointwise checkpoint at a given
+pool size must reuse the matching handoff; this is an execution split, not a
+methodological change.
+
+The execution order is frozen as follows: finish both pointwise runs; evaluate
+the warm start and all five checkpoints on their matching handoffs; select the
+pool/checkpoint finalist by development fixed-top-2 F2 with fixed top 1/3 and
+cost as required diagnostics; and only then train the enhanced 41-feature
+LightGBM selector. Do not train LightGBM independently for every checkpoint,
+because doing so would confound neural-checkpoint selection with selector
+capacity and multiply development selection. The final selector compares the
+historical 15-feature schema with the full 41-feature schema and group-removal
+ablations for normalization, retriever agreement, reference provenance, chunk
+statistics, and query cues. Feature importance is descriptive only: remove a
+feature group only when nested query-fold OOF shows no material F2 loss and no
+meaningful increase in fold variance. Public/private test scores must not choose
+the feature set, input depth, threshold, or score-gap policy.
 5. **Query-adaptive fusion.** After the fixed-weight baseline, predict a small
    sparse/dense weight policy from deterministic query and component-agreement
    features using query-fold-safe tuning. Do not reopen an unconstrained weight
    grid.
 6. **Groupwise learned ranking.** Compare the current pointwise LightGBM model
-   with a LambdaRank/LambdaMART treatment using the same 15 features, `qid`
+   with a LambdaRank/LambdaMART treatment using the same 41 features, `qid`
    groups, candidates, folds, and final selector. This is a later ranking
    ablation, not a simultaneous architecture replacement.
 
@@ -696,23 +715,21 @@ freeze the winning candidate distribution, mine its hard negatives, and train
 the next reranker. Do not run further dense-model, BM25, WRRF, HyDE, generated-
 title, external-crawl, or large-LLM experiments before that reranker comparison.
 
-The post-freeze reranker comparison has two predeclared treatments. Following
-the checkpoint-only gate, both directions warm-start from the attached
-`AITeamVN/Vietnamese_Reranker` weights so their comparison isolates the
-objective rather than confounding objective and initialization. Direction A
-retains aligned direct-chunk pointwise BCE. Direction B forms every audited
-positive-negative pair and uses pairwise logistic loss, targeting the measured
-failure to promote available gold candidates into the first few ranks. Mining
-uses the same teacher and exact frozen candidate distribution in both: for each
+The active post-freeze reranker comparison is pointwise BCE at candidate pools
+50 and 100. Both runs warm-start from the attached
+`AITeamVN/Vietnamese_Reranker` weights and hold the graph, WRRF, mining rule,
+optimization, and evaluation protocol fixed, so the comparison isolates the
+candidate budget. Mining uses the same teacher and frozen candidate rule: for each
 gold aid, select the teacher-best chunk among gold chunks actually exposed to
 the reranker, falling back to same-chunker representations from the full gold
 article only when that aid is absent. Rank non-gold candidate chunks, exclude
 the five most suspicious of the top 30, and deterministically sample ten
-semi-hard negatives. Both treatments exclude the persisted 438 development
+semi-hard negatives. Both pool treatments exclude the persisted 438 development
 qids and compare fixed top-1/2/3 on identical development candidates before
-LightGBM is used for downstream diagnosis. Epoch 3 remains the established
-task-fine-tuned control; this two-run gate does not claim a matched
-initialization ablation against retraining epoch 3 on the new distribution.
+LightGBM is used for downstream diagnosis. Pairwise remains a documented future
+objective, but is outside this active gate until its multi-GPU execution path is
+reworked and passes an isolated smoke test. Epoch 3 remains the established
+task-fine-tuned control.
 
 The attached Vietnamese checkpoint contains inference weights, not optimizer,
 scheduler, scaler, or RNG state. These treatments are therefore weights-only
@@ -725,10 +742,9 @@ adaptation checkpoint while keeping inference weights for every epoch.
 
 Scoring semantics remain deliberately simple. Pointwise training applies
 binary cross-entropy directly to the model's single raw logit with targets one
-and zero. Pairwise training applies `softplus(score_negative - score_positive)`
-to the same one-logit head; no sigmoid is required for ranking. Inference keeps
-the existing maximum chunk logit per `aid`. Because pointwise and especially
-pairwise adaptation can shift the absolute logit scale, fixed top 2 is the
+and zero; no sigmoid is required for ranking. Inference keeps the existing
+maximum chunk logit per `aid`. Because adaptation can shift the absolute logit
+scale, fixed top 2 is the
 primary checkpoint gate, fixed top 1/3 are required diagnostics, and every
 threshold is retuned on development per checkpoint rather than inherited from
 the Vietnamese or epoch-3 controls.
@@ -937,15 +953,12 @@ BM25/Harrier/E5 weights `0.15/0.55/0.30`. It warm-starts from pinned
 `AITeamVN/Vietnamese_Reranker` weights and retains all five new adaptation-epoch
 snapshots. The notebook fails closed on the verified graph digest and on the
 fully resolved training configuration so a mislabeled experiment cannot run
-historical weights silently. The pairwise notebook has the same graph and
-resolved-configuration checks so the objective is the only intended difference.
-Pairwise remains the predeclared second treatment, not the main training recipe.
-Compare both objectives on the identical frozen development candidates with
-fixed top-2 as the primary checkpoint gate.
+historical weights silently. Compare its five checkpoints with fixed top-2 as
+the primary checkpoint gate and fixed top-1/3 as diagnostics.
 
-Two optional pool-100 fine-tuning ablation notebooks mirror the BCE and
-pairwise pool-50 treatments. They change only the candidate budget and
-artifact identities: reference graph, WRRF, warm start, teacher top-30 mining
+The pointwise pool-100 notebook is the active cost/ceiling ablation. It changes
+only the candidate budget and artifact identities relative to pointwise pool
+50: reference graph, WRRF, warm start, teacher top-30 mining
 depth, five-negative exclusion, ten semi-hard negatives, optimization, and
 evaluation protocol remain fixed. Pool 100/reference-on has measured candidate
 Recall `0.941433`, but its matched Vietnamese warm-start result is intentionally

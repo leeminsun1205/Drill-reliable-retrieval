@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
+import math
 from pathlib import Path
 import random
+import re
 import time
 from typing import Any, Sequence
 import warnings
@@ -37,6 +39,40 @@ FEATURE_NAMES = (
     "chunk_reciprocal_best_rank",
     "chunk_count",
     "query_whitespace_tokens",
+)
+
+DERIVED_FEATURE_NAMES = (
+    "reranker_score_z",
+    "reranker_score_minmax",
+    "reranker_score_percentile",
+    "reranker_gap_from_previous",
+    "reranker_gap_to_next",
+    "first_stage_score_z",
+    "first_stage_score_minmax",
+    "retriever_hit_count",
+    "retriever_top10_count",
+    "retriever_best_rank",
+    "retriever_mean_rank",
+    "retriever_rank_std",
+    "sparse_dense_agreement",
+    "dense_pair_agreement",
+    "is_reference_expanded",
+    "reference_base_reciprocal_rank",
+    "reference_seed_first_stage_reciprocal_rank",
+    "reference_is_same_document",
+    "chunk_fusion_mean",
+    "chunk_fusion_std",
+    "chunk_fusion_min",
+    "chunk_top1_top2_gap",
+    "chunk_strong_fraction",
+    "chunk_type_count",
+    "query_has_explicit_legal_reference",
+    "query_legal_marker_count",
+)
+
+LEGAL_REFERENCE_PATTERN = re.compile(
+    r"\b(?:điều|khoản|điểm|luật|nghị\s+định|thông\s+tư|bộ\s+luật)\b",
+    flags=re.IGNORECASE,
 )
 
 LIGHTGBM_PARAMETERS = {
@@ -92,6 +128,43 @@ def _rank_features(record: dict[str, Any]) -> dict[int, tuple[float, float]]:
     }
 
 
+def _distribution_features(values: Sequence[float]) -> list[tuple[float, float, float]]:
+    """Return stable z-score, min-max value, and descending percentile."""
+    array = np.asarray(values, dtype=np.float64)
+    if array.size == 0:
+        return []
+    mean = float(array.mean())
+    std = float(array.std())
+    minimum = float(array.min())
+    span = float(array.max() - minimum)
+    order = sorted(range(len(array)), key=lambda index: (-array[index], index))
+    percentile = [0.0] * len(array)
+    denominator = max(1, len(array) - 1)
+    for position, index in enumerate(order):
+        percentile[index] = 1.0 - position / denominator
+    return [
+        (
+            (float(value) - mean) / std if std > 0.0 else 0.0,
+            (float(value) - minimum) / span if span > 0.0 else 0.0,
+            percentile[index],
+        )
+        for index, value in enumerate(array)
+    ]
+
+
+def _load_reference_provenance(path: Path) -> dict[tuple[int, int], dict[str, Any]]:
+    """Load optional deterministic reference-expansion records from a run."""
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    records = payload.get("explicit_references", []) if isinstance(payload, dict) else []
+    provenance: dict[tuple[int, int], dict[str, Any]] = {}
+    for record in records:
+        key = (int(record["qid"]), int(record["reference_aid"]))
+        provenance[key] = record
+    return provenance
+
+
 def _dense_feature_schema(
     components: dict[int, dict[str, dict[int, tuple[float, float]]]],
 ) -> tuple[list[str], list[str]]:
@@ -127,6 +200,7 @@ def build_ltr_examples(
         "components": result_dir / f"{prefix}component_rankings.jsonl",
         "chunks": result_dir / f"{prefix}reranker_chunk_candidates.jsonl",
     }
+    feedback_path = result_dir / f"{prefix}retrieval_feedback.json"
     missing = [str(path) for path in required.values() if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"Missing LTR artifacts: {missing}")
@@ -143,19 +217,42 @@ def build_ltr_examples(
             name: _rank_features(payload)
             for name, payload in row["components"].items()
         }
-    chunks: dict[int, dict[int, tuple[float, float, float]]] = {}
+    chunks: dict[int, dict[int, dict[str, float]]] = {}
     for row in _read_jsonl(required["chunks"]):
-        by_aid: defaultdict[int, list[tuple[int, float]]] = defaultdict(list)
+        by_aid: defaultdict[int, list[tuple[int, float, str]]] = defaultdict(list)
         for rank, chunk in enumerate(row["chunks"], start=1):
-            by_aid[int(chunk["aid"])].append((rank, float(chunk["fusion_score"])))
-        chunks[int(row["qid"])] = {
-            aid: (
-                max(score for _, score in values),
-                1.0 / min(rank for rank, _ in values),
-                float(len(values)),
+            by_aid[int(chunk["aid"])].append(
+                (rank, float(chunk["fusion_score"]), str(chunk.get("chunk_type", "")))
             )
+        chunks[int(row["qid"])] = {
+            aid: {
+                "max": max(score for _, score, _ in values),
+                "best_rr": 1.0 / min(rank for rank, _, _ in values),
+                "count": float(len(values)),
+                "mean": float(np.mean([score for _, score, _ in values])),
+                "std": float(np.std([score for _, score, _ in values])),
+                "min": min(score for _, score, _ in values),
+                "top_gap": (
+                    sorted((score for _, score, _ in values), reverse=True)[0]
+                    - sorted((score for _, score, _ in values), reverse=True)[1]
+                    if len(values) > 1
+                    else 0.0
+                ),
+                "strong_fraction": float(
+                    np.mean(
+                        [
+                            score
+                            >= max(item[1] for item in values)
+                            - 0.1 * max(1e-12, abs(max(item[1] for item in values)))
+                            for _, score, _ in values
+                        ]
+                    )
+                ),
+                "type_count": float(len({chunk_type for _, _, chunk_type in values})),
+            }
             for aid, values in by_aid.items()
         }
+    reference_provenance = _load_reference_provenance(feedback_path)
 
     expected_qids = set(query_by_qid)
     for name, mapping in (
@@ -172,6 +269,7 @@ def build_ltr_examples(
         FEATURE_NAMES[:7]
         + tuple(dense_feature_names)
         + FEATURE_NAMES[9:]
+        + DERIVED_FEATURE_NAMES
     )
 
     features: list[list[float]] = []
@@ -187,22 +285,49 @@ def build_ltr_examples(
         if len(ranked_aids) != len(reranker_scores):
             raise ValueError(f"Prediction aids/scores mismatch for qid={qid}")
         top_score = reranker_scores[0]
+        reranker_distribution = _distribution_features(reranker_scores)
+        first_stage_scores = [value[0] for value in first_stage[qid].values()]
+        first_distribution_values = _distribution_features(first_stage_scores)
+        first_distribution = {
+            aid: values
+            for aid, values in zip(first_stage[qid], first_distribution_values)
+        }
         gold = set(query.relevant_aids)
         sparse = components[qid].get("sparse", {})
+        legal_markers = LEGAL_REFERENCE_PATTERN.findall(query.question)
         for rank, (aid, reranker_score) in enumerate(
             zip(ranked_aids, reranker_scores), start=1
         ):
             first_score, first_rr = first_stage[qid].get(aid, (0.0, 0.0))
             sparse_score, sparse_rr = sparse.get(aid, (0.0, 0.0))
             dense_values: list[float] = []
+            component_ranks: list[float] = []
+            sparse_rank = 1.0 / sparse_rr if sparse_rr > 0.0 else math.inf
+            if math.isfinite(sparse_rank):
+                component_ranks.append(sparse_rank)
+            dense_hit_count = 0
             for component in dense_components:
                 dense_score, dense_rr = components[qid][component].get(
                     aid, (0.0, 0.0)
                 )
                 dense_values.extend((dense_score, dense_rr))
-            chunk_score, chunk_rr, chunk_count = chunks[qid].get(
-                aid, (0.0, 0.0, 0.0)
-            )
+                if dense_rr > 0.0:
+                    dense_hit_count += 1
+                    component_ranks.append(1.0 / dense_rr)
+            chunk = chunks[qid].get(aid, {})
+            chunk_score = float(chunk.get("max", 0.0))
+            chunk_rr = float(chunk.get("best_rr", 0.0))
+            chunk_count = float(chunk.get("count", 0.0))
+            reranker_z, reranker_minmax, reranker_percentile = reranker_distribution[rank - 1]
+            previous_score = reranker_scores[rank - 2] if rank > 1 else reranker_score
+            next_score = reranker_scores[rank] if rank < len(reranker_scores) else reranker_score
+            first_z, first_minmax, _ = first_distribution.get(aid, (0.0, 0.0, 0.0))
+            finite_ranks = component_ranks
+            top10_count = sum(value <= 10.0 for value in finite_ranks)
+            reference = reference_provenance.get((qid, aid))
+            seed_rr = 0.0
+            if reference is not None:
+                seed_rr = first_stage[qid].get(int(reference["seed_aid"]), (0.0, 0.0))[1]
             features.append(
                 [
                     reranker_score,
@@ -217,6 +342,32 @@ def build_ltr_examples(
                     chunk_rr,
                     chunk_count,
                     float(len(query.question.split())),
+                    reranker_z,
+                    reranker_minmax,
+                    reranker_percentile,
+                    max(0.0, previous_score - reranker_score),
+                    max(0.0, reranker_score - next_score),
+                    first_z,
+                    first_minmax,
+                    float(len(finite_ranks)),
+                    float(top10_count),
+                    min(finite_ranks) if finite_ranks else 0.0,
+                    float(np.mean(finite_ranks)) if finite_ranks else 0.0,
+                    float(np.std(finite_ranks)) if finite_ranks else 0.0,
+                    float(sparse_rr > 0.0 and dense_hit_count > 0),
+                    float(dense_hit_count >= 2),
+                    float(reference is not None),
+                    1.0 / float(reference["base_rank"]) if reference is not None else 0.0,
+                    seed_rr,
+                    float(reference is not None and reference.get("scope") == "same_document"),
+                    float(chunk.get("mean", 0.0)),
+                    float(chunk.get("std", 0.0)),
+                    float(chunk.get("min", 0.0)),
+                    float(chunk.get("top_gap", 0.0)),
+                    float(chunk.get("strong_fraction", 0.0)),
+                    float(chunk.get("type_count", 0.0)),
+                    float(bool(legal_markers)),
+                    float(len(legal_markers)),
                 ]
             )
             labels.append(int(aid in gold))

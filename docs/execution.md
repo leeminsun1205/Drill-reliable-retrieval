@@ -1288,15 +1288,21 @@ tables are `gate_summary.csv`, `candidate_cost.csv`, `epoch3_summary.csv`, and
 
 ### Vietnamese warm-start reranker treatments
 
-After the candidate pool/reference gate is frozen, copy its two flag values
-into both `notebooks/kaggle_finetune_reranker_warmstart_bce.ipynb` and
-`notebooks/kaggle_finetune_reranker_warmstart_pairwise.ipynb`. The first uses
-pointwise BCE; the second derives query/positive/negative rows from the same
-audited miner and uses pairwise logistic loss. Both use the pinned
-`AITeamVN/Vietnamese_Reranker` Kaggle model
-as a weights-only initialization, retain five new adaptation snapshots, and
-evaluate the warm start plus every snapshot on
-the same development configuration.
+The active fine-tuning comparison uses only the two pointwise-BCE notebooks:
+`notebooks/kaggle_finetune_reranker_warmstart_bce.ipynb` for pool 50 and
+`notebooks/kaggle_finetune_reranker_warmstart_bce_pool100.ipynb` for pool 100.
+Both use the pinned `AITeamVN/Vietnamese_Reranker` Kaggle model as a
+weights-only initialization, retain five new adaptation snapshots, and
+evaluate the warm start plus every snapshot on the matching frozen development
+handoff. Pool size is the intended treatment difference.
+
+The pool-50 and pool-100 pairwise notebooks are deferred, not active Run-All
+entry points. Repeated observed DDP stalls remained after bounding article bags;
+the current pairwise implementation performs separate positive and negative
+DDP forwards before one backward, adding a synchronization risk absent from the
+pointwise path. No completed matched metric establishes that pairwise quality is
+worse. A future revival must first combine both sides into one DDP forward and
+pass an isolated multi-GPU smoke test.
 
 The Vietnamese checkpoint has no compatible historical optimizer state, so do
 not pass it through `--resume-from-checkpoint`. Exact resume is available only
@@ -1306,8 +1312,8 @@ Kaggle output model directory, while the small metrics archive deliberately
 excludes weights, optimizer states, caches, and optimization JSONL.
 
 The completed gate selected `CANDIDATE_BUDGET = 50` and
-`ENABLE_REFERENCE_EXPANSION = True`; both fine-tuning notebooks now carry these
-values as their defaults. Do not change them during the reranker comparison.
+`ENABLE_REFERENCE_EXPANSION = True`; the main pool-50 pointwise notebook carries
+these values as its defaults. Do not change them during the reranker comparison.
 
 The optional `*_pool100.ipynb` variants retain the same graph, WRRF, mining,
 warm start, and training settings while changing only the candidate budget and
@@ -1329,7 +1335,7 @@ flag, candidate source, and chunk-selection policy in addition to the artifact
 checksum and query coverage.
 
 The earlier checkpoint-recovery notebooks were removed after the workflow was
-split at the retrieval boundary. The four active fine-tuning notebooks require
+split at the retrieval boundary. The two active pointwise notebooks require
 the matching pool-50 or pool-100 mining dataset and frozen development handoff,
 train five adaptation epochs, and evaluate the Vietnamese warm start plus all
 five checkpoints on that one handoff. There is no supported fallback that
@@ -1342,8 +1348,8 @@ bag into cycles. Each epoch consumes the next non-overlapping slice of at most
 four chunks; the final slice may be smaller, and only the following epoch starts
 a newly shuffled cycle. Thus a bag of 20 or fewer chunks is completely covered
 within the five-epoch run, while larger bags expose 20 distinct chunks before
-any repetition. Pointwise and pairwise fields use independent orders. The
-selection is deterministic across runs and exact epoch-boundary resumes. This
+any repetition. The selection is deterministic across runs and exact
+epoch-boundary resumes. This
 replaces max-pooling every article chunk inside one DDP training step, which
 produced unbounded variable bags and an observed rank stall on shape `[8, 464]`;
 the new upper bound is four chunks per model forward. It does not alter mining
@@ -1363,8 +1369,25 @@ minimum, and maximum attempted-step loss, successful and skipped step counts,
 global observation count, wall time, and observations/second. The epoch average
 includes AMP-skipped attempts so numerical instability remains visible; rolling
 loss includes successful steps only. Exact resume trims records from any
-interrupted post-checkpoint epoch before replay, and the four notebooks package
+interrupted post-checkpoint epoch before replay, and both active notebooks package
 this compact JSONL with their metrics archives.
+
+The fine-tuning loop records training loss only; it does not construct a
+separate validation-pair loader and therefore does not report `eval_loss`.
+Checkpoint evaluation is a downstream matched retrieval/reranking run reporting
+Precision, Recall, F2, and fixed-cutoff/threshold diagnostics. Do not describe
+those task metrics as validation loss, and do not select a checkpoint from its
+training loss alone.
+
+Attached retrieval handoffs are checked field by field. The first handoff
+producer revision wrote schema v1 with no `retrieval_contract`; the following
+revision introduced schema v2 with 11 contract fields. The fine-tuning
+notebooks accept either version only when they can reconstruct the full contract
+from the packaged `config.yaml` and every frozen retrieval parameter matches.
+Incomplete or extra v2 metadata uses the same verification path. A real
+parameter mismatch still fails closed and now reports the differing fields.
+This recovery occurs after training and permits an already completed
+five-checkpoint run to proceed to evaluation without retraining.
 
 Matched evaluation retains the frozen `packed_stream` neural batch 256 setting.
 Packed retrieved-chunk inference logs before and after forward call 1 and every
@@ -1388,19 +1411,19 @@ and output directory. This keeps the warm-start control and adaptation epochs
 
 For staged execution, run
 `notebooks/kaggle_prepare_reranker_mining_pool50.ipynb` and
-`notebooks/kaggle_prepare_reranker_mining_pool100.ipynb` before either training
-objective. They stop after deterministic teacher mining and create,
+`notebooks/kaggle_prepare_reranker_mining_pool100.ipynb` before the corresponding
+pointwise training run. They stop after deterministic teacher mining and create,
 respectively,
 `/kaggle/working/vietnamese_reranker_mining_pool50_refon.tar.gz` and
 `/kaggle/working/vietnamese_reranker_mining_pool100_refon.tar.gz`. Each archive
 contains the pointwise rows, shared audit rows, metadata, resolved/frozen
 configuration, warm-start digest, wall times, and a manifest with per-file
 SHA-256 values. It contains no model weights, embedding caches, or optimizer
-state. BCE consumes the pointwise rows directly; pairwise deterministically
-expands the same audit rows, so one archive per pool preserves an objective-only
-comparison.
+state. Pointwise BCE consumes the pointwise rows directly. Shared audit rows are
+retained so the deferred pairwise treatment can be reconstructed later without
+repeating teacher mining.
 
-The four training notebooks search `/kaggle/input` for the matching archive
+The two active pointwise training notebooks search `/kaggle/input` for the matching archive
 name before mining. When exactly one is attached, they extract it into their
 own working directory, verify candidate budget, treatment ID, graph digest,
 warm-start weight digest, and SHA-256 for the training/audit/metadata files,

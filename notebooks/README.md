@@ -14,10 +14,9 @@ Only current execution entry points live in this directory:
   exactly five new adaptation epochs with the next seed-determined slice of at
   most four article chunks per epoch, and evaluates every snapshot over all
   frozen candidate chunks.
-- `kaggle_finetune_reranker_warmstart_pairwise.ipynb`: promotion-oriented
-  treatment using the same audited candidates and Vietnamese warm start, but
-  expanding positive-negative pairs and optimizing pairwise logistic loss with
-  independent, non-repeating positive and negative chunk slices per epoch.
+- `kaggle_finetune_reranker_warmstart_bce_pool100.ipynb`: matched pointwise-BCE
+  cost/ceiling treatment. It keeps the pool-50 training and evaluation protocol
+  fixed and changes only the candidate budget and corresponding artifact IDs.
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
   cache artifact per process.
 - `kaggle_multi_dense_weight_selection.ipynb`: current BM25S + Harrier +
@@ -49,3 +48,8 @@ Completed, superseded, failed, or deferred experiment launchers are under
 `archive/`. They remain available for reproducibility but are not recommended
 Run-All entry points. Reusable pipeline logic belongs in `src/drill_ir/` and
 `scripts/`, not only in notebooks.
+
+The pairwise pool-50 and pool-100 notebooks remain at their historical paths
+for auditability, but are deferred after repeated multi-GPU stalls and are not
+part of the current execution workflow. The active reranker comparison is
+pointwise BCE pool 50 versus pointwise BCE pool 100.

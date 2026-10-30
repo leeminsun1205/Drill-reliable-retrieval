@@ -166,10 +166,15 @@ BM25/Harrier/E5-large `1:5:4`, stored as normalized weights `0.1/0.5/0.4`;
 normalization changes only the common score scale, not ranking. This is a
 planned setting, not a measured winner. Model-specific query
 instructions and pooling must follow the verified model card rather than being
-silently guessed. The current thirteen-feature LightGBM path expects one
-component named `dense`. Multi-dense runs now extend that schema with a raw-score
-and reciprocal-rank pair for each stable `dense:<name>` component, ordered by
-component name; a two-dense run therefore has 15 rather than 13 features. Dev
+silently guessed. The historical thirteen-feature LightGBM path expects one
+component named `dense`. Multi-dense runs extend that base schema with a
+raw-score and reciprocal-rank pair for each stable `dense:<name>` component,
+ordered by component name; a two-dense run therefore had 15 base features. The
+active enhanced schema appends 26 deterministic features covering within-query
+normalization and adjacent score gaps, retriever agreement, explicit-reference
+provenance, chunk fusion statistics, and query legal-marker counts. A two-dense
+run therefore has 41 features. Missing optional retrieval feedback maps only
+the reference-provenance fields to zero and never changes feature order. Dev
 and test component schemas must match exactly, and every multi-dense treatment
 requires fresh query-grouped OOF training rather than reuse of the baseline
 LightGBM model.
@@ -622,6 +627,19 @@ uses query-grouped five-fold out-of-fold pointwise LightGBM predictions. This
 avoids fitting a candidate's score with its own label. The pooled OOF threshold
 is still selected and reported on development data, so it remains a diagnostic,
 not an unbiased test estimate.
+
+For the active pointwise reranker experiment, LightGBM is a post-reranking
+selector rather than part of checkpoint selection. First choose the pool-50 or
+pool-100 checkpoint using the matched fixed-top-2 development gate. Then fit
+LightGBM only for the selected finalist, comparing the historical 15-feature
+base against the enhanced 41-feature schema. The enhanced additions are grouped
+as within-query normalization/gaps, retriever agreement, explicit-reference
+provenance, chunk fusion statistics, and query legal markers. Report split/gain
+importance, but decide removal with nested query-fold OOF group ablations; a
+low importance value from one fit is not sufficient evidence to remove a
+feature. The current artifacts do not contain per-chunk reranker logits or
+article text/token lengths, so those proposed statistics remain unavailable
+rather than being imputed or fabricated.
 
 `scripts/run_lightgbm_fusion.py` extends that diagnostic into a submission
 handoff. It first reports the same query-grouped OOF result, then fits one final
