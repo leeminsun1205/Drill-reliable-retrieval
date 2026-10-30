@@ -1294,8 +1294,8 @@ into both `notebooks/kaggle_finetune_reranker_warmstart_bce.ipynb` and
 pointwise BCE; the second derives query/positive/negative rows from the same
 audited miner and uses pairwise logistic loss. Both use the pinned
 `AITeamVN/Vietnamese_Reranker` Kaggle model
-as a weights-only initialization, run a two-GPU one-step smoke test, retain six
-new adaptation snapshots, and evaluate the warm start plus every snapshot on
+as a weights-only initialization, retain five new adaptation snapshots, and
+evaluate the warm start plus every snapshot on
 the same development configuration.
 
 The Vietnamese checkpoint has no compatible historical optimizer state, so do
@@ -1323,36 +1323,25 @@ reference expansion run once per treatment rather than once per checkpoint.
 This is required both for runtime reliability and for the scientific invariant
 that reranker checkpoints are compared on identical first-stage candidates.
 The notebook fails closed if a later checkpoint is reached without the frozen
-handoff.
+handoff. Handoff manifest schema v2 records and verifies the pool, retrieved
+chunk depth, WRRF constant and weights, reference settings, neighbor-expansion
+flag, candidate source, and chunk-selection policy in addition to the artifact
+checksum and query coverage.
 
-When training has already completed in a separate Kaggle notebook output,
-`notebooks/temp/kaggle_evaluate_bce_pool100_checkpoints.ipynb` is the thin
-evaluation-only recovery path. It expects the six pointwise BCE pool-100
-checkpoints at steps 1239, 2479, 3720, 4961, 6203, and 7445, verifies each
-checkpoint manifest against epochs 1 through 6, and compares them with the
-pinned Vietnamese warm start. The warm-start evaluation creates the frozen
-retrieval handoff and epochs 1 through 6 reuse it. The notebook neither mines
-training pairs nor performs optimizer updates.
+The earlier checkpoint-recovery notebooks were removed after the workflow was
+split at the retrieval boundary. The four active fine-tuning notebooks require
+the matching pool-50 or pool-100 mining dataset and frozen development handoff,
+train five adaptation epochs, and evaluate the Vietnamese warm start plus all
+five checkpoints on that one handoff. There is no supported fallback that
+rebuilds retrieval or mining inside a fine-tuning notebook.
 
-The matching pairwise recovery notebook is
-`notebooks/temp/kaggle_evaluate_pairwise_pool100_checkpoints.ipynb`. It reads
-the pool-100 pairwise checkpoints at steps 1460, 2925, 4389, 5854, 7319, and
-8783. To prevent protocol drift, it executes the same audited evaluation cells
-as the BCE recovery notebook after fail-closed replacement of only the
-checkpoint root, step mapping, run identity, working directory, and archive
-name.
-
-The recovery evaluation notebooks retain the frozen `packed_stream` neural
-batch 256 setting. One Kaggle T4x2 run stopped making progress for more than
-3,100 seconds after the checkpoint was already ready; the late 59% weight line
-was a buffered ANSI replay, not evidence that a second model loaded. This
-single runtime incident is not sufficient evidence to change a batch size that
-completed in prior matched runs. Packed retrieved-chunk inference now logs
-before and after forward call 1 and every 25 calls so a stalled CUDA/DataParallel
-forward can be distinguished from model loading without changing the protocol.
-The scorer also disables the Transformers parameter-materialization progress
-bar, whose ANSI redraw buffer previously replayed a stale 59% line when a
-stalled process ended. For forward call 1 and every 25 calls it emits separate
+Matched evaluation retains the frozen `packed_stream` neural batch 256 setting.
+Packed retrieved-chunk inference logs before and after forward call 1 and every
+25 calls so a stalled CUDA/DataParallel forward can be distinguished from model
+loading without changing the protocol. The scorer also disables the
+Transformers parameter-materialization progress bar, whose ANSI redraw buffer
+previously replayed a stale weight line when a stalled process ended. For
+forward call 1 and every 25 calls it emits separate
 tokenization start/completion and CUDA forward start/completion records,
 including tensor and logit shapes.
 All blocking model boundaries additionally use a 30-second heartbeat: dense
@@ -1361,24 +1350,10 @@ checkpoint materialization, CPU-to-GPU movement, first/periodic tensor transfer,
 and first/periodic CUDA forward. Local reranker weight filenames and sizes are
 printed before loading. These diagnostics do not copy or hash checkpoint
 weights and therefore do not consume the Kaggle working-disk allowance.
-Each recovery notebook also prints a start/completion banner for every
-evaluation case with its ordinal, semantic label, exact model/checkpoint path,
-handoff availability, and output directory. This makes the warm-start control
-and adaptation epochs 1 through 6 unambiguous even when Papermill duplicates
-individual library log lines.
-
-`notebooks/temp/kaggle_evaluate_bce_pool50_checkpoints.ipynb` provides the
-corresponding pointwise BCE pool-50 recovery evaluation. It reads checkpoints
-at steps 1237, 2478, 3720, 4962, 6203, and 7445, retains retrieved chunk depth
-100, and changes the reranker candidate budget to 50. All other frozen
-retrieval, graph, weighting, scoring, and output-policy settings remain matched
-to the pool-100 evaluation.
-
-`notebooks/temp/kaggle_evaluate_pairwise_pool50_checkpoints.ipynb` completes
-the recovery matrix for the pairwise pool-50 treatment. It reads checkpoints
-at steps 1459, 2924, 4389, 5854, 7318, and 8783, uses candidate pool 50 with
-retrieved chunk depth 100, and otherwise shares the same warm-start control,
-frozen reference-on retrieval handoff, metrics, and output policies.
+Each fine-tuning notebook prints a start/completion record for every evaluation
+case with its semantic label, exact model/checkpoint path, handoff availability,
+and output directory. This keeps the warm-start control and adaptation epochs
+1 through 5 identifiable even when Papermill duplicates library log lines.
 
 For staged execution, run
 `notebooks/kaggle_prepare_reranker_mining_pool50.ipynb` and
@@ -1466,7 +1441,7 @@ stalled; a completed smoke test does not by itself prove that the subsequent
 fresh full-training process started successfully.
 
 The four selected fine-tuning notebooks do not duplicate the warm-start model
-under `/kaggle/working`: six retained epoch snapshots plus the latest Adam state
+under `/kaggle/working`: five retained epoch snapshots plus the latest Adam state
 already approach Kaggle's 20 GiB working-disk quota. Instead, DDP rank 0 and rank
 1 sequentially read the training JSONL, tokenizer, checkpoint, and any exact-
 resume state from their original paths, with a distributed barrier after each

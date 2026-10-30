@@ -711,8 +711,8 @@ initialization ablation against retraining epoch 3 on the new distribution.
 
 The attached Vietnamese checkpoint contains inference weights, not optimizer,
 scheduler, scaler, or RNG state. These treatments are therefore weights-only
-warm starts with a fresh six-epoch schedule. Their snapshots are named
-adaptation epochs 1--6 and must not be described as continuation epochs. Six is
+warm starts with a fresh five-epoch schedule. Their snapshots are named
+adaptation epochs 1--5 and must not be described as continuation epochs. Five is
 a maximum checkpoint horizon rather than an assumption that the last snapshot
 will win; retain and evaluate every epoch. Record the attached safetensors
 SHA-256 before mining, and retain exact-resume state only for the latest new
@@ -929,7 +929,7 @@ run before the frozen reranker-objective comparison.
 The main reranker fine-tuning treatment is now the pointwise-BCE notebook with
 pool 50, graph-v3 same-document reference expansion on, WRRF `k=10`, and
 BM25/Harrier/E5 weights `0.15/0.55/0.30`. It warm-starts from pinned
-`AITeamVN/Vietnamese_Reranker` weights and retains all six new adaptation-epoch
+`AITeamVN/Vietnamese_Reranker` weights and retains all five new adaptation-epoch
 snapshots. The notebook fails closed on the verified graph digest and on the
 fully resolved training configuration so a mislabeled experiment cannot run
 historical weights silently. The pairwise notebook has the same graph and

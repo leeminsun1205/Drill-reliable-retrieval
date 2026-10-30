@@ -188,8 +188,32 @@ def _finish_retrieval_only(
     with config_path.open("w", encoding="utf-8") as stream:
         yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
     digest = hashlib.sha256(handoff_path.read_bytes()).hexdigest()
+    hybrid = config["retrieval"]["hybrid"]
+    reference = hybrid["reference_expansion"]
+    reranking = config["reranking"]
+    retrieval_contract = {
+        "rrf_k": int(hybrid["rrf_k"]),
+        "weights": {
+            "bm25": float(hybrid["sparse_weight"]),
+            **{
+                str(component["name"]): float(component["weight"])
+                for component in hybrid["dense_components"]
+            },
+        },
+        "candidate_budget": int(reranking["candidate_pool_size"]),
+        "retrieved_chunk_depth": int(reranking["retrieved_chunk_depth"]),
+        "reference_enabled": bool(reference["enabled"]),
+        "reference_scopes": list(reference["scopes"]),
+        "reference_seed_top_k": int(reference["seed_top_k"]),
+        "reference_max_expansions": int(reference["max_expansions"]),
+        "same_law_neighbor_expansion": bool(
+            hybrid["same_law_neighbor_expansion"]["enabled"]
+        ),
+        "candidate_source": str(reranking["candidate_source"]),
+        "chunk_candidate_selection": str(hybrid["chunk_candidate_selection"]),
+    }
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "selection": "frozen_dev_retrieval_handoff",
         "handoff_file": handoff_path.name,
         "handoff_sha256": digest,
@@ -200,6 +224,7 @@ def _finish_retrieval_only(
         "chunk_rows": len(chunks),
         "chunk_candidates": sum(len(result.chunks) for result in chunks),
         "component_names": sorted(components),
+        "retrieval_contract": retrieval_contract,
         "retriever_metadata": retriever_metadata,
         "config_file": config_path.name,
     }

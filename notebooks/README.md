@@ -8,11 +8,12 @@ Only current execution entry points live in this directory:
   `CANDIDATE_BUDGET` (`50` or `100`) and
   `ENABLE_REFERENCE_EXPANSION` (`False` or `True`).
 - `kaggle_finetune_reranker_warmstart_bce.ipynb`: conservative reranker
-  adaptation. It warm-starts from the epoch-3 weights, mines FPT-inspired
-  semi-hard chunks from the final frozen first stage, trains pointwise BCE for
-  at most six new adaptation epochs, and evaluates every snapshot.
+  adaptation. It warm-starts from the pinned Vietnamese reranker, consumes
+  the separately prepared FPT-inspired mining artifact, and reuses a frozen
+  development retrieval handoff. It trains pointwise BCE for
+  exactly five new adaptation epochs, and evaluates every snapshot.
 - `kaggle_finetune_reranker_warmstart_pairwise.ipynb`: promotion-oriented
-  treatment using the same audited candidates and epoch-3 warm start, but
+  treatment using the same audited candidates and Vietnamese warm start, but
   expanding positive-negative pairs and optimizing pairwise logistic loss.
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
   cache artifact per process.
