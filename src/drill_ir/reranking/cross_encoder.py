@@ -281,6 +281,13 @@ class HFCrossEncoderScorer:
             )
         return np.concatenate(scores).astype(np.float32, copy=False)
 
+    def close(self) -> None:
+        """Drop tokenizer/model ownership so the stage cleanup can reclaim CUDA."""
+        model = self._model
+        self._model = None
+        self._tokenizer = None
+        del model
+
     def metadata(self) -> dict[str, Any]:
         return {
             **asdict(self.config),
@@ -733,6 +740,14 @@ class CrossEncoderReranker:
     def chunk_scores_by_qid(self) -> dict[int, tuple[float, ...]]:
         """Return per-candidate chunk logits from the most recent chunk rerank."""
         return dict(self._chunk_scores_by_qid)
+
+    def close(self) -> None:
+        """Release scorer state and potentially large fitted representations."""
+        close = getattr(self.scorer, "close", None)
+        if callable(close):
+            close()
+        self._chunks_by_aid.clear()
+        self._chunk_scores_by_qid.clear()
 
     def run_metadata(self) -> dict[str, Any]:
         scorer_metadata = getattr(self.scorer, "metadata", None)

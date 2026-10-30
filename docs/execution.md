@@ -1033,6 +1033,10 @@ cutoffs `{3,4,5}`. The primary deliverables are
 `public_lightgbm_score_gap_results.zip` and
 `private_lightgbm_score_gap_results.zip`; fixed-top-2 and pooled-threshold ZIPs
 are retained as controls and must not be selected after inspecting test scores.
+The notebook materializes `/kaggle/working/VnCoreNLP/VnCoreNLP-1.2.jar` before
+inference and explicitly overrides the saved development config with that
+runtime path. Missing JAR preparation causes BM25 query segmentation to fail
+before any public/private retrieval result is produced.
 
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired
@@ -1629,3 +1633,25 @@ required merely to write the report, but any new comparison must reuse the
 recorded 438-query split, seed 42, frozen pool-50 handoff, checkpoint `1208`,
 and identical LightGBM folds unless the changed factor is explicitly the
 subject of the experiment.
+
+The official pool-50 submission notebook forces
+`runtime.process_handoff_before_reranking=true`. Retrieval for both public and
+private queries is written to a checksummed handoff, then `exec` replaces the
+retrieval process before loading checkpoint `1208`. This process boundary is
+required even after ordinary resource cleanup: an observed in-process run on
+2026-10-30 reached reranking with only 115 MiB free on `cuda:0` while
+`cuda:1` still had 9,779 MiB free, and the first packed batch of 256 raised a
+CUDA OOM. The reranker batch remains 256, matching the checkpoint screen; the
+fix changes only GPU resource ownership, not candidates, pair order, scores,
+or output policy.
+
+Before launching that run, the notebook now rejects a development artifact
+unless its frozen contract matches pool 50, retrieved-chunk packed streaming,
+WRRF `k=10`, weights `0.15/0.55/0.30`, maximum length 512, reranker batch 256,
+and checkpoint-1208 experiment identity. It also requires every configured
+model and retrieval-cache path to exist. After the fresh process has fully read
+the public/private retrieval handoff, the temporary handoff files are deleted;
+after all inference artifacts and provenance are written, reranker resources
+are explicitly closed and both CUDA allocators are emptied. The notebook then
+checks per-split row counts and refuses to continue to LightGBM if any handoff
+file remains or any feature artifact omits a query.

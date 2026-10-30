@@ -88,6 +88,24 @@ def _read_submission_handoff(
     return first_stage, chunks, components, feedback, metadata or {}
 
 
+def _remove_submission_handoff(manifest_path: Path) -> None:
+    """Remove a fully consumed same-directory submission handoff."""
+    manifest_path = manifest_path.resolve()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 1 or not manifest.get("splits"):
+        raise ValueError(f"Invalid submission retrieval handoff: {manifest_path}")
+    split_paths = [Path(value).resolve() for value in manifest["splits"].values()]
+    if any(path.parent != manifest_path.parent for path in split_paths):
+        raise ValueError("Submission handoff cleanup refuses paths outside its directory")
+    for path in split_paths:
+        path.unlink(missing_ok=True)
+    manifest_path.unlink(missing_ok=True)
+    print(
+        f"[inference] Consumed and removed retrieval handoff: {manifest_path}",
+        flush=True,
+    )
+
+
 def _exec_submission_reranking_stage(manifest_path: Path) -> None:
     environment = dict(os.environ)
     environment[_SUBMISSION_HANDOFF_ENV] = str(manifest_path)
@@ -185,15 +203,18 @@ def run_submission_inference(
     retriever = None
     retriever_metadata = None
     if resumed:
+        manifest_path = Path(str(handoff_value))
         (
             first_stage,
             chunk_candidates,
             named_components,
             named_feedback,
             retriever_metadata,
-        ) = _read_submission_handoff(Path(str(handoff_value)))
+        ) = _read_submission_handoff(manifest_path)
         if set(first_stage) != set(named_queries):
             raise ValueError("Submission retrieval handoff split coverage is incomplete")
+        _remove_submission_handoff(manifest_path)
+        os.environ.pop(_SUBMISSION_HANDOFF_ENV, None)
         cuda_snapshot("submission:reranking_process_start")
     else:
         retriever = build_retriever(
@@ -504,4 +525,9 @@ def run_submission_inference(
         json.dumps(submission_manifest, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    if reranker is not None:
+        print("[inference] Releasing reranker resources after artifact write", flush=True)
+        release_stage_resources(reranker, stage="submission:reranker")
+        reranker = None
+        gc.collect()
     return output_dir

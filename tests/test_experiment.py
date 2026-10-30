@@ -21,6 +21,7 @@ from drill_ir.experiment import (
     run_submission_inference,
 )
 from drill_ir.experiment.inference import (
+    _remove_submission_handoff,
     _read_submission_handoff,
     _write_submission_handoff,
 )
@@ -59,6 +60,84 @@ class ExperimentTest(unittest.TestCase):
         self.assertEqual(loaded_components, components)
         self.assertEqual(loaded_feedback, feedback)
         self.assertEqual(metadata, {"cache_hit": True})
+
+    def test_consumed_submission_handoff_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = _write_submission_handoff(
+                root,
+                first_stage={"public": [RetrievalResult(1, (10,), (0.9,))]},
+                chunks={},
+                components={},
+                feedback={},
+                metadata={"cache_hit": True},
+            )
+            split_path = root / "retrieval_stage_handoff_public.json"
+            self.assertTrue(manifest.is_file())
+            self.assertTrue(split_path.is_file())
+            _remove_submission_handoff(manifest)
+            self.assertFalse(manifest.exists())
+            self.assertFalse(split_path.exists())
+
+    def test_submission_explicitly_closes_reranker_after_artifacts(self) -> None:
+        class FakeRetriever:
+            def fit(self, articles):
+                pass
+
+            def retrieve(self, queries, top_k):
+                return [RetrievalResult(query.qid, (10,), (1.0,)) for query in queries]
+
+            def run_metadata(self):
+                return {}
+
+            def close(self):
+                pass
+
+        class FakeReranker:
+            closed = False
+
+            def fit(self, articles):
+                pass
+
+            def rerank(self, queries, candidates):
+                return list(candidates)
+
+            def run_metadata(self):
+                return {"closed_at_metadata": self.closed}
+
+            def close(self):
+                self.closed = True
+
+        reranker = FakeReranker()
+        config = {
+            "method": "hybrid_reranker",
+            "seed": 42,
+            "data": {"corpus_path": "corpus"},
+            "retrieval": {"top_k": 10, "output_k": 1},
+            "reranking": {
+                "candidate_source": "article_rechunk",
+                "candidate_pool_size": 5,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "drill_ir.experiment.inference.load_queries",
+            return_value=[Query(1, "question", ())],
+        ), patch(
+            "drill_ir.experiment.inference.iter_articles",
+            return_value=iter([Article(10, "law", "text")]),
+        ), patch(
+            "drill_ir.experiment.inference.build_retriever",
+            return_value=FakeRetriever(),
+        ), patch(
+            "drill_ir.experiment.inference.build_reranker",
+            return_value=reranker,
+        ):
+            output = run_submission_inference(
+                config, {"public": "public.json"}, Path(directory) / "output"
+            )
+            run_info = json.loads((output / "run_info.json").read_text())
+        self.assertFalse(run_info["reranker"]["closed_at_metadata"])
+        self.assertTrue(reranker.closed)
 
     def test_direct_chunk_submission_keeps_sparse_state_aligned_per_split(self) -> None:
         class StatefulRetriever:

@@ -2187,3 +2187,20 @@ public/private score-gap submissions plus fixed-top-2 and pooled-threshold
 controls. This records an executable plan, not an executed result: official
 scores remain unmeasured until the notebook completes and Codabench returns a
 recorded evaluation.
+
+The first official-inference attempt on 2026-10-30 is a failed execution, not a
+measured result. Retrieval completed in-process, but residual dense/FAISS GPU
+ownership left only 115 MiB free on `cuda:0`; packed reranking at the matched
+batch size 256 therefore failed after five of 312 queries. The launcher now
+overrides the inherited dev configuration with
+`runtime.process_handoff_before_reranking=true`, preserving retrieval artifacts
+across an `exec` process replacement before loading the reranker. No official
+prediction or score is attributed to the failed attempt.
+
+The repaired launcher additionally treats stage cleanup as part of the runtime
+contract. A consumed retrieval handoff is removed only after every split has
+been deserialized and split coverage has been verified. Reranker cleanup occurs
+only after predictions, chunk features, component rankings, run metadata, and
+the submission manifest have been written. These lifecycle changes are
+output-invariant; the frozen reranker batch remains 256 and no fallback batch or
+model substitution is introduced.
