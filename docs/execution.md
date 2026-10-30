@@ -1486,12 +1486,17 @@ fresh full-training process would start. The smoke remains an explicit debug
 switch; skipping it changes no training data, optimizer, schedule, seed, or
 checkpoint selection.
 
-MIL training logs the tensor shape, rank, epoch, batch index, and backward
-completion time for the first 100 batches and every 25th batch thereafter.
-The fine-tuning notebooks also print every optimizer step. This is
-observability-only: an article bag can expand one DataLoader row into many
-query--chunk sequences, so the additional records distinguish a costly bag
-from a DDP stall without changing sampling, loss, gradients, or checkpoints.
+MIL training keeps only a compact rank heartbeat: batch start and backward
+completion for the first batch and every 100th batch, without tensor-shape
+output. The fine-tuning notebooks print every optimizer step with the global
+loss summaries documented above. This is observability-only and retains enough
+information to locate a DDP stall without flooding the notebook log or changing
+sampling, loss, gradients, or checkpoints.
+The notebook launcher captures the child process's stdout and stderr into one
+merged line-buffered pipe and relays each line through the kernel exactly once.
+This preserves live output and exit-code propagation while avoiding the prior
+Kaggle/Papermill path where inherited child file descriptors could be collected
+and replayed twice.
 
 The notebook sets `OMP_NUM_THREADS=1` explicitly before `torchrun`, matching
 PyTorch's safe default without its repeated launcher warning. NCCL process-group

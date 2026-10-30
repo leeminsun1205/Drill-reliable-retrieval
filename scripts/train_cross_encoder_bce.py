@@ -705,18 +705,13 @@ def main() -> None:
             dataset.set_epoch(epoch)
             for batch_index, batch in enumerate(loader):
                 batch_number = batch_index + 1
-                trace_batch = batch_number <= 100 or batch_number % 25 == 0
+                trace_batch = batch_number == 1 or batch_number % 100 == 0
                 batch_started = time.perf_counter()
                 if trace_batch:
-                    tensor_shapes = {
-                        key: list(value.shape)
-                        for key, value in batch.items()
-                        if hasattr(value, "shape")
-                    }
                     stage(
                         f"batch_start epoch={epoch + 1} "
                         f"batch={batch_number}/{len(loader)} "
-                        f"optimizer_step={global_step} shapes={tensor_shapes}"
+                        f"optimizer_step={global_step}"
                     )
                 group_start = (
                     batch_index // args.gradient_accumulation_steps
