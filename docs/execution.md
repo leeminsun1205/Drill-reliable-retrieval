@@ -1022,11 +1022,13 @@ After the feature screen is frozen, run
 `notebooks/kaggle_pool50_epoch1_lightgbm_submission.ipynb` for official
 public/private inference. Attach the pool-50 fine-tuning notebook output, the
 retained `pool50_epoch1_lightgbm_feature_screen` artifact, graph-v3 reference
-dataset, retrieval caches/models, corpus/train dataset, and official test
+configuration, retrieval caches/models, corpus/train dataset, and official test
 dataset. The notebook fails closed unless the dev run is the 438-query
 `pointwise_mil_pool50_adaptation_epoch_1_checkpoint_1208` treatment. It reuses
-that run's resolved config, overrides only environment paths, reranks each test
-split once, and fits `enhanced_v2` with seed 42 and the frozen score-gap maximum
+that run's resolved config, deterministically rebuilds graph v3 from the corpus
+and verifies SHA-256 `bd61b6a1923e7628b56937a7ee6ae889a467f8960400f468d56ba07b666bfc0f`,
+overrides only environment paths, reranks each test split once, and fits
+`enhanced_v2` with seed 42 and the frozen score-gap maximum
 cutoffs `{3,4,5}`. The primary deliverables are
 `public_lightgbm_score_gap_results.zip` and
 `private_lightgbm_score_gap_results.zip`; fixed-top-2 and pooled-threshold ZIPs

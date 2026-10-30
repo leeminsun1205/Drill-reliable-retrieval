@@ -33,7 +33,8 @@ Only current execution entry points live in this directory:
 - `kaggle_pool50_epoch1_lightgbm_submission.ipynb`: final Run-All inference
   entry point for the selected pool-50 epoch-1 checkpoint `1208`. It consumes
   the retained feature-screen dev artifact, runs the frozen reference-on
-  public/private retrieval and reranker once, fits `enhanced_v2` on all labeled
+  public/private retrieval and reranker once, deterministically rebuilds and
+  checksum-verifies graph v3 from the corpus, fits `enhanced_v2` on all labeled
   development rows, and packages fixed-top-2, threshold/fallback-2, and the
   selected score-gap `{3,4,5}` policies for both official splits.
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
