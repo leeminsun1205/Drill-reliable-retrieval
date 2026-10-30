@@ -1334,12 +1334,25 @@ chunk depth, WRRF constant and weights, reference settings, neighbor-expansion
 flag, candidate source, and chunk-selection policy in addition to the artifact
 checksum and query coverage.
 
-The earlier checkpoint-recovery notebooks were removed after the workflow was
-split at the retrieval boundary. The two active pointwise notebooks require
-the matching pool-50 or pool-100 mining dataset and frozen development handoff,
-train five adaptation epochs, and evaluate the Vietnamese warm start plus all
-five checkpoints on that one handoff. There is no supported fallback that
-rebuilds retrieval or mining inside a fine-tuning notebook.
+Completed training outputs can be evaluated without rerunning training through
+`notebooks/kaggle_evaluate_pointwise_mil_pool50_checkpoints.ipynb` and
+`notebooks/kaggle_evaluate_pointwise_mil_pool100_checkpoints.ipynb`. Their
+checkpoint steps are explicit parameters, not directory discovery: the current
+pool-50 sequence is `1208,2418,3630,4842,6054`, and the current pool-100
+sequence is `1238,2479,3721,4961,6203`. Each notebook consumes the matching
+attached fine-tuning notebook output plus the matching frozen development
+handoff. It evaluates the warm start followed by epochs 1--5 in six sequential
+subprocesses, verifies every result file, and writes CSV/JSON scoreboards. A
+completed case is safely reused on notebook restart. There is no fallback that
+rebuilds retrieval or mining inside these evaluation notebooks.
+
+The reusable entry point is `scripts/evaluate_reranker_checkpoints.py`. It
+checks the handoff checksum, 438-query coverage, and the full frozen retrieval
+contract before loading a reranker. It then derives each evaluation config from
+the handoff's packaged `config.yaml`, changes only the experiment name,
+reranker model path, and the already-frozen packed-stream batch 256 execution
+setting. Because `DRILL_RETRIEVAL_HANDOFF` is mandatory for every case, dense
+and sparse model paths left in the provenance config are never materialized.
 
 Training consumes the frozen article-bag mining rows with
 `--mil-passage-sampling seeded_cycle --mil-max-passages-per-epoch 4`. For each

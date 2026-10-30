@@ -17,6 +17,14 @@ Only current execution entry points live in this directory:
 - `kaggle_finetune_reranker_warmstart_bce_pool100.ipynb`: matched pointwise-BCE
   cost/ceiling treatment. It keeps the pool-50 training and evaluation protocol
   fixed and changes only the candidate budget and corresponding artifact IDs.
+- `kaggle_evaluate_pointwise_mil_pool50_checkpoints.ipynb`: evaluation-only
+  recovery/selection entry point for the completed pool-50 run. It reads the
+  five checkpoints from the attached fine-tuning notebook output and reuses the
+  verified pool-50 handoff; it does not load retrieval or mining models.
+- `kaggle_evaluate_pointwise_mil_pool100_checkpoints.ipynb`: matched
+  evaluation-only entry point for the five completed pool-100 checkpoints.
+  Both evaluation notebooks run warm start and epochs 1--5 in separate,
+  sequential subprocesses so model and CUDA state are released between cases.
 - `kaggle_build_retrieval_cache.ipynb`: build one verified sparse or dense
   cache artifact per process.
 - `kaggle_multi_dense_weight_selection.ipynb`: current BM25S + Harrier +

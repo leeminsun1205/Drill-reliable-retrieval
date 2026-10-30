@@ -2027,3 +2027,17 @@ space and selected weights, candidate selection, reranking, and downstream
 policy. If reference expansion changes the WRRF winner, report both the full
 end-to-end treatment effect and a fixed-WRRF reference-only ablation; do not
 attribute the combined difference solely to graph expansion.
+
+### Pointwise MIL checkpoint evaluation boundary
+
+The completed pool-50 and pool-100 pointwise MIL runs are evaluated with the
+matching frozen development handoff rather than repeating first-stage
+retrieval. The evaluation-only notebooks and
+`scripts/evaluate_reranker_checkpoints.py` compare the pinned Vietnamese warm
+start with all five adaptation snapshots on identical candidates. Checkpoints
+are loaded sequentially in separate subprocesses; no two reranker models are
+resident together, and process exit is the cleanup boundary before the next
+snapshot. Fixed top-2 is the primary checkpoint comparison. The score-threshold
+fallback-2 result is a development-tuned calibration diagnostic and must not be
+reported as an untouched test estimate. No checkpoint result is measured until
+the corresponding notebook run completes.
