@@ -39,5 +39,16 @@ cleanup:
 - `kaggle_rm3_rocchio_ablation.ipynb`: deferred feedback screen after exceeding
   the practical Kaggle runtime budget; feedback remains disabled.
 
-The three current entry points and their roles are listed in
-`notebooks/README.md`.
+Additional notebooks archived during the final pool-50 cleanup:
+
+- Pointwise pool-50/pool-100 mining, five-epoch fine-tuning, and checkpoint
+  evaluation launchers: completed; their retained metrics establish the
+  checkpoint and candidate-budget decision.
+- Pairwise pool-50/pool-100 fine-tuning launchers: deferred after repeated
+  multi-GPU stalls and not used by the selected pipeline.
+- Old/new no-reference Vietnamese reranker launchers and the epoch-3 LightGBM
+  submission launcher: superseded by pool-50 checkpoint 1208.
+- Frozen-development-handoff preparation launchers: completed preparation
+  utilities, no longer needed by the final submission notebook.
+
+The current entry points and their roles are listed in `notebooks/README.md`.

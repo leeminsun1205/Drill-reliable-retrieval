@@ -939,7 +939,7 @@ writable so all epoch models remain together:
 Without a predeclared longer scheduler horizon, an epoch-2 run cannot be called
 an exact resume to epoch 4; loading its weights is only a warm start.
 
-`notebooks/kaggle_epoch3_lightgbm_submission.ipynb` consumes the selected
+`notebooks/archive/kaggle_epoch3_lightgbm_submission.ipynb` consumes the selected
 epoch-3 checkpoint from Kaggle Models and the archived epoch-3 development run.
 It reproduces the fixed strong pipeline for public/private queries, persists
 the reranker, first-stage, sparse, dense, and fused-chunk inputs, evaluates
@@ -1366,8 +1366,8 @@ tables are `gate_summary.csv`, `candidate_cost.csv`, `epoch3_summary.csv`, and
 ### Vietnamese warm-start reranker treatments
 
 The active fine-tuning comparison uses only the two pointwise-BCE notebooks:
-`notebooks/kaggle_finetune_reranker_warmstart_bce.ipynb` for pool 50 and
-`notebooks/kaggle_finetune_reranker_warmstart_bce_pool100.ipynb` for pool 100.
+`notebooks/archive/kaggle_finetune_reranker_warmstart_bce.ipynb` for pool 50 and
+`notebooks/archive/kaggle_finetune_reranker_warmstart_bce_pool100.ipynb` for pool 100.
 Both use the pinned `AITeamVN/Vietnamese_Reranker` Kaggle model as a
 weights-only initialization, retain five new adaptation snapshots, and
 evaluate the warm start plus every snapshot on the matching frozen development
@@ -1412,8 +1412,8 @@ flag, candidate source, and chunk-selection policy in addition to the artifact
 checksum and query coverage.
 
 Completed training outputs can be evaluated without rerunning training through
-`notebooks/kaggle_evaluate_pointwise_mil_pool50_checkpoints.ipynb` and
-`notebooks/kaggle_evaluate_pointwise_mil_pool100_checkpoints.ipynb`. Their
+`notebooks/archive/kaggle_evaluate_pointwise_mil_pool50_checkpoints.ipynb` and
+`notebooks/archive/kaggle_evaluate_pointwise_mil_pool100_checkpoints.ipynb`. Their
 checkpoint steps are explicit parameters, not directory discovery: the current
 pool-50 sequence is `1208,2418,3630,4842,6054`, and the current pool-100
 sequence is `1238,2479,3721,4961,6203`. Each notebook consumes the matching
@@ -1500,8 +1500,8 @@ and output directory. This keeps the warm-start control and adaptation epochs
 1 through 5 identifiable even when Papermill duplicates library log lines.
 
 For staged execution, run
-`notebooks/kaggle_prepare_reranker_mining_pool50.ipynb` and
-`notebooks/kaggle_prepare_reranker_mining_pool100.ipynb` before the corresponding
+`notebooks/archive/kaggle_prepare_reranker_mining_pool50.ipynb` and
+`notebooks/archive/kaggle_prepare_reranker_mining_pool100.ipynb` before the corresponding
 pointwise training run. They stop after deterministic teacher mining and create,
 respectively,
 `/kaggle/working/vietnamese_reranker_mining_pool50_refon.tar.gz` and

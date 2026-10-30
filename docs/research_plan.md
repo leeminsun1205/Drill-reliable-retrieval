@@ -268,8 +268,8 @@ forwards must be replaced by one combined forward and validated in an isolated
 multi-GPU smoke test.
 
 Development retrieval is frozen independently from fine-tuning and checkpoint
-evaluation. `notebooks/temp/kaggle_prepare_frozen_dev_handoff_pool50.ipynb` and
-`notebooks/temp/kaggle_prepare_frozen_dev_handoff_pool100.ipynb` create the two
+evaluation. `notebooks/archive/kaggle_prepare_frozen_dev_handoff_pool50.ipynb` and
+`notebooks/archive/kaggle_prepare_frozen_dev_handoff_pool100.ipynb` create the two
 reference-on handoffs without loading a reranker. Each archive contains the
 handoff, resolved configuration, and a SHA-256 manifest covering exactly the
 persisted 438-query development split. Every pointwise checkpoint at a given

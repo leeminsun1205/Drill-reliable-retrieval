@@ -2204,3 +2204,23 @@ only after predictions, chunk features, component rankings, run metadata, and
 the submission manifest have been written. These lifecycle changes are
 output-invariant; the frozen reranker batch remains 256 and no fallback batch or
 model substitution is introduced.
+
+### Repository artifact cleanup
+
+The 2026-10-30 final cleanup leaves only three current notebook entry points:
+cache construction, the pool-50 checkpoint-1208 LightGBM feature screen, and
+the corresponding official submission launcher. Completed pointwise
+mining/training/evaluation notebooks, deferred pairwise notebooks, superseded
+reranker treatments, and preparation utilities are retained in
+`notebooks/archive/`; they are reproducibility records, not active workflows.
+
+The top level of the ignored `results/` directory retains exactly the three
+decision archives used by the current report:
+`pointwise_mil_pool50_checkpoint_eval_metrics.tar.gz`,
+`pointwise_mil_pool100_checkpoint_eval_metrics.tar.gz`, and
+`pool50_epoch1_lightgbm_feature_screen.tar.gz`. Superseded first-stage,
+multi-dense, and reranker result bundles were removed from the local ignored
+artifact directory after their measured decisions and limitations had been
+recorded in the Markdown sources of truth. Reference graph/review artifacts and
+parser/design audits remain in their named directories because measured facts
+in `docs/dataset.md` and the reference ablation still depend on them.
