@@ -132,6 +132,17 @@ seed-42 development IDs, exact cosine search, max chunk-to-article aggregation,
 depth 100, and fixed-top-2 evaluation. Each case has an independent cache and
 output directory. The final cell rejects mismatched development splits before
 constructing R2.
+
+### Re-running report Table R3
+
+`notebooks/kaggle_table3_first_stage_ablation.ipynb` evaluates the six
+first-stage component cases used by report Table R3. Set `TABLE3_CASE` to
+`1`--`6`, or to `0` for all rows. The notebook materializes the frozen BM25,
+Harrier, and E5-large rankings once and derives every single-component and WRRF
+combination from those same rankings. It uses WRRF `k=10`, rounded subset
+weights `0.21/0.79` and `0.65/0.35`, full weights `0.15/0.55/0.30`, fixed top
+2, and Recall@50. Reranking, references, LightGBM, and test data are excluded.
+
 After saving `/kaggle/working/retrieval-cache` as a Kaggle output or dataset,
 point the corresponding cache directories at that attached input and enable
 `require_hit: true`. Do not copy or commit generated caches to Git.

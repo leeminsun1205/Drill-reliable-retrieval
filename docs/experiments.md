@@ -1048,6 +1048,16 @@ retrospective tuning result, not yet evidence of downstream F2 improvement;
 the Kaggle run must freeze this selection before reranking and report the full
 epoch-3 and nested-OOF LightGBM comparison.
 
+For the final report's controlled first-stage component table, rerun BM25,
+Harrier, E5-large, BM25+Harrier, Harrier+E5-large, and the full three-component
+hybrid from the same saved rankings. Use WRRF `k=10` throughout. Single
+components have unit weight; subset combinations inherit and renormalize the
+frozen `0.15/0.55/0.30` ratio and use the declared rounded controls
+BM25/Harrier `0.21/0.79` and Harrier/E5 `0.65/0.35`. This is a component
+ablation, not six independently tuned systems. Report fixed-top-2 metrics and
+Recall@50 as the main candidate metric because the downstream reranker consumes
+50 articles; retain Recall@100 only as an artifact diagnostic.
+
 This notebook run changes both WRRF and reference treatment relative to the
 measured baseline, so its final delta cannot identify their separate causal
 effects. It is an operational combined candidate for the owner, while the

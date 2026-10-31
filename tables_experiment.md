@@ -3,7 +3,7 @@
 ## Usage contract
 
 This file contains exactly nine report tables for the 15-page final report.
-Four of them are also used in the presentation as reduced views. There are no
+Five of them are also used in the presentation as reduced views. There are no
 slide-only result tables: every number shown on slides must already appear in
 the corresponding report table.
 
@@ -14,13 +14,13 @@ specifications, and all 21 source tables are retained in
 | Final table | Report | Slides | Slide treatment |
 |---|:---:|:---:|---|
 | R1. Dataset and evaluation setting | Yes | No | Show dataset scale as large-number callouts, not a table |
-| R2. Legal-structure-aware chunking | Yes | Yes — S1 | Keep Article, Token window, Khoản, and Điểm rows; retain Macro-F2 and Recall@100 |
-| R3. First-stage retrieval selection | Yes | No | Supporting selection detail; normally omit from slides |
-| R4. Structure and cross-reference ablation | Yes | Yes — S2 | Keep the four factorial rows and Macro-F2; if incomplete, show candidate-recall gate with limitation |
-| R5. Reranker adaptation and candidate budget | Yes | No | Supporting checkpoint-selection detail; feed its winner into S3 |
-| R6. LightGBM feature design | Yes | No | Supporting learning-to-rank detail; feed its winner into S3 |
-| R7. Final-set decision policy | Yes | Yes — S3 | Keep fixed top 2, raw threshold, score gap, and oracle; combine with selected R5/R6 milestones |
-| R8. Official benchmark and hidden-split robustness | Yes | Yes — S4 | Keep organizer baseline, at most two published systems, and three project policies |
+| R2. Legal-structure-aware chunking | Yes | Yes — S1 | Keep Article, Token window, Khoản, and Khoản–Điểm rows; retain Macro-F2 and Recall@100 |
+| R3. First-stage retrieval selection | Yes | Yes — S2 | Show the six controlled component combinations; retain Macro-F2 and Recall@50 |
+| R4. Structure and cross-reference ablation | Yes | Yes — S3 | Keep the four factorial rows and Macro-F2; if incomplete, show candidate-recall gate with limitation |
+| R5. Reranker adaptation and candidate budget | Yes | No | Supporting checkpoint-selection detail; feed its winner into S4 |
+| R6. LightGBM feature design | Yes | No | Supporting learning-to-rank detail; feed its winner into S4 |
+| R7. Final-set decision policy | Yes | Yes — S4 | Keep fixed top 2, raw threshold, score gap, and oracle; combine with selected R5/R6 milestones |
+| R8. Official benchmark and hidden-split robustness | Yes | Yes — S5 | Keep organizer baseline, at most two published systems, and three project policies |
 | R9. Error attribution and computational cost | Yes | No | Show as a failure funnel or examples rather than a dense slide table |
 
 Blank cells are intentional and mean that the controlled experiment or
@@ -102,28 +102,42 @@ and Recall@100. Every slide value must be copied unchanged from R2.
 
 ## R3. Selection of the First-Stage Retrieval Pipeline
 
-**Use:** `REPORT ONLY`
+**Use:** `REPORT + SLIDES` (`S2`)
 
 **Question.** Which sparse/dense components provide the strongest and most
 complementary first-stage candidate ranking without turning the study into a
 model zoo?
 
-**Protocol.** The single-dense screen freezes BGE-M3-tokenized Khoản–Điểm
-448/64 chunks, exact cosine search, model-card prefixes, max article
-aggregation, candidate depth 100, and split. The dense-pair screen freezes
-BM25S/VnCoreNLP, the shared chunk store, a predeclared 40-case WRRF grid,
-candidate budget 50, epoch-3 reranker, and fresh grouped-OOF LightGBM. Because
-the pair screen permits a separate WRRF winner per pair, its nested F2 is an
-end-to-end selection metric rather than an encoder-only ablation.
+**Protocol.** Freeze the seed-42 split, BGE-M3-tokenized hierarchical
+Khoản–Điểm 448/64 chunk store, model-card prefixes, exact cosine search, max
+chunk-to-article aggregation, component depth 100, and evaluator. Dense 1 is
+VietLegal-Harrier and Dense 2 is multilingual-E5-large. Combination rows reuse
+the exact saved component rankings and WRRF `k=10`; their relative weights are
+inherited from the frozen final ratio BM25/Harrier/E5 `0.15/0.55/0.30` and
+renormalized only over the enabled components. No reranker, reference
+expansion, or LightGBM is allowed in this table. Rerun all six rows from the
+same saved component rankings rather than mixing historical runs. Report the
+same fixed top-2 Precision/Recall/Macro-F2 and Recall@50 for every row because
+50 articles is the frozen downstream reranker budget; retain Recall@100 only
+in the detailed artifact as a depth diagnostic.
 
-| Screening stage | Method | Fixed-output Macro-F2 | Recall@50 | Recall@100 | Downstream nested Macro-F2 | Decision |
-|---|---|---:|---:|---:|---:|---|
-| Sparse anchor | BM25 + VnCoreNLP | 0.379908 | 0.834758 | 0.877452 |  | Retained as lexical component |
-| Multilingual dense control | multilingual-E5-large | 0.464441 | 0.896015 | 0.929447 |  | Complement candidate |
-| Vietnamese legal dense | VietLegal-Harrier | **0.507947** | 0.924364 | 0.946325 |  | Primary dense component |
-| Dense pair | Harrier + multilingual-E5-large |  | 0.927789 | **0.952794** | **0.648354** | Selected pair |
-| Dense pair | Harrier + VietLegal-E5 |  | **0.933823** | 0.952033 | 0.630950 | Higher R@50, weaker downstream result |
-| Dense pair | Harrier + BGE-M3 |  | 0.926593 | 0.949369 | 0.629978 | Not selected |
+The exact enabled-component weights are: BM25 `1.0`; Harrier `1.0`; E5 `1.0`;
+BM25+Harrier `0.21/0.79`; Harrier+E5 `0.65/0.35`; and the full hybrid
+`0.15/0.55/0.30`. The two-component weights are rounded, declared controls
+derived from the final ratio rather than separately tuned optima.
+
+| First-stage components | WRRF weights over enabled components | Precision@2 | Recall@2 | Macro-F2@2 | Recall@50 |
+|---|---:|---:|---:|---:|---:|
+| BM25 + VnCoreNLP | `1.0` |  |  |  |  |
+| Dense 1: VietLegal-Harrier | `1.0` |  |  |  |  |
+| Dense 2: multilingual-E5-large | `1.0` |  |  |  |  |
+| BM25 + Dense 1 | `0.21 / 0.79` |  |  |  |  |
+| Dense 1 + Dense 2 | `0.65 / 0.35` |  |  |  |  |
+| BM25 + Dense 1 + Dense 2 | `0.15 / 0.55 / 0.30` |  |  |  |  |
+
+**Slide S2:** use these six rows with Method, Macro-F2@2, and Recall@50. The
+row order communicates the component-building logic, not a guaranteed
+monotonic progression.
 
 **Source:** detailed Tables 2, 5, and 6 in
 `tables_experiment_catalog.md`. Rows at different screening stages must not be
@@ -133,7 +147,7 @@ read as a single causal ablation.
 
 ## R4. Structure and Cross-Reference Ablation
 
-**Use:** `REPORT + SLIDES` (`S2`)
+**Use:** `REPORT + SLIDES` (`S3`)
 
 **Question.** Do structure-aware chunks and deterministic same-document legal
 references independently improve the strong retrieval/reranking pipeline?
@@ -156,7 +170,7 @@ same-document expansion `0.948174`; cross-document expansion `0.928930`.
 This gate is a retrieval diagnostic, not a substitute for the missing factorial
 cells.
 
-**Slide S2:** use R4 unchanged once complete. Before completion, show only the
+**Slide S3:** use R4 unchanged once complete. Before completion, show only the
 three recall-gate values and the explicit statement “end-to-end factorial
 incomplete”; do not imply final-F2 improvement.
 
@@ -220,7 +234,7 @@ in `tables_experiment_catalog.md`.
 
 ## R7. Final-Set Decision Policy Comparison
 
-**Use:** `REPORT + SLIDES` (`S3`)
+**Use:** `REPORT + SLIDES` (`S4`)
 
 **Question.** Given one frozen LightGBM ranking, how should the system choose
 the number of returned articles per query?
@@ -244,7 +258,7 @@ Platt and isotonic calibrated thresholds both measured the same F2 `0.656754`
 as the raw nested threshold and are omitted from this compact table because a
 monotonic score transform adds no information to an exact threshold search.
 
-**Slide S3:** show four milestones: reranker fixed top 2 (`0.579928`, from R5),
+**Slide S4:** show four milestones: reranker fixed top 2 (`0.579928`, from R5),
 LightGBM fixed top 2 (`0.594233`, from R6), nested threshold (`0.656754`), and
 nested score gap (`0.658333`). Clearly label this as pipeline storytelling, not
 a single-variable ablation.
@@ -256,7 +270,7 @@ a single-variable ablation.
 
 ## R8. Official Benchmark and Hidden-Split Robustness
 
-**Use:** `REPORT + SLIDES` (`S4`)
+**Use:** `REPORT + SLIDES` (`S5`)
 
 **Question.** How does the frozen project pipeline compare with published DRiLL
 systems, and are its policy results stable across public/private splits?
@@ -279,7 +293,7 @@ provided only F2 here.
 | This project, threshold + fallback 2 | Codabench | 0.6524 |  |  | **0.6054** | Public 1021667; private 1021640 |
 | This project, score gap | Codabench | **0.6551** |  |  | 0.6047 | Public 1021732; private 1021639 |
 
-**Slide S4:** keep organizer two-stage, at most two published systems (normally
+**Slide S5:** keep organizer two-stage, at most two published systems (normally
 ViDRILL and EDM), and the three project-policy rows. Do not display a project
 rank because protocols and competition timing differ.
 
@@ -328,10 +342,12 @@ incomplete until the consolidated error-analysis and resource audit run.
 Slides must reuse report values, not introduce new calculations:
 
 1. **S1 from R2:** four chunking rows; Macro-F2 and Recall@100 only.
-2. **S2 from R4:** four factorial rows when complete; otherwise the explicitly
+2. **S2 from R3:** six controlled first-stage component rows; Macro-F2 and
+   Recall@50 only; do not imply monotonic gains.
+3. **S3 from R4:** four factorial rows when complete; otherwise the explicitly
    labelled reference recall gate.
-3. **S3 from R5–R7:** four pipeline milestones; label non-causal progression.
-4. **S4 from R8:** organizer two-stage, up to two published systems, and three
+4. **S4 from R5–R7:** four pipeline milestones; label non-causal progression.
+5. **S5 from R8:** organizer two-stage, up to two published systems, and three
    project policies.
 
 Any later correction to a result must be made in the report table first, then
