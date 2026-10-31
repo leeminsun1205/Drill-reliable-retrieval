@@ -51,6 +51,23 @@ importance does not validate a feature; feature-group removal is stronger but
 remains exploratory when many groups are tried on the same development split.
 An official test score is required before claiming external confirmation.
 
+## Nested final-set policy protocol
+
+Once the reranker and LightGBM feature schema are frozen, final-set policies
+must be compared on the same saved LightGBM OOF rankings. Assign development
+queries deterministically to outer folds. For every outer fold, fit any score
+calibrator, tune any threshold, or fit any output-cardinality model using only
+the other folds, then predict the held-out queries. Concatenate held-out
+predictions before computing the primary macro Precision, Recall, and F2.
+
+The controlled policy screen includes fixed top-k controls, raw-score
+thresholding, Platt- and isotonic-calibrated thresholding, and a small
+query-cardinality classifier. Report an oracle prefix only as an upper-bound
+diagnostic. Pooled-OOF threshold tuning is a deployment diagnostic, not the
+unbiased primary estimate. Select a replacement policy only from nested
+development results; public and private test scores remain reporting evidence
+and must never train or select the policy.
+
 ## Metrics
 
 The primary DRiLL-compatible metrics are Precision, Recall, and F2, aggregated

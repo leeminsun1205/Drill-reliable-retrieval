@@ -2224,3 +2224,33 @@ artifact directory after their measured decisions and limitations had been
 recorded in the Markdown sources of truth. Reference graph/review artifacts and
 parser/design audits remain in their named directories because measured facts
 in `docs/dataset.md` and the reference ablation still depend on them.
+
+### Official pool-50 checkpoint-1208 LightGBM results
+
+Codabench returned the following official scores on 2026-10-30 for the frozen
+`enhanced_v2` LightGBM submission pipeline. These are measured leaderboard
+scores supplied from completed submissions, not development estimates:
+
+| Split | Output policy | Submission ID | F2 |
+|---|---|---:|---:|
+| Public | Pooled score-gap, maximum cutoffs `{3,4,5}` | 1021732 | 0.6551 |
+| Public | Pooled threshold with fallback 2 | 1021667 | 0.6524 |
+| Private | Pooled threshold with fallback 2 | 1021640 | 0.6054 |
+| Private | Pooled score-gap, maximum cutoffs `{3,4,5}` | 1021639 | 0.6047 |
+| Public | Fixed top 2 | 1022898 | 0.5989 |
+| Private | Fixed top 2 | 1022897 | 0.5552 |
+
+Score-gap leads threshold by `0.0027` on public, while threshold leads
+score-gap by `0.0007` on private. The ordering therefore does not transfer
+consistently and the private difference is negligible at the reported
+precision. The score-gap public result is close to its pre-recorded nested-OOF
+development estimate (`0.658333`, difference `-0.003233`), but its private
+score is lower by `0.053633`. Keep score-gap as the predeclared primary policy
+and threshold as the documented control; do not switch the selected method
+post hoc based on the private leaderboard.
+
+Compared with LightGBM fixed top 2, threshold improves public/private F2 by
+`0.0535/0.0502`, and score gap improves it by `0.0562/0.0495`. This isolates
+final-set cardinality as the largest measured remaining decision boundary. The
+next experiment plan and required report tables are frozen in
+`docs/final_report_plan.md`.

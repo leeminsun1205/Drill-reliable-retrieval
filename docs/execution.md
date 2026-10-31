@@ -120,6 +120,18 @@ multi-dense config, use three separate commands:
 The sparse cache depends on the exact preprocessing configuration, including
 the configured VnCoreNLP path. Dense caches depend on model/revision, document
 prefix, chunking, normalization, ordered `aid` mapping, and corpus content.
+
+### Re-running report Table R2
+
+`notebooks/kaggle_table2_chunking_ablation.ipynb` is the controlled dense-only
+runner for report Table R2. Set `TABLE2_CASE` to `1`, `2`, `3`, or `4` for
+article truncation, fixed 448/64 windows, Khoản 448/64, or hierarchical
+Khoản–Điểm 448/64; set it to `0` to run all four sequentially. The notebook fixes
+VietLegal-Harrier, the BGE-M3 boundary tokenizer used by the main pipeline,
+seed-42 development IDs, exact cosine search, max chunk-to-article aggregation,
+depth 100, and fixed-top-2 evaluation. Each case has an independent cache and
+output directory. The final cell rejects mismatched development splits before
+constructing R2.
 After saving `/kaggle/working/retrieval-cache` as a Kaggle output or dataset,
 point the corresponding cache directories at that attached input and enable
 `require_hit: true`. Do not copy or commit generated caches to Git.
