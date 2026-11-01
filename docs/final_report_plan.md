@@ -21,6 +21,8 @@ Measured official F2 as of 2026-11-01:
 | Score gap | **0.6551** | 0.6047 |
 | Fold-safe learned stopping | **0.6672** | **0.6123** |
 | Listwise prefix-utility Ridge | 0.6661 | **0.6245** |
+| Tuned prefix-utility Ridge (`alpha=1`) | 0.6700 | 0.6265 |
+| Balanced multiclass logistic (`C=0.1`) | **0.6847** | **0.6368** |
 
 Relative to LightGBM fixed top 2, learned stopping adds `0.0683/0.0571` on
 public/private. It also exceeds score gap by `0.0121/0.0076` and threshold by
@@ -31,6 +33,12 @@ external confirmation, not tuning labels.
 The listwise treatment nearly matches stopping on public (`-0.0011`) and leads
 it on private (`+0.0122`), but the final policy must be chosen from their saved
 nested-OOF development evidence rather than this private ordering.
+
+The closed nested screen selected balanced multiclass logistic, and that choice
+was confirmed on both hidden splits. It exceeds tuned Ridge by `0.0147/0.0103`,
+learned stopping by `0.0175/0.0245`, and fixed top 2 by `0.0858/0.0816` on
+public/private. Use multiclass logistic as the final cardinality policy and
+retain tuned Ridge as the closest controlled alternative.
 
 ## Required report tables
 

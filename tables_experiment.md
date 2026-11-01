@@ -270,12 +270,16 @@ adopting a new selector.
 | Nested score gap | **0.532344** | 0.699734 | **0.658333** |  | 3 | Current scientific estimate |
 | Logistic gold-cardinality predictor | 0.338128 | 0.732002 | 0.593688 | 3.397 | 5 | Rejected baseline |
 | Learned stopping policy |  |  |  |  | 5 | Nested-OOF values must be copied from the saved artifact; official results are in R8 |
-| Listwise prefix-utility Ridge |  |  |  |  | 5 | Nested-OOF values must be copied from artifact; official results are in R8 |
+| Multiclass logistic cardinality | 0.556355 | **0.705441** | **0.669557** | 2.315 | 5 | Closed-screen nested-OOF winner; C=0.1, balanced |
+| Tuned prefix-utility Ridge | **0.574658** | 0.697184 | 0.668670 | 2.039 | 5 | Close second; alpha=1.0 |
 | Oracle prefix through k=5 | 0.722793 | 0.794809 | 0.779280 | 1.610 | 5 | Upper bound only |
 
 Platt and isotonic calibrated thresholds both measured the same F2 `0.656754`
 as the raw nested threshold and are omitted from this compact table because a
 monotonic score transform adds no information to an exact threshold search.
+The multiclass winner exceeds tuned Ridge by only `0.000887` F2. Its exact-k,
+under-selection, and over-selection rates are `0.4840/0.1301/0.3858`; higher
+over-selection is consistent with the recall-weighted F2 objective.
 
 **Slide S4:** show four milestones: reranker fixed top 2 (`0.579928`, from R5),
 LightGBM fixed top 2 (`0.594233`, from R6), nested threshold (`0.656754`), and
@@ -313,6 +317,8 @@ provided only F2 here.
 | This project, score gap | Codabench | **0.6551** |  |  | 0.6047 | Public 1021732; private 1021639 |
 | This project, fold-safe learned stopping | Codabench | **0.6672** |  |  | **0.6123** | Public 1025830; private 1025816 |
 | This project, listwise prefix-utility Ridge | Codabench | 0.6661 |  |  | **0.6245** | Public 1025919; private 1025907 |
+| This project, tuned prefix-utility Ridge | Codabench | 0.6700 |  |  | 0.6265 | Public 1025993; private 1025992 |
+| This project, balanced multiclass logistic | Codabench | **0.6847** |  |  | **0.6368** | Public 1025984; private 1025979 |
 
 **Slide S5:** keep organizer two-stage, at most two published systems (normally
 ViDRILL and EDM), and the four project-policy rows. Do not display a project

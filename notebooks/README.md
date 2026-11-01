@@ -57,6 +57,10 @@ and `scripts/`.
   screen on the same frozen rankings. It performs inner hyperparameter selection
   inside every outer query fold, records the nested-OOF winner, and packages a
   public/private ZIP pair for every case as exploratory artifacts.
+- `kaggle_cardinality_multiclass_confirmatory.ipynb`: focused follow-up to the
+  nested winner. It retains the winning balanced multiclass logistic baseline
+  and compares cost-sensitive expected-F2 decoding with an inner-tuned
+  multiclass–Ridge ensemble, preserving complete models and provenance.
 - `kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`: matched
   Table-R4 case-1 submission control using fixed 448/64 token windows,
   references disabled, checkpoint 1208, and a freshly fitted `enhanced_v2`

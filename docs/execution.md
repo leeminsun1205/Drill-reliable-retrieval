@@ -1154,6 +1154,15 @@ in `selected_by_nested_oof.json`. The expected bundle is
 all ZIPs is exploratory repeated evaluation; only nested-OOF may select the
 method reported as the controlled winner.
 
+For the focused winner follow-up, run
+`notebooks/submission/kaggle_cardinality_multiclass_confirmatory.ipynb` with the
+same stopping output and datasets. It produces baseline multiclass,
+cost-sensitive multiclass, and multiclass–Ridge ensemble case directories and
+six validated ZIPs. The archive
+`/kaggle/working/cardinality_multiclass_confirmatory_results.tar.gz` retains
+nested fold records, deployment selection, complete JSON model coefficients,
+input hashes, predictions, and submissions so the experiment need not rerun.
+
 For the matched Table-R4 winner control, use
 `notebooks/submission/kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`.
 It does not consume Table-R4 result artifacts. The notebook rebuilds

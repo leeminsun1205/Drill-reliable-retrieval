@@ -1,0 +1,16 @@
+seed: 42
+outer_folds: 5
+inner_folds: 5
+maximum_k: 5
+multiclass:
+  C: 0.1
+  class_weight: balanced
+ridge:
+  alpha: 1.0
+ensemble:
+  lambda_multiclass: [0.25, 0.5, 0.75]
+cases:
+  - baseline_multiclass
+  - cost_sensitive_multiclass
+  - multiclass_ridge_ensemble
+

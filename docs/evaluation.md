@@ -86,6 +86,14 @@ training queries. `selected_by_nested_oof.json` is the scientific selection;
 the generated ZIP for every case is artifact convenience and must not turn
 Codabench into a hyperparameter selector.
 
+After the closed screen selected balanced multiclass logistic, one focused
+confirmatory comparison is permitted. It keeps `C=0.1`, balanced classes,
+Ridge `alpha=1`, and the frozen rankings fixed. Cost-sensitive decoding chooses
+the prefix with maximum expected training-fold utility under multiclass class
+probabilities. The ensemble combines standardized log class probabilities with
+Ridge utilities; its mixing weight is selected only in inner folds from
+`{0.25,0.5,0.75}`. The unchanged multiclass winner is included as the baseline.
+
 ## Metrics
 
 The primary DRiLL-compatible metrics are Precision, Recall, and F2, aggregated

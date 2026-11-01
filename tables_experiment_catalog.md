@@ -474,7 +474,11 @@ Report output-size statistics and fold dispersion before selecting a new policy.
 | Nested score gap | **0.532344** | 0.699734 | **0.658333** |  | 3 | Current scientific estimate |
 | Logistic gold-cardinality predictor | 0.338128 | 0.732002 | 0.593688 | 3.397 | 5 | Rejected baseline |
 | Fold-safe learned stopping |  |  |  |  | 5 | Artifact exists; copy nested-OOF metrics before reporting |
-| Listwise prefix-utility Ridge |  |  |  |  | 5 | Copy nested-OOF metrics from completed artifact |
+| Multiclass logistic cardinality | 0.556355 | **0.705441** | **0.669557** | 2.315 | 5 | Closed-screen nested winner; C=0.1, balanced |
+| Tuned prefix-utility Ridge | 0.574658 | 0.697184 | 0.668670 | 2.039 | 5 | Close second; alpha=1.0 |
+| Utility histogram gradient boosting | 0.574429 | 0.675304 | 0.652391 | 1.847 | 5 | Lower recall |
+| Pairwise logistic preference | 0.600647 | 0.661416 | 0.648298 | 1.532 | 5 | Precision-oriented, under-selects |
+| Multiclass histogram gradient boosting | 0.625989 | 0.600723 | 0.605612 | 1.235 | 5 | Highest exact-k but severe under-selection |
 | Oracle prefix through k=5 | 0.722793 | **0.794809** | 0.779280 | 1.610 | 5 | Upper bound only |
 
 **Evidence.** Verified local execution of
@@ -537,6 +541,8 @@ rank the project retroactively.
 | This project, same ranking | Codabench, submission 1021639 | Score gap |  |  | 0.6047 |
 | This project, same ranking | Codabench, submission 1025816 | Fold-safe learned stopping |  |  | **0.6123** |
 | This project, same ranking | Codabench, submission 1025907 | Listwise prefix-utility Ridge |  |  | **0.6245** |
+| This project, same ranking | Codabench, submission 1025992 | Tuned prefix-utility Ridge (`alpha=1`) |  |  | 0.6265 |
+| This project, same ranking | Codabench, submission 1025979 | Balanced multiclass logistic (`C=0.1`) |  |  | **0.6368** |
 
 **Evidence.** `docs/competition_review.md` and `docs/experiments.md`. External
 systems are context, not controlled baselines.
@@ -561,6 +567,8 @@ Do not select a new policy from private results.
 | Score gap | 1021732 | **0.6551** | 1021639 | 0.6047 | 0.0504 |
 | Fold-safe learned stopping | 1025830 | **0.6672** | 1025816 | **0.6123** | 0.0549 |
 | Listwise prefix-utility Ridge | 1025919 | 0.6661 | 1025907 | **0.6245** | 0.0416 |
+| Tuned prefix-utility Ridge | 1025993 | 0.6700 | 1025992 | 0.6265 | 0.0435 |
+| Balanced multiclass logistic | 1025984 | **0.6847** | 1025979 | **0.6368** | 0.0479 |
 
 Learned stopping exceeds score gap by `0.0121` public and `0.0076` private;
 unlike threshold versus score gap, the direction is consistent across splits.

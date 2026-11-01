@@ -1034,3 +1034,29 @@ inside each outer query fold and keeps ranking, seed, split, and maximum `k=5`
 fixed. Although the runner packages every case for reproducibility, only
 `selected_by_nested_oof.json` can select a report finalist. Any comparison of
 all case ZIPs on Codabench must be labeled exploratory repeated evaluation.
+
+Measured update, 2026-11-01: the closed screen selected balanced multiclass
+logistic regression (`C=0.1`) by nested-OOF F2 `0.669557`, only `0.000887` above
+tuned Ridge utility (`alpha=1`, F2 `0.668670`). The winner's Precision/Recall
+were `0.556355/0.705441`, mean output size was `2.315`, and its exact/under/over
+oracle-k rates were `0.484018/0.130137/0.385845`. The nonlinear multiclass model
+achieved higher exact-k accuracy (`0.625571`) but only F2 `0.605612` because it
+systematically chose short prefixes. The scientific winner is therefore
+multiclass logistic, while the tiny margin over Ridge must be reported rather
+than described as a decisive algorithmic advantage.
+
+Official confirmation, 2026-11-01: tuned Ridge utility scored `0.6700/0.6265`
+on public/private (submissions `1025993/1025992`), while the nested-selected
+balanced multiclass logistic policy scored `0.6847/0.6368` (submissions
+`1025984/1025979`). Thus the development-selected ordering transferred to both
+hidden splits, with multiclass gains of `0.0147/0.0103` over Ridge. The three
+remaining screen families are closed as development-only negative results and
+must not be submitted merely to search the leaderboard.
+
+One focused follow-up to the selected multiclass policy is frozen in
+`configs/cardinality_confirmatory.yaml`: unchanged balanced multiclass,
+cost-sensitive expected-F2 decoding, and an inner-tuned multiclass–Ridge
+ensemble with mixing weights `{0.25,0.5,0.75}`. No additional model family or
+grid is allowed in this confirmatory notebook. It persists every fold record,
+deployment decision, coefficient, utility matrix, prediction, hash, and ZIP;
+future reporting should read the artifact rather than rerun it.

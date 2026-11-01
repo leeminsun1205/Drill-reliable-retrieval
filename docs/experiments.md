@@ -2318,6 +2318,10 @@ scores supplied from completed submissions, not development estimates:
 | Private | Fold-safe learned stopping | 1025816 | **0.6123** |
 | Public | Listwise prefix-utility Ridge | 1025919 | 0.6661 |
 | Private | Listwise prefix-utility Ridge | 1025907 | **0.6245** |
+| Public | Tuned prefix-utility Ridge (`alpha=1`) | 1025993 | 0.6700 |
+| Private | Tuned prefix-utility Ridge (`alpha=1`) | 1025992 | 0.6265 |
+| Public | Balanced multiclass logistic (`C=0.1`) | 1025984 | **0.6847** |
+| Private | Balanced multiclass logistic (`C=0.1`) | 1025979 | **0.6368** |
 
 Score-gap leads threshold by `0.0027` on public, while threshold leads
 score-gap by `0.0007` on private. The ordering therefore does not transfer
@@ -2357,6 +2361,36 @@ logistic preference. Hyperparameters are selected inside each outer fold; the
 deployment parameter is selected from cross-fitted development predictions.
 The notebook emits submissions for every family for artifact completeness, but
 their leaderboard outcomes are not an allowed model-selection signal.
+
+The completed nested screen selected multiclass logistic cardinality with
+`C=0.1` and balanced classes: Precision `0.556355`, Recall `0.705441`, and F2
+`0.669557`. Tuned Ridge utility (`alpha=1`) was a near tie at `0.668670` F2.
+Utility histogram boosting, pairwise logistic, and multiclass histogram
+boosting reached `0.652391`, `0.648298`, and `0.605612`. Multiclass logistic
+selected mean `k=2.315`; its exact/under/over oracle-k rates were
+`0.484018/0.130137/0.385845`. Multiclass histogram boosting had the highest
+exact-k rate (`0.625571`) yet the lowest F2 because it under-selected `0.267123`
+of queries and recall fell to `0.600723`. Exact cardinality accuracy is therefore
+not a valid substitute for the official recall-weighted objective.
+
+Only the two nested finalists were submitted. Tuned Ridge utility scored
+`0.6700` public (submission `1025993`) and `0.6265` private (`1025992`). The
+nested-selected balanced multiclass logistic policy scored `0.6847` public
+(`1025984`) and `0.6368` private (`1025979`), leading Ridge by
+`0.0147/0.0103`. Relative to learned stopping, multiclass improves
+`0.0175/0.0245`; relative to score gap it improves `0.0296/0.0321`; and relative
+to fixed top 2 it improves `0.0858/0.0816` on public/private. The nested winner
+and both hidden splits agree on the ordering. The three weaker nested cases
+remain unsubmitted.
+
+The final focused cardinality notebook is
+`notebooks/submission/kaggle_cardinality_multiclass_confirmatory.ipynb`, driven
+by `configs/cardinality_confirmatory.yaml`. It includes the unchanged selected
+multiclass baseline, expected-F2 cost-sensitive decoding, and an inner-tuned
+multiclass–Ridge ensemble. Its artifact contract stores nested metrics and fold
+records, deployment selection, JSON model parameters and utility matrix,
+public/private predictions and ZIPs, input hashes, and one aggregate archive.
+No result is claimed until that archive is executed and inspected.
 
 ### Controlled first-stage component ablation (Table R3)
 
