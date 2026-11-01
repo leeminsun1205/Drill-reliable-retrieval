@@ -1,0 +1,25 @@
+seed: 42
+outer_folds: 5
+inner_folds: 5
+maximum_k: 5
+selection_metric: macro_f2
+tie_break: smaller_k
+cases:
+  utility_ridge:
+    alpha: [0.1, 1.0, 10.0, 100.0]
+  utility_hist_gradient_boosting:
+    max_leaf_nodes: [7, 15]
+    learning_rate: [0.03, 0.1]
+    l2_regularization: [1.0, 10.0]
+    min_samples_leaf: [20, 40]
+  multiclass_logistic:
+    C: [0.1, 1.0, 10.0]
+    class_weight: [null, balanced]
+  multiclass_hist_gradient_boosting:
+    max_leaf_nodes: [7, 15]
+    learning_rate: [0.03, 0.1]
+    l2_regularization: [1.0, 10.0]
+    min_samples_leaf: [20, 40]
+  pairwise_logistic:
+    C: [0.1, 1.0, 10.0]
+

@@ -1018,3 +1018,19 @@ Its purpose is to test whether simultaneous comparison of all prefixes avoids
 error propagation from sequential continue/stop decisions. Do not open a
 hyperparameter search or submit it based only on leaderboard expectations;
 nested-OOF must determine whether it merits external evaluation.
+
+Measured update, 2026-11-01: the frozen listwise treatment scored `0.6661`
+public (submission `1025919`) and `0.6245` private (submission `1025907`). It is
+`0.0011` below learned stopping on public and `0.0122` above it on private; its
+public-private gap is `0.0416` versus stopping's `0.0549`. This supports further
+offline analysis of prefix selection, but does not authorize choosing Ridge
+alpha, feature sets, or additional policies from leaderboard outcomes. Read the
+two saved nested-OOF artifacts before selecting the report finalist.
+
+The final allowed cardinality expansion is a closed five-family nested screen,
+not an open-ended model zoo. Its complete grids are frozen in
+`configs/cardinality_policy_screen.yaml`; every family performs inner selection
+inside each outer query fold and keeps ranking, seed, split, and maximum `k=5`
+fixed. Although the runner packages every case for reproducibility, only
+`selected_by_nested_oof.json` can select a report finalist. Any comparison of
+all case ZIPs on Codabench must be labeled exploratory repeated evaluation.

@@ -1144,6 +1144,16 @@ and persisted 438 development query IDs, then invokes
 `private_lightgbm_prefix_utility_results.zip`. Inspect nested-OOF F2 before
 submitting either ZIP; do not tune Ridge alpha using public/private feedback.
 
+For the closed five-family comparison, run
+`notebooks/submission/kaggle_cardinality_policy_nested_screen.ipynb` with the
+same completed stopping output. It invokes
+`scripts/run_cardinality_policy_screen.py`, writes one case directory and one
+public/private ZIP pair per policy, and stores the development-selected winner
+in `selected_by_nested_oof.json`. The expected bundle is
+`/kaggle/working/cardinality_policy_nested_screen_results.tar.gz`. Submitting
+all ZIPs is exploratory repeated evaluation; only nested-OOF may select the
+method reported as the controlled winner.
+
 For the matched Table-R4 winner control, use
 `notebooks/submission/kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`.
 It does not consume Table-R4 result artifacts. The notebook rebuilds

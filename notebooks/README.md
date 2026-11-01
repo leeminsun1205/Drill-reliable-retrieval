@@ -53,6 +53,10 @@ and `scripts/`.
   confirmatory cardinality experiment that reuses the completed stopping run's
   frozen `enhanced_v2` rankings, scores prefixes `k=1..5` with a fold-safe Ridge
   utility model, and produces separate public/private submission ZIPs.
+- `kaggle_cardinality_policy_nested_screen.ipynb`: closed five-family policy
+  screen on the same frozen rankings. It performs inner hyperparameter selection
+  inside every outer query fold, records the nested-OOF winner, and packages a
+  public/private ZIP pair for every case as exploratory artifacts.
 - `kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`: matched
   Table-R4 case-1 submission control using fixed 448/64 token windows,
   references disabled, checkpoint 1208, and a freshly fitted `enhanced_v2`

@@ -20,12 +20,17 @@ Measured official F2 as of 2026-11-01:
 | Threshold with fallback 2 | 0.6524 | **0.6054** |
 | Score gap | **0.6551** | 0.6047 |
 | Fold-safe learned stopping | **0.6672** | **0.6123** |
+| Listwise prefix-utility Ridge | 0.6661 | **0.6245** |
 
 Relative to LightGBM fixed top 2, learned stopping adds `0.0683/0.0571` on
 public/private. It also exceeds score gap by `0.0121/0.0076` and threshold by
 `0.0148/0.0069`. Final-set selection is therefore the largest successful
 measured treatment after the frozen ranking pipeline. These test results are
 external confirmation, not tuning labels.
+
+The listwise treatment nearly matches stopping on public (`-0.0011`) and leads
+it on private (`+0.0122`), but the final policy must be chosen from their saved
+nested-OOF development evidence rather than this private ordering.
 
 ## Required report tables
 

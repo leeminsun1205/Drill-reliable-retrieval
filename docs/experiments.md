@@ -2234,7 +2234,10 @@ per-query F2 utility of every prefix and chooses the highest predicted value
 with a smaller-k tie break. The runner and lightweight submission notebook are
 `scripts/run_prefix_utility_submission.py` and
 `notebooks/submission/kaggle_pool50_epoch1_lightgbm_prefix_utility_submission.ipynb`.
-No result is claimed until its generated `nested_oof_metrics.json` is inspected.
+Its frozen Codabench submissions were measured on 2026-11-01: public
+submission `1025919` scored `0.6661`, and private submission `1025907` scored
+`0.6245`. Its generated `nested_oof_metrics.json` must still be inspected before
+selecting it scientifically over learned stopping.
 
 A separate fixed-window/reference-off submission launcher is implemented from
 the completed Table-R4 case-1 development artifact. It freezes checkpoint
@@ -2313,6 +2316,8 @@ scores supplied from completed submissions, not development estimates:
 | Private | Fixed top 2 | 1022897 | 0.5552 |
 | Public | Fold-safe learned stopping | 1025830 | **0.6672** |
 | Private | Fold-safe learned stopping | 1025816 | **0.6123** |
+| Public | Listwise prefix-utility Ridge | 1025919 | 0.6661 |
+| Private | Listwise prefix-utility Ridge | 1025907 | **0.6245** |
 
 Score-gap leads threshold by `0.0027` on public, while threshold leads
 score-gap by `0.0007` on private. The ordering therefore does not transfer
@@ -2336,6 +2341,22 @@ public and `0.0069` private. Relative to fixed top 2, its gains are
 `0.0683/0.0571`. The same direction on both hidden splits is stronger robustness
 evidence than the crossed threshold/score-gap ordering, but it is not permission
 to tune the stopping model on either leaderboard split.
+
+Listwise prefix utility differs from stopping by `-0.0011` on public and
+`+0.0122` on private. It exceeds score gap by `0.0110/0.0198` and fixed top 2
+by `0.0672/0.0693` on public/private. Its public-private difference is `0.0416`,
+smaller than stopping's `0.0549`. These are encouraging robustness diagnostics,
+not a basis for opening a leaderboard-driven parameter sweep.
+
+A closed offline policy screen is implemented in
+`configs/cardinality_policy_screen.yaml` and
+`notebooks/submission/kaggle_cardinality_policy_nested_screen.ipynb`. It covers
+exactly five families: tuned Ridge utility, nonlinear histogram utility,
+multiclass logistic cardinality, multiclass histogram cardinality, and pairwise
+logistic preference. Hyperparameters are selected inside each outer fold; the
+deployment parameter is selected from cross-fitted development predictions.
+The notebook emits submissions for every family for artifact completeness, but
+their leaderboard outcomes are not an allowed model-selection signal.
 
 ### Controlled first-stage component ablation (Table R3)
 

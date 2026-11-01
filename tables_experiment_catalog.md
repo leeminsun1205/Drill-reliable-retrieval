@@ -474,7 +474,7 @@ Report output-size statistics and fold dispersion before selecting a new policy.
 | Nested score gap | **0.532344** | 0.699734 | **0.658333** |  | 3 | Current scientific estimate |
 | Logistic gold-cardinality predictor | 0.338128 | 0.732002 | 0.593688 | 3.397 | 5 | Rejected baseline |
 | Fold-safe learned stopping |  |  |  |  | 5 | Artifact exists; copy nested-OOF metrics before reporting |
-| Listwise prefix-utility Ridge |  |  |  |  | 5 | Predeclared confirmatory treatment; pending execution |
+| Listwise prefix-utility Ridge |  |  |  |  | 5 | Copy nested-OOF metrics from completed artifact |
 | Oracle prefix through k=5 | 0.722793 | **0.794809** | 0.779280 | 1.610 | 5 | Upper bound only |
 
 **Evidence.** Verified local execution of
@@ -536,6 +536,7 @@ rank the project retroactively.
 | This project, frozen pool-50 checkpoint-1208 LightGBM | Codabench, submission 1021640 | Threshold + fallback 2 |  |  | **0.6054** |
 | This project, same ranking | Codabench, submission 1021639 | Score gap |  |  | 0.6047 |
 | This project, same ranking | Codabench, submission 1025816 | Fold-safe learned stopping |  |  | **0.6123** |
+| This project, same ranking | Codabench, submission 1025907 | Listwise prefix-utility Ridge |  |  | **0.6245** |
 
 **Evidence.** `docs/competition_review.md` and `docs/experiments.md`. External
 systems are context, not controlled baselines.
@@ -559,6 +560,7 @@ Do not select a new policy from private results.
 | Threshold + fallback 2 | 1021667 | 0.6524 | 1021640 | **0.6054** | 0.0470 |
 | Score gap | 1021732 | **0.6551** | 1021639 | 0.6047 | 0.0504 |
 | Fold-safe learned stopping | 1025830 | **0.6672** | 1025816 | **0.6123** | 0.0549 |
+| Listwise prefix-utility Ridge | 1025919 | 0.6661 | 1025907 | **0.6245** | 0.0416 |
 
 Learned stopping exceeds score gap by `0.0121` public and `0.0076` private;
 unlike threshold versus score gap, the direction is consistent across splits.

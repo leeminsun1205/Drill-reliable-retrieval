@@ -77,6 +77,15 @@ smaller output. The alpha, target, and tie rule are fixed in
 modify them. Compare its concatenated outer-fold metrics directly with binary
 stopping before interpreting an official submission.
 
+The broader confirmatory screen is frozen in
+`configs/cardinality_policy_screen.yaml`: tuned Ridge utility, histogram
+gradient-boosting utility, multinomial logistic cardinality, histogram
+gradient-boosting cardinality, and pairwise logistic prefix preference. Every
+outer fold selects that case's hyperparameters using only inner cross-fitted
+training queries. `selected_by_nested_oof.json` is the scientific selection;
+the generated ZIP for every case is artifact convenience and must not turn
+Codabench into a hyperparameter selector.
+
 ## Metrics
 
 The primary DRiLL-compatible metrics are Precision, Recall, and F2, aggregated
