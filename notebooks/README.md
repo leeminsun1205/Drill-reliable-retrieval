@@ -49,6 +49,12 @@ and `scripts/`.
   final score-gap selection with a query-grouped, nested fold-safe learned
   prefix stopping policy. It retains score-gap, threshold, and top-2 outputs as
   controls and packages stopping provenance separately.
+- `kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`: matched
+  Table-R4 case-1 submission control using fixed 448/64 token windows,
+  references disabled, checkpoint 1208, and a freshly fitted `enhanced_v2`
+  LightGBM model. It deterministically rebuilds the exact development case,
+  reuses only compatible retrieval caches when available, and never consumes
+  prior R4 results or Khoản–Điểm development features.
 
 ## Non-primary notebooks
 

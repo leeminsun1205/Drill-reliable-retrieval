@@ -2222,6 +2222,14 @@ selection occurs only from inner cross-fitted probabilities. The deployment
 policy stores coefficients, feature scaling, threshold, seed, and input hashes
 as JSON. No gain is claimed until the notebook records its nested-OOF result.
 
+A separate fixed-window/reference-off submission launcher is implemented from
+the completed Table-R4 case-1 development artifact. It freezes checkpoint
+1208, WRRF weights, candidate budget, LightGBM schema, folds, and score-gap
+search while changing only the representation/reference treatment established
+by R4. Its official scores remain unmeasured. The launcher is a post-development
+control and must not be used to retroactively redefine already reported
+Khoản–Điểm/reference-on official runs.
+
 Not yet measured in this branch are an independently confirmed reduced schema,
 LightGBM hyperparameter tuning, LambdaRank or another learner, a nested
 threshold-policy estimate, uncertainty intervals for the final comparison, and
@@ -2332,7 +2340,7 @@ observed development differences without confidence intervals, not claims of
 statistical significance. Values were supplied from the completed notebook
 rows; independent archive ingestion and hash verification remain pending.
 
-### Planned matched structure × reference factorial (Table R4)
+### Completed matched structure × reference factorial (Table R4)
 
 The controlled rerun is implemented in
 `notebooks/experiments/retrieval/kaggle_table4_structure_reference_factorial.ipynb`. Its four cells
@@ -2343,5 +2351,20 @@ development split, LightGBM `enhanced_v2` schema, grouped folds, and score-gap
 search. LightGBM is refit per cell on that cell's candidates; only the schema,
 hyperparameters, folds, and policy protocol are frozen. This design can measure
 both main effects and whether reference expansion interacts with chunk
-representation. No result from this notebook is recorded until the exported
-case artifacts and common split hash are verified.
+representation.
+
+| Chunk representation | References | Candidate Recall@50 | Reranker F2@2 | Precision | Recall | Nested-OOF F2 |
+|---|---|---:|---:|---:|---:|---:|
+| Fixed token window 448/64 | Off | 0.9341 | 0.5937 | 0.5179 | 0.7204 | **0.6681** |
+| Hierarchical Khoản–Điểm 448/64 | Off | 0.9042 | 0.5799 | 0.5327 | 0.7014 | 0.6597 |
+| Fixed token window 448/64 | On | **0.9440** | 0.5937 | 0.5148 | 0.7200 | 0.6669 |
+| Hierarchical Khoản–Điểm 448/64 | On | 0.9178 | 0.5799 | 0.5323 | 0.6997 | 0.6583 |
+
+The hierarchical/reference-on cell reproduces the previously selected pipeline
+after rounding (`0.6583` versus `0.658333`). Fixed windows improve nested F2 by
+`0.0084` with references off and `0.0086` with references on. Graph expansion
+improves candidate Recall@50 by `0.0099` and `0.0136`, respectively, while
+slightly reducing final F2. The F2 difference-in-differences is about `0.0002`,
+so there is no meaningful interaction in these point estimates. These rows were
+supplied from the completed notebook on 2026-11-01; result-archive ingestion,
+split-hash verification, and paired uncertainty remain pending.

@@ -1133,6 +1133,21 @@ public/private labels are never read. The experimental outputs are
 predeclared nested-OOF comparison supports the stopping policy; private scores
 remain final robustness evidence only.
 
+For the matched Table-R4 winner control, use
+`notebooks/submission/kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`.
+It does not consume Table-R4 result artifacts. The notebook rebuilds
+`table4_case1_token_window_refoff` from the frozen configuration, reuses each
+compatible retrieval cache it can discover, and materializes missing caches
+under Kaggle working storage. Attach fixed-window shared-chunk, Harrier, E5, and
+BM25 caches only to reduce runtime; they are not result inputs. The launcher
+fails closed unless chunking is token-window 448/64,
+references and graph path are disabled, fixed-top-2 reranker F2 rounds to
+`0.5937`, and candidate Recall@50 rounds to `0.9341`. It relocates saved cache
+paths into the attached Kaggle input when present, locks all completed caches
+to cache-hit mode for public/private inference, reruns inference with checkpoint
+1208, and refits `enhanced_v2`; it does not reuse the hierarchical epoch-1
+feature-screen artifact.
+
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired
 training script and rerun the training cell in the same Kaggle session. Do not

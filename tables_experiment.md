@@ -171,24 +171,29 @@ displacement. Thus each row changes only chunk representation, reference
 expansion, or both. Candidate recall and nested final metrics must both be
 reported.
 
-| Chunk representation | Same-document references | Candidate Recall@50 | Precision | Recall | Nested-OOF Macro-F2 | Status |
-|---|---|---:|---:|---:|---:|---|
-| Fixed token window 448/64 | Off |  |  |  |  | Missing matched cell |
-| Hierarchical Khoản–Điểm 448/64 | Off | 0.9042 |  |  | 0.6484 | Recorded control |
-| Fixed token window 448/64 | On |  |  |  |  | Missing matched cell |
-| Hierarchical Khoản–Điểm 448/64 | On | 0.9166 |  |  | 0.6470 | Candidate recall improved; final F2 did not |
+| Chunk representation | Same-document references | Candidate Recall@50 | Reranker F2@2 | Precision | Recall | Nested-OOF Macro-F2 |
+|---|---|---:|---:|---:|---:|---:|
+| Fixed token window 448/64 | Off | 0.9341 | **0.5937** | 0.5179 | **0.7204** | **0.6681** |
+| Hierarchical Khoản–Điểm 448/64 | Off | 0.9042 | 0.5799 | **0.5327** | 0.7014 | 0.6597 |
+| Fixed token window 448/64 | On | **0.9440** | **0.5937** | 0.5148 | 0.7200 | 0.6669 |
+| Hierarchical Khoản–Điểm 448/64 | On | 0.9178 | 0.5799 | 0.5323 | 0.6997 | 0.6583 |
 
-Supporting fixed-budget graph-v3 gate: no expansion Recall@50 `0.9278`;
-same-document expansion `0.9482`; cross-document expansion `0.9289`.
-This gate is a retrieval diagnostic, not a substitute for the missing factorial
-cells.
+The selected historical pipeline is reproduced by the hierarchical/reference-
+on cell (`0.6583`, rounding the prior `0.658333`). Fixed windows outperform
+hierarchical chunks by `0.0084` without references and `0.0086` with references
+on nested Macro-F2. References raise candidate Recall@50 by `0.0099` for fixed
+windows and `0.0136` for hierarchical chunks, but reduce nested Macro-F2 by
+`0.0012` and `0.0014`. The difference-in-differences is only about `0.0002`, so
+the point estimates provide no meaningful structure/reference interaction.
+Paired uncertainty remains required before claiming significance.
 
-**Slide S3:** use R4 unchanged once complete. Before completion, show only the
-three recall-gate values and the explicit statement “end-to-end factorial
-incomplete”; do not imply final-F2 improvement.
+**Slide S3:** show the four completed cells and highlight that graph expansion
+improves candidate recall but not final F2, while fixed windows are consistently
+stronger under both graph settings.
 
-**Source:** detailed Tables 8 and 9 in `tables_experiment_catalog.md` and
-`results/reference_graph_v3/recall_gate_retuned_seed5_max4.json`.
+**Source:** complete user-executed Table-R4 notebook rows reported on 2026-11-01;
+independent archive/hash ingestion remains pending. Detailed Tables 8 and 9 in
+`tables_experiment_catalog.md` retain supporting graph-gate provenance.
 
 ---
 

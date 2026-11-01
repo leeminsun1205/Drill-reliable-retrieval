@@ -323,16 +323,16 @@ define **reference on** as graph-v3 same-document expansion with the fixed cap.
 Do not reuse separately retuned fusion or selector parameters in individual
 cells. Report candidate Recall@50 and nested-OOF final metrics.
 
-| Structure-aware chunks | Same-document references | Candidate Recall@50 | Precision | Recall | Nested-OOF Macro-F2 | Interpretation boundary |
-|---|---|---:|---:|---:|---:|---|
-| No | No |  |  |  |  | Strong non-structural control |
-| Yes | No | 0.904175 |  |  | 0.648354 | Recorded matched control from reference ablation |
-| No | Yes |  |  |  |  | Missing controlled cell |
-| Yes | Yes | 0.916623 |  |  | 0.647035 | Reference candidate gain; no nested final-F2 gain |
+| Structure-aware chunks | Same-document references | Candidate Recall@50 | Reranker F2@2 | Precision | Recall | Nested-OOF Macro-F2 | Interpretation boundary |
+|---|---|---:|---:|---:|---:|---:|---|
+| No | No | 0.9341 | 0.5937 | 0.5179 | 0.7204 | **0.6681** | Strongest final point estimate |
+| Yes | No | 0.9042 | 0.5799 | 0.5327 | 0.7014 | 0.6597 | Structure trades recall for precision |
+| No | Yes | **0.9440** | 0.5937 | 0.5148 | 0.7200 | 0.6669 | Graph raises candidate recall, not final F2 |
+| Yes | Yes | 0.9178 | 0.5799 | **0.5323** | 0.6997 | 0.6583 | Reproduces selected historical pipeline |
 
-**Evidence.** `docs/research_plan.md`. The first and third cells require new
-matched runs; therefore this table is not yet sufficient for a full factorial
-claim.
+**Evidence.** Complete user-executed Table-R4 notebook rows reported on
+2026-11-01. The result archive and common split hash remain to be independently
+ingested before final-paper provenance is closed.
 
 ---
 

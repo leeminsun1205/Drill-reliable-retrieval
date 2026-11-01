@@ -46,6 +46,18 @@ score-gap policies remain frozen reported controls. Article-first rechunking
 remains an ablation, not the default pipeline.
 Hold this configuration fixed when testing structure or reference components.
 
+The completed matched Table-R4 factorial now supplies the required control:
+fixed 448/64 windows achieved nested-OOF F2 `0.6681/0.6669` with references
+off/on, versus `0.6597/0.6583` for hierarchical Khoản–Điểm. Same-document
+references increased candidate Recall@50 in both representations but slightly
+reduced final F2; the F2 difference-in-differences was about `0.0002`. Thus the
+point estimates do not support a structure/reference interaction and identify
+fixed windows as the stronger development control. The historical selected
+pipeline remains frozen for already reported official results; changing the
+deployment representation requires its own predeclared rerun and must not be
+selected from private-test feedback. Artifact/hash verification and paired
+uncertainty are still pending.
+
 The completed multi-dense treatment improves the user-reported matched
 threshold submission from single-BGE public/private F2 `0.6160/0.5882` to
 `0.6384/0.5952`. Its nested-OOF score-gap estimate is `0.660836`, but the frozen
