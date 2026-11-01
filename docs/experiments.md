@@ -72,7 +72,7 @@ below passed. It receives the
 same project-generated VnCoreNLP tokens and vocabulary-frequency pruning, uses
 `method: lucene` plus Lucene IDF, and retains deterministic ascending-`aid`
 ties. The native backend remains the correctness oracle, and
-`notebooks/archive/kaggle_bm25_native_vs_bm25s.ipynb` reproduces the complete parity
+`notebooks/archive/retrieval/kaggle_bm25_native_vs_bm25s.ipynb` reproduces the complete parity
 check on Kaggle. Raw scores are not a parity criterion because bm25s may omit a
 positive rank-invariant scale factor; rank-based fusion is unaffected by that
 factor.
@@ -551,7 +551,7 @@ comparing the variants. BM25+ changes sparse ranks and therefore may change the 
 direct-chunk candidate set; report candidate Recall@k as well as final F2.
 
 `configs/sparse_screening.yaml` and
-`notebooks/archive/kaggle_sparse_bm25_plus_screening.ipynb` implement sparse tuning and
+`notebooks/archive/retrieval/kaggle_sparse_bm25_plus_screening.ipynb` implement sparse tuning and
 the matched BM25+ control. The predefined BM25 grid crosses `k1` values
 `0.6/0.9/1.2/1.5` with `b` values `0.4/0.6/0.75`; BM25+ remains fixed at
 `k1=1.2`, `b=0.75`, and delta `1.0`. Every case uses the same seed-42 split,
@@ -1577,7 +1577,7 @@ The run remains user-reported pending inspection of its saved config,
 predictions, split IDs, and run metadata.
 
 The project owner subsequently supplied the final scoreboard from
-`notebooks/archive/kaggle_overnight_experiments.ipynb` on 2026-09-30. The following compact view
+`notebooks/archive/retrieval/kaggle_overnight_experiments.ipynb` on 2026-09-30. The following compact view
 records the strongest policy for each principal reranker treatment; values are
 user-reported pending inspection of the archived run artifacts:
 
@@ -1783,7 +1783,7 @@ diagnostic and must not be described as an unbiased test estimate.
 
 On 2026-10-02, the project owner reported completion of the aligned
 direct-retrieved-chunk pointwise-BCE run from
-`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce.ipynb`. The selected
+`notebooks/archive/training/kaggle_finetune_main_retrieved_chunks_bce.ipynb`. The selected
 epoch-2 snapshot was `checkpoint-2484`. It used the unchanged Khoản–Điểm
 448/64 hybrid first stage, direct reranking of 50 fused chunks at pair length
 512, and max aggregation by `aid`. The matched 438-query development results
@@ -1828,7 +1828,7 @@ reporting, retain `1.576171875` as the development-selected primary policy and
 label threshold 3.0 as private-leaderboard-tuned sensitivity analysis.
 
 The subsequent four-epoch run from
-`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` retained
+`notebooks/archive/training/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` retained
 and evaluated epochs 3 and 4. The project owner reported the following matched
 development results on 2026-10-03:
 
@@ -1963,7 +1963,7 @@ ablation. `configs/hybrid_reranker_khoan_diem.yaml` and the dedicated Kaggle
 notebook freeze this representation without changing the earlier Điểm suite.
 
 The project owner reported the completed
-`notebooks/archive/kaggle_khoan_diem_experiments.ipynb` scoreboard on 2026-10-01. These values use
+`notebooks/archive/retrieval/kaggle_khoan_diem_experiments.ipynb` scoreboard on 2026-10-01. These values use
 the same 438-query seed-42 development split and remain user-reported pending
 inspection of the archived configs, predictions, candidate rankings, and run
 metadata.
@@ -2032,7 +2032,7 @@ separate stage because 50 chunks can represent fewer than 50 unique articles.
 
 ### Planned Harrier + BGE-M3 multi-dense control
 
-`notebooks/archive/kaggle_multi_dense_harrier_bge.ipynb` is the controlled dense-peer
+`notebooks/archive/retrieval/kaggle_multi_dense_harrier_bge.ipynb` is the controlled dense-peer
 replacement experiment for the current multi-dense pipeline. It replaces
 multilingual-E5 with `BAAI/bge-m3`, while retaining BM25S with VnCoreNLP,
 VietLegal-Harrier, the persisted seed-42 split, `top_chunks`, the epoch-3
@@ -2203,6 +2203,25 @@ full 61-feature `enhanced_v2` schema as the primary LightGBM model and the full
 one more development run, test exactly one predeclared reduced schema informed
 by the exploratory ablations; do not continue open-ended single-feature search.
 
+Two matched full-pipeline control launchers are available for epoch 4
+(`checkpoint-4842`) and epoch 5 (`checkpoint-6054`). Their checkpoint-screen
+fixed-top-2 F2 gates are measured values, `0.5733512172` and `0.5770438214`;
+their LightGBM nested-OOF and official scores remain unmeasured until those
+launchers complete. Each control regenerates checkpoint-dependent development
+features and refits LightGBM. These controls must not replace the selected
+epoch-1 pipeline based on private-test feedback.
+
+The learned-stopping treatment is now implemented but remains unmeasured. It
+uses the same checkpoint-1208 `enhanced_v2` OOF rankings as the existing final
+policy screen. Binary training rows represent prefix boundaries, with a target
+of continuing toward the best development prefix through `k=5`. Its features
+contain the first five LightGBM scores, adjacent gaps, query score dispersion
+and entropy, the current boundary, prefix/tail summaries, and cumulative
+softmax mass. Outer query folds estimate generalization; continue-threshold
+selection occurs only from inner cross-fitted probabilities. The deployment
+policy stores coefficients, feature scaling, threshold, seed, and input hashes
+as JSON. No gain is claimed until the notebook records its nested-OOF result.
+
 Not yet measured in this branch are an independently confirmed reduced schema,
 LightGBM hyperparameter tuning, LambdaRank or another learner, a nested
 threshold-policy estimate, uncertainty intervals for the final comparison, and
@@ -2211,7 +2230,7 @@ report any of those as completed or infer leaderboard gains from the 438-query
 development results.
 
 The official-inference launcher is now prepared at
-`notebooks/kaggle_pool50_epoch1_lightgbm_submission.ipynb`. It freezes
+`notebooks/submission/kaggle_pool50_epoch1_lightgbm_submission.ipynb`. It freezes
 checkpoint `1208`, `enhanced_v2`, seed 42, and score-gap maximum cutoffs
 `{3,4,5}`, reproduces the nested-OOF F2 gate before packaging, and emits
 public/private score-gap submissions plus fixed-top-2 and pooled-threshold
@@ -2285,3 +2304,44 @@ Compared with LightGBM fixed top 2, threshold improves public/private F2 by
 final-set cardinality as the largest measured remaining decision boundary. The
 next experiment plan and required report tables are frozen in
 `docs/final_report_plan.md`.
+
+### Controlled first-stage component ablation (Table R3)
+
+The Table-R3 Kaggle notebook was executed on 2026-11-01. All six rows reuse the
+same persisted 438-query seed-42 development split and the same saved component
+rankings. BM25 uses VnCoreNLP; both dense encoders use the shared BGE-M3
+Khoản–Điểm 448/64 representation, exact cosine search, and max
+chunk-to-article aggregation. Combination rows use WRRF with `k=10`. No
+reranker, reference expansion, or LightGBM contributes to these measurements.
+
+| First-stage components | WRRF weights | Precision@2 | Recall@2 | Macro-F2@2 | Recall@50 |
+|---|---:|---:|---:|---:|---:|
+| BM25 + VnCoreNLP | `1.0` | 0.2511 | 0.4297 | 0.3762 | 0.8348 |
+| VietLegal-Harrier | `1.0` | 0.3379 | 0.5811 | 0.5079 | 0.9244 |
+| multilingual-E5-large | `1.0` | 0.3116 | 0.5293 | 0.4644 | 0.8960 |
+| BM25 + Harrier | `0.21 / 0.79` | 0.3402 | 0.5795 | 0.5080 | 0.9243 |
+| Harrier + E5-large | `0.65 / 0.35` | 0.3505 | 0.5974 | 0.5236 | 0.9244 |
+| BM25 + Harrier + E5-large | `0.15 / 0.55 / 0.30` | 0.3516 | 0.5977 | 0.5243 | 0.9278 |
+
+The full three-component hybrid has the largest measured Macro-F2@2 and
+Recall@50. Most of the early-ranking gain over Harrier comes from adding
+E5-large: Harrier+E5 increases Macro-F2@2 by 0.0157, while adding BM25 to that
+pair adds only 0.0007 Macro-F2@2 and 0.0034 Recall@50. BM25+Harrier is
+effectively tied with Harrier alone at the reported precision. These are
+observed development differences without confidence intervals, not claims of
+statistical significance. Values were supplied from the completed notebook
+rows; independent archive ingestion and hash verification remain pending.
+
+### Planned matched structure × reference factorial (Table R4)
+
+The controlled rerun is implemented in
+`notebooks/experiments/retrieval/kaggle_table4_structure_reference_factorial.ipynb`. Its four cells
+cross fixed BGE-M3 token windows 448/64 and hierarchical Khoản–Điểm 448/64 with
+same-document graph expansion OFF/ON. It freezes all first-stage components,
+WRRF-10 weights, pool-50 checkpoint `1208`, candidate depth, reranking batch,
+development split, LightGBM `enhanced_v2` schema, grouped folds, and score-gap
+search. LightGBM is refit per cell on that cell's candidates; only the schema,
+hyperparameters, folds, and policy protocol are frozen. This design can measure
+both main effects and whether reference expansion interacts with chunk
+representation. No result from this notebook is recorded until the exported
+case artifacts and common split hash are verified.

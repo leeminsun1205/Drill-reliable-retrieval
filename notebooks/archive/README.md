@@ -1,54 +1,33 @@
 # Archived notebooks
 
-These notebooks preserve completed or superseded experiments for
-reproducibility. They are not the current Run-All entry points.
+These notebooks preserve completed, superseded, failed, or deferred work for
+reproducibility. They are not current Run-All entry points. Current notebooks
+and their roles are listed in `../README.md`.
 
-- `kaggle_overnight_experiments.ipynb`: initial broad baseline suite, superseded
-  by the focused Khoản–Điểm suite.
-- `kaggle_finetune_reranker_448.ipynb`: first Điểm 448/64 fine-tuning treatment,
-  superseded by the aligned direct retrieved-chunk BCE treatment.
-- `kaggle_finetune_khoan_diem_dual_candidate.ipynb`: completed comparison that
-  established direct retrieved-chunk reranking as the selected candidate flow.
-- `kaggle_smoke_finetune_reranker.ipynb`: one-step single-GPU and two-GPU DDP
-  plumbing checks for reranker training; it is not a reportable experiment.
-- `kaggle_rm3_rocchio_ablation_initial.ipynb`: superseded first RM3/Rocchio
-  ablation launcher, retained to explain the transition to the current focused
-  feedback notebook.
+## Layout
 
-Current notebooks remain one directory above. Do not delete archived notebooks
-until their configs, metrics, and limitations are fully represented in the
-Markdown sources of truth.
+- `preparation/`: completed mining and frozen-development handoff builders.
+- `retrieval/`: sparse/dense screening, fusion, feedback, structural chunking,
+  and earlier first-stage suites.
+- `training/`: superseded article/chunk BCE and pairwise fine-tuning launchers.
+- `evaluation/`: historical checkpoint and frozen-reranker evaluations.
+- `submission/`: superseded final-inference launchers.
+- `diagnostics/`: smoke tests, batch benchmarks, and recall analysis.
 
-Additional completed or deferred notebooks moved here during the 2026-10-27
-cleanup:
+## Notable provenance records
 
-- `kaggle_bm25_native_vs_bm25s.ipynb`: reproducibility gate that established
-  identical standard-BM25 top-100 rankings and selected bm25s for execution.
-- `kaggle_dense_standalone_screening.ipynb`: completed seven-model dense screen;
-  aggregate results are recorded in `docs/experiments.md`.
-- `kaggle_sparse_bm25_plus_screening.ipynb`: completed BM25 parameter and BM25+
-  control screen; standard BM25 1.2/0.75 remains selected.
-- `kaggle_khoan_diem_experiments.ipynb`: completed structural representation
-  suite that selected direct Khoản–Điểm retrieved-chunk reranking.
-- `kaggle_finetune_fpt_article_bce.ipynb`: full-article FPT-style training
-  control, superseded for the main path by aligned direct-chunk supervision.
-- `kaggle_finetune_main_retrieved_chunks_bce.ipynb`: completed two-epoch aligned
-  training run that selected epoch 2 at that stage.
-- `kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb`: completed longer
-  training follow-up that selected epoch 3.
-- `kaggle_rm3_rocchio_ablation.ipynb`: deferred feedback screen after exceeding
-  the practical Kaggle runtime budget; feedback remains disabled.
+- `retrieval/kaggle_bm25_native_vs_bm25s.ipynb` established identical standard
+  BM25 top-100 rankings before selecting bm25s as the execution backend.
+- `retrieval/kaggle_dense_standalone_screening.ipynb` contains the completed
+  seven-model dense screen.
+- `retrieval/kaggle_khoan_diem_experiments.ipynb` records the earlier
+  structure-aware representation suite.
+- `training/kaggle_finetune_main_retrieved_chunks_bce.ipynb` and its epochs
+  3–4 follow-up preserve the earlier aligned BCE training path.
+- `retrieval/kaggle_rm3_rocchio_ablation.ipynb` records the deferred feedback
+  experiment after it exceeded the practical Kaggle runtime budget.
 
-Additional notebooks archived during the final pool-50 cleanup:
-
-- Pointwise pool-50/pool-100 mining, five-epoch fine-tuning, and checkpoint
-  evaluation launchers: completed; their retained metrics establish the
-  checkpoint and candidate-budget decision.
-- Pairwise pool-50/pool-100 fine-tuning launchers: deferred after repeated
-  multi-GPU stalls and not used by the selected pipeline.
-- Old/new no-reference Vietnamese reranker launchers and the epoch-3 LightGBM
-  submission launcher: superseded by pool-50 checkpoint 1208.
-- Frozen-development-handoff preparation launchers: completed preparation
-  utilities, no longer needed by the final submission notebook.
-
-The current entry points and their roles are listed in `notebooks/README.md`.
+Do not delete an archived notebook until its configuration, measured results,
+and limitations are represented in the Markdown sources of truth. Do not use
+archive results as current evidence without checking their split, candidate
+set, metric, and configuration against the active protocol.

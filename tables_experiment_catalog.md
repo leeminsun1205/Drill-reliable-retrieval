@@ -193,10 +193,10 @@ and remain pending independent result-archive verification.
 
 | Representation | Precision@2 | Recall@2 | Macro-F2@2 | Recall@10 | Recall@50 | Recall@100 | Runtime (s) | Evidence |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| Article truncation | 0.336758 | 0.573195 | 0.502618 | 0.796391 | 0.912514 | 0.942194 | 3332.47 | User-reported / pending archive verification |
-| Fixed token window 448/64 | **0.342466** | 0.580806 | **0.509841** | **0.816634** | **0.925560** | **0.951653** | 5798.79 | User-reported / pending archive verification |
-| Khoản + fallback 448/64 | 0.334475 | 0.574201 | 0.502212 | 0.799299 | 0.918580 | 0.947086 | 5812.49 | User-reported / pending archive verification |
-| Hierarchical Khoản–Điểm 448/64 | 0.337900 | **0.581050** | 0.507947 | 0.803050 | 0.924364 | 0.946325 | 5431.82 | User-reported / pending archive verification |
+| Article truncation | 0.3368 | 0.5732 | 0.5026 | 0.7964 | 0.9125 | 0.9422 | 3332.47 | User-reported / pending archive verification |
+| Fixed token window 448/64 | **0.3425** | 0.5808 | **0.5098** | **0.8166** | **0.9256** | **0.9517** | 5798.79 | User-reported / pending archive verification |
+| Khoản + fallback 448/64 | 0.3345 | 0.5742 | 0.5022 | 0.7993 | 0.9186 | 0.9471 | 5812.49 | User-reported / pending archive verification |
+| Hierarchical Khoản–Điểm 448/64 | 0.3379 | **0.5811** | 0.5079 | 0.8031 | 0.9244 | 0.9463 | 5431.82 | User-reported / pending archive verification |
 
 **Evidence.** `docs/experiments.md` and the four Table-R2 notebook outputs.
 The earlier multilingual-E5-base/top-3 chunking screen is historical evidence,

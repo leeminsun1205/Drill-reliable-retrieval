@@ -1,19 +1,84 @@
 # Kaggle notebooks
 
-Only current Run-All entry points live in this directory:
+Notebooks are grouped by research stage. Paths describe responsibility, not a
+separate implementation: reusable pipeline logic remains in `src/drill_ir/`
+and `scripts/`.
 
-- `kaggle_build_retrieval_cache.ipynb`: build and verify one sparse or dense
-  retrieval-cache artifact per process.
+## Current workflow
+
+### `preparation/`
+
+- `kaggle_build_retrieval_cache.ipynb`: build and verify exactly one sparse,
+  dense, or shared-chunk cache artifact per process.
+
+### `experiments/retrieval/`
+
+- `kaggle_table2_chunking_ablation.ipynb`: controlled four-case dense chunking
+  comparison for report Table R2.
+- `kaggle_table3_first_stage_ablation.ipynb`: controlled six-case first-stage
+  component comparison for report Table R3.
+- `kaggle_table4_structure_reference_factorial.ipynb`: controlled 2×2
+  fixed-window/Khoản–Điểm × same-document-reference experiment for report
+  Table R4, including checkpoint-1208 reranking and per-cell `enhanced_v2`
+  LightGBM evaluation.
+
+### `experiments/reranking/`
+
 - `kaggle_pool50_epoch1_lightgbm_feature_screen.ipynb`: reproduce the selected
-  checkpoint-1208 development artifact and the controlled 15/41/61/69-feature
-  LightGBM screen.
-- `kaggle_final_decision_policy_screen.ipynb`: use the saved `enhanced_v2` OOF
-  rankings to compare nested raw/calibrated thresholds, a cardinality model,
-  fixed top-k controls, and the oracle prefix without reranking or test data.
-- `kaggle_pool50_epoch1_lightgbm_submission.ipynb`: final public/private
-  inference for pool 50, checkpoint 1208, `enhanced_v2`, and the frozen
-  score-gap policy, with fixed-top-2 and threshold controls.
+  checkpoint-1208 development artifact and compare the controlled
+  15/41/61/69-feature LightGBM schemas.
 
-Completed, superseded, failed, diagnostic, and deferred notebooks are retained
-under `archive/` for reproducibility. They are not recommended entry points.
-Reusable pipeline logic belongs in `src/drill_ir/` and `scripts/`.
+### `experiments/decision_policy/`
+
+- `kaggle_final_decision_policy_screen.ipynb`: compare nested raw/calibrated
+  thresholds, a cardinality model, fixed-top-k controls, score-gap selection,
+  and the oracle prefix from saved OOF rankings.
+
+### `submission/`
+
+- `kaggle_pool50_epoch1_lightgbm_submission.ipynb`: frozen public/private
+  inference for pool 50, checkpoint 1208, `enhanced_v2`, and score-gap policy,
+  with fixed-top-2 and threshold controls.
+- `kaggle_pool50_epoch4_lightgbm_submission.ipynb` and
+  `kaggle_pool50_epoch5_lightgbm_submission.ipynb`: matched checkpoint controls
+  for checkpoints 4842 and 6054. Each one regenerates its own development
+  reranker artifacts from the frozen pool-50 handoff and refits LightGBM; they
+  never reuse epoch-1 reranker scores or a fitted epoch-1 LightGBM model.
+- `kaggle_pool50_epoch1_lightgbm_stopping_submission.ipynb`: experimental
+  epoch-1 variant that preserves the frozen ranking pipeline and replaces only
+  final score-gap selection with a query-grouped, nested fold-safe learned
+  prefix stopping policy. It retains score-gap, threshold, and top-2 outputs as
+  controls and packages stopping provenance separately.
+
+## Non-primary notebooks
+
+### `training/deferred/`
+
+Pairwise pool-50 and pool-100 launchers are preserved here because their
+multi-GPU training path stalled and is not part of the selected pointwise
+pipeline. Do not use them as final-training entry points.
+
+### `diagnostics/`
+
+Runtime/debug variants for reranker batching and the no-reference reranker are
+kept separate from reportable experiments. Their outputs are diagnostic, not
+main-table evidence.
+
+### `temp/`
+
+Incomplete or transitional launchers. Nothing under this directory is a
+supported Run-All entry point.
+
+### `archive/`
+
+Completed, superseded, failed, or deferred historical work, grouped by stage.
+See `archive/README.md`. Archived notebooks are retained for provenance but are
+not recommended entry points.
+
+## Path policy
+
+- Link to the categorized path in documentation and experiment notes.
+- Moving a notebook must not change its scientific configuration.
+- Kaggle outputs, caches, checkpoints, and raw data do not belong here.
+- A new reportable notebook should go under the stage it evaluates; a thin
+  preparation utility should go under `preparation/`.

@@ -228,6 +228,11 @@ reranking, learned fusion, or final selection.
    score gaps, score entropy/slope, component agreement, legal-citation cues,
    query length, and multi-provision language. Evaluate every choice with
    nested query folds; the pooled development optimum is diagnostic only.
+   The first implemented information-adding treatment is a sequential logistic
+   continue/stop classifier through `k=5`. Its outer-fold estimate nests
+   threshold selection through inner cross-fitted probabilities, and its
+   deployment model is fit only after the nested estimate is recorded. This is
+   an executable pending experiment, not a measured improvement.
 2. **Deterministic reference-expansion recall gate.** Extract only explicit,
    auditable provision references; expand from fixed baseline candidates; and
    first measure newly recovered gold articles, Recall@50, precision loss, and
@@ -268,8 +273,8 @@ forwards must be replaced by one combined forward and validated in an isolated
 multi-GPU smoke test.
 
 Development retrieval is frozen independently from fine-tuning and checkpoint
-evaluation. `notebooks/archive/kaggle_prepare_frozen_dev_handoff_pool50.ipynb` and
-`notebooks/archive/kaggle_prepare_frozen_dev_handoff_pool100.ipynb` create the two
+evaluation. `notebooks/archive/preparation/kaggle_prepare_frozen_dev_handoff_pool50.ipynb` and
+`notebooks/archive/preparation/kaggle_prepare_frozen_dev_handoff_pool100.ipynb` create the two
 reference-on handoffs without loading a reranker. Each archive contains the
 handoff, resolved configuration, and a SHA-256 manifest covering exactly the
 persisted 438-query development split. Every pointwise checkpoint at a given
@@ -339,7 +344,7 @@ was required. The primary comparison uses full embedding dimensions; Matryoshka
 dimension reduction and context lengths above 512 are later ablations.
 
 The standalone screening control uses `configs/dense_screening.yaml` and
-`notebooks/archive/kaggle_dense_standalone_screening.ipynb`. It evaluates exactly one
+`notebooks/archive/retrieval/kaggle_dense_standalone_screening.ipynb`. It evaluates exactly one
 of the seven registered dense encoders per run, with no BM25, fusion, or
 reranker. It requires a verified corpus embedding cache hit and holds seed-42
 development IDs, BGE-M3-tokenized Khoản–Điểm 448/64 representations, encoder

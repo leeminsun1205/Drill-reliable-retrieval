@@ -17,6 +17,15 @@ Kaggle notebooks should be thin launchers: install dependencies, resolve input
 and output paths, call scripts, and display or export results. Core research
 logic belongs in `src/drill_ir/`.
 
+Notebook entry points are organized by lifecycle under `notebooks/`:
+`preparation/` builds reusable artifacts, `experiments/` contains controlled
+report experiments, `submission/` contains frozen test inference,
+`diagnostics/` contains non-reportable runtime checks, and `training/deferred/`
+contains preserved but unselected training paths. Historical notebooks are
+grouped by the same stages under `notebooks/archive/`; transitional notebooks
+remain under `notebooks/temp/`. The authoritative index is
+`notebooks/README.md`.
+
 ## Kaggle setup
 
 For authenticated Hugging Face downloads, create a Kaggle Secret named
@@ -77,7 +86,7 @@ NumPy reference backend `exact_numpy`.
 
 `bm25s` is a core dependency because it is the selected execution backend for
 standard BM25. To reproduce its comparison with the native oracle, run
-`notebooks/archive/kaggle_bm25_native_vs_bm25s.ipynb`. It builds and verifies separate caches, evaluates both
+`notebooks/archive/retrieval/kaggle_bm25_native_vs_bm25s.ipynb`. It builds and verifies separate caches, evaluates both
 backends on the same persisted seed-42 split, reports exact ranking overlap at
 1/5/10/20/50/100, and emits:
 
@@ -123,7 +132,7 @@ prefix, chunking, normalization, ordered `aid` mapping, and corpus content.
 
 ### Re-running report Table R2
 
-`notebooks/kaggle_table2_chunking_ablation.ipynb` is the controlled dense-only
+`notebooks/experiments/retrieval/kaggle_table2_chunking_ablation.ipynb` is the controlled dense-only
 runner for report Table R2. Set `TABLE2_CASE` to `1`, `2`, `3`, or `4` for
 article truncation, fixed 448/64 windows, Khoản 448/64, or hierarchical
 Khoản–Điểm 448/64; set it to `0` to run all four sequentially. The notebook fixes
@@ -135,7 +144,7 @@ constructing R2.
 
 ### Re-running report Table R3
 
-`notebooks/kaggle_table3_first_stage_ablation.ipynb` evaluates the six
+`notebooks/experiments/retrieval/kaggle_table3_first_stage_ablation.ipynb` evaluates the six
 first-stage component cases used by report Table R3. Set `TABLE3_CASE` to
 `1`--`6`, or to `0` for all rows. The notebook materializes the frozen BM25,
 Harrier, and E5-large rankings once and derives every single-component and WRRF
@@ -148,14 +157,43 @@ VnCoreNLP JAR alone is insufficient. It also verifies the Java executable and
 automatically discovers the four verified Table-R3 caches (BM25, shared chunks,
 Harrier, and E5-large) under `/kaggle/input`. An attached cache is used with
 `require_hit: true`; only a missing cache is rebuilt under the notebook work
-directory.
+directory. Because editable installation occurs after the live notebook kernel
+starts, the setup cell also registers the repository `src/` directory and
+imports `drill_ir` as a preflight before launching the backbone subprocess.
+
+### Re-running report Table R4
+
+`notebooks/experiments/retrieval/kaggle_table4_structure_reference_factorial.ipynb` executes the
+matched 2×2 structure/reference experiment. Set `TABLE4_CASE=1..4` for fixed
+window without references, Khoản–Điểm without references, fixed window with
+same-document references, or Khoản–Điểm with same-document references. Set it
+to `0` to run all four cells sequentially; this is preferred when Kaggle time
+permits because the graph ON/OFF cases reuse the same representation-specific
+embedding caches. The notebook freezes the seed-42 split, BM25/Harrier/E5
+WRRF-10 weights `0.15/0.55/0.30`, pool 50, pointwise checkpoint `1208`, packed
+reranking batch 256, the 61-feature `enhanced_v2` schema, five grouped folds,
+and nested score-gap evaluation. LightGBM is refit independently inside each
+cell with identical hyperparameters and folds; a model trained on another
+representation/reference treatment is never reused.
+
+Required Kaggle inputs are the WeDev corpus/train dataset, local Harrier and
+E5-large models, and the pool-50 fine-tuning notebook output containing
+`checkpoint-1208`. Attach the verified BM25, Khoản–Điểm chunk, Harrier, and E5
+caches to avoid rebuilding the selected representation. Fixed-window caches
+are treatment-specific: if their manifests are absent, the notebook builds
+them under `/kaggle/working` and reuses them for both fixed-window graph cells.
+The deterministic graph is rebuilt from the corpus and checked by SHA-256.
+Each case runs retrieval/reranking in a fresh subprocess with process handoff,
+then exports its metrics, predictions, config, split hash, and LightGBM OOF
+artifacts. The final archive is
+`/kaggle/working/table4_structure_reference_factorial_results.tar.gz`.
 
 After saving `/kaggle/working/retrieval-cache` as a Kaggle output or dataset,
 point the corresponding cache directories at that attached input and enable
 `require_hit: true`. Do not copy or commit generated caches to Git.
 
 For parallel Kaggle preparation, use
-`notebooks/kaggle_build_retrieval_cache.ipynb`. Clone it into separate Kaggle
+`notebooks/preparation/kaggle_build_retrieval_cache.ipynb`. Clone it into separate Kaggle
 notebooks and change only `CACHE_TARGET`: `0` builds VnCoreNLP BM25S, `1`–`7`
 select the fixed seven-model dense screening registry, and `8` builds the
 shared BGE-M3 Khoản–Điểm 448/64 chunk records without encoding documents. Every notebook builds
@@ -172,7 +210,7 @@ dense float arrays generally gain little from gzip while compression adds a
 large CPU and wall-time cost.
 
 For sparse tuning and the matched BM25+ control, run
-`notebooks/archive/kaggle_sparse_bm25_plus_screening.ipynb`. It builds and verifies two
+`notebooks/archive/retrieval/kaggle_sparse_bm25_plus_screening.ipynb`. It builds and verifies two
 VnCoreNLP index caches, evaluates a predefined 12-case BM25 grid
 (`k1` in `0.6/0.9/1.2/1.5`, `b` in `0.4/0.6/0.75`) plus the fixed BM25+ control
 on the same persisted seed-42 development split, and writes two portable
@@ -408,7 +446,7 @@ candidate depths, epoch-3 checkpoint, and output policy fixed.
 terms. Do not reuse a LightGBM model or threshold across feedback treatments;
 feedback changes sparse/dense ranks and the downstream feature distribution.
 
-`notebooks/archive/kaggle_rm3_rocchio_ablation.ipynb` is retained as a deferred
+`notebooks/archive/retrieval/kaggle_rm3_rocchio_ablation.ipynb` is retained as a deferred
 Rocchio-only screen, not an active recommended run. It defines a controlled
 2-by-3 grid: 3 or 5 positive feedback aids and beta 0.10, 0.25, or 0.50, with
 alpha 1, gamma 0, no negative feedback, and first-pass depth 20. If profiling
@@ -433,7 +471,7 @@ remain required controls.
 
 ### Multi-dense peer notebook
 
-`notebooks/archive/kaggle_multi_dense_weight_selection.ipynb` accepts a list of peer
+`notebooks/archive/retrieval/kaggle_multi_dense_weight_selection.ipynb` accepts a list of peer
 dense components without a privileged anchor. The active two-model run is
 `mainguyen9/vietlegal-harrier-0.6b` plus
 `intfloat/multilingual-e5-large`. Each entry carries its own model identifier,
@@ -613,7 +651,7 @@ article-rechunk configs, which retain their separately safe batches.
 count, and scorer-call count.
 
 For the smallest useful batch-size decision, run
-`notebooks/archive/kaggle_reranker_batch_benchmark.ipynb`. It loads the selected
+`notebooks/archive/diagnostics/kaggle_reranker_batch_benchmark.ipynb`. It loads the selected
 checkpoint once, builds ten deterministic question-length-stratified query
 groups with 50 real legal Khoản/Điểm candidates each, warms up batch sizes 8,
 64, and 128, and rotates
@@ -668,7 +706,7 @@ chunk search. Its Recall@K is coverage of the selected chunk pool after unique
 
 ## Kaggle overnight verification suite
 
-`notebooks/archive/kaggle_overnight_experiments.ipynb` is the archived thin Run-All launcher for
+`notebooks/archive/retrieval/kaggle_overnight_experiments.ipynb` is the archived thin Run-All launcher for
 an approximately eight-hour T4x2 verification window. It uses explicit
 `!python scripts/...` commands, validates the attached Parquet files, installs
 the dense and Vietnamese extras, and runs these cases in order:
@@ -711,7 +749,7 @@ builds `overnight_scoreboard.csv` and archives the full
 results directory as `/kaggle/working/drill_overnight_results.tar.gz`.
 
 The independent hierarchical structure suite is
-`notebooks/archive/kaggle_khoan_diem_experiments.ipynb`. It mirrors the same controls,
+`notebooks/archive/retrieval/kaggle_khoan_diem_experiments.ipynb`. It mirrors the same controls,
 split, models, WRRF parameters, output-k sweep, reranker budgets, direct-evidence
 case, and optional token-window reranker control, but selects `khoan_diem` for
 the structure-aware dense and reranker stages. Its reranker base configuration
@@ -827,7 +865,7 @@ corpus cache. Each run records cache hit/miss and embedding shape in
 ## Reranker fine-tuning on Kaggle
 
 Before committing GPU hours to the full corpus, run
-`notebooks/archive/kaggle_smoke_finetune_reranker.ipynb`. It uses one synthetic query,
+`notebooks/archive/diagnostics/kaggle_smoke_finetune_reranker.ipynb`. It uses one synthetic query,
 one positive, five negatives, one GPU, and one optimizer step. Passing verifies
 the FlagEmbedding/CUDA/tokenization/backpropagation/model-save path only; it
 does not exercise retrieval, hard-negative mining, two-GPU DDP, or provide a
@@ -837,7 +875,7 @@ passages, one two-GPU DDP optimizer step, checkpoint reload, and finite-logit
 inference validation. Even level 2 remains a plumbing test rather than a
 retrieval or quality experiment.
 
-`notebooks/archive/kaggle_finetune_reranker_448.ipynb` is the archived Run-All launcher for the
+`notebooks/archive/training/kaggle_finetune_reranker_448.ipynb` is the archived Run-All launcher for the
 first supervised trial. It validates the 512/448 pair budget, mines five hybrid
 hard negatives per seed-42 training query, fine-tunes
 `BAAI/bge-reranker-v2-m3` for two epochs with the official FlagEmbedding
@@ -853,7 +891,7 @@ train-data provenance, resolved evaluation config, predictions, fixed-cutoff
 metrics, and newly tuned threshold metrics. Do not reuse a zero-shot score
 threshold with the fine-tuned checkpoint.
 
-`notebooks/archive/kaggle_finetune_khoan_diem_dual_candidate.ipynb` is the archived controlled
+`notebooks/archive/training/kaggle_finetune_khoan_diem_dual_candidate.ipynb` is the archived controlled
 follow-up for the best fixed zero-shot setting: Khoản–Điểm 448/64 with a
 512/448 reranker budget. It mines one train-only dataset and fine-tunes one
 shared checkpoint, then evaluates that identical checkpoint with
@@ -879,7 +917,7 @@ separate validation cell checks the ZIP member name, payload keys, complete and
 unique query-ID coverage, non-empty predictions, and integer article IDs before
 the artifacts are archived.
 
-`notebooks/archive/kaggle_finetune_fpt_article_bce.ipynb` is the false-negative-aware
+`notebooks/archive/training/kaggle_finetune_fpt_article_bce.ipynb` is the false-negative-aware
 recovery experiment. It calls `scripts/prepare_fpt_reranker_training.py` to
 mine full-article labelled pairs using the published FPT.AI top-30, skip-first-5,
 random-semi-hard policy, then calls `scripts/train_cross_encoder_bce.py` through
@@ -911,7 +949,7 @@ The FPT notebook's final ZIP contains only metrics, predictions, scoreboard,
 provenance, and mining metadata/audit; it excludes checkpoints, model caches,
 dense embeddings, and the large optimization JSONL.
 
-`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce.ipynb` is aligned with the
+`notebooks/archive/training/kaggle_finetune_main_retrieved_chunks_bce.ipynb` is aligned with the
 selected main pipeline. It calls `scripts/prepare_direct_chunk_bce_training.py`,
 trains pointwise BCE at pair length 512, and compares matched zero-shot,
 epoch-1, and epoch-2 checkpoints on the same direct top-50 retrieved chunks.
@@ -921,7 +959,7 @@ JSONL. Its final archive contains only results, metadata, and audit records—no
 embedding caches or duplicate model checkpoints. Use this notebook for the
 main fine-tuning decision and retain the article FPT notebook as a control.
 
-`notebooks/archive/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` is the
+`notebooks/archive/training/kaggle_finetune_main_retrieved_chunks_bce_epochs3_4.ipynb` is the
 controlled longer-training follow-up. It preserves the same seed, mined-pair
 protocol, pointwise-BCE objective, effective batch size, learning rate, and
 inference pipeline, but trains for four epochs. The current trainer retains one
@@ -969,7 +1007,7 @@ writable so all epoch models remain together:
 Without a predeclared longer scheduler horizon, an epoch-2 run cannot be called
 an exact resume to epoch 4; loading its weights is only a warm start.
 
-`notebooks/archive/kaggle_epoch3_lightgbm_submission.ipynb` consumes the selected
+`notebooks/archive/submission/kaggle_epoch3_lightgbm_submission.ipynb` consumes the selected
 epoch-3 checkpoint from Kaggle Models and the archived epoch-3 development run.
 It reproduces the fixed strong pipeline for public/private queries, persists
 the reranker, first-stage, sparse, dense, and fused-chunk inputs, evaluates
@@ -995,7 +1033,7 @@ runs expect six submission ZIPs and disabled runs expect four.
 
 After the measured checkpoint gate selected pool 50 epoch 1, the recommended
 Run-All entry point is
-`notebooks/kaggle_pool50_epoch1_lightgbm_feature_screen.ipynb`. It pins
+`notebooks/experiments/reranking/kaggle_pool50_epoch1_lightgbm_feature_screen.ipynb`. It pins
 checkpoint `1208`, consumes the pool-50 frozen handoff, and runs the reranker
 only once. It then evaluates `base_v1`, `enhanced_v1`, `enhanced_v2`, and
 `enhanced_v3` from the same saved candidate rows and packages the complete dev
@@ -1049,7 +1087,7 @@ components are schema-derived, a one-dense run correctly has 13 columns and
 must not be compared as if it were the same 15-feature treatment.
 
 After the feature screen is frozen, run
-`notebooks/kaggle_pool50_epoch1_lightgbm_submission.ipynb` for official
+`notebooks/submission/kaggle_pool50_epoch1_lightgbm_submission.ipynb` for official
 public/private inference. Attach the pool-50 fine-tuning notebook output, the
 retained `pool50_epoch1_lightgbm_feature_screen` artifact, graph-v3 reference
 configuration, retrieval caches/models, corpus/train dataset, and official test
@@ -1068,6 +1106,33 @@ inference and explicitly overrides the saved development config with that
 runtime path. Missing JAR preparation causes BM25 query segmentation to fail
 before any public/private retrieval result is produced.
 
+For matched epoch controls, use
+`notebooks/submission/kaggle_pool50_epoch4_lightgbm_submission.ipynb` and
+`notebooks/submission/kaggle_pool50_epoch5_lightgbm_submission.ipynb`.
+They require the same corpus, train/test data, models, caches, graph contract,
+and frozen pool-50 development handoff, but load checkpoints `4842` and `6054`
+respectively. Unlike the epoch-1 launcher, they do not require an epoch-specific
+feature-screen archive: each launcher reranks all 438 frozen development
+queries, verifies the previously measured fixed-top-2 F2 (`0.5733512172` for
+epoch 4 and `0.5770438214` for epoch 5), then refits `enhanced_v2` before test
+inference. Never reuse epoch-1 development chunk scores or its fitted LightGBM
+model for these controls. Select among epochs from the predeclared development
+protocol only; private scores are final evaluation and must not select an epoch.
+
+To evaluate learned final cardinality without changing retrieval or ranking,
+run
+`notebooks/submission/kaggle_pool50_epoch1_lightgbm_stopping_submission.ipynb`.
+It reproduces the frozen epoch-1 `enhanced_v2` LightGBM run, then invokes
+`scripts/run_stopping_submission.py`. For every outer query fold, the stopping
+classifier is fit without that fold and its continue threshold is selected
+from inner cross-fitted probabilities. Deployment tuning uses cross-fitted
+probabilities from all 438 development queries before fitting one final model;
+public/private labels are never read. The experimental outputs are
+`public_lightgbm_stopping_results.zip` and
+`private_lightgbm_stopping_results.zip`. Do not replace score gap unless the
+predeclared nested-OOF comparison supports the stopping policy; private scores
+remain final robustness evidence only.
+
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired
 training script and rerun the training cell in the same Kaggle session. Do not
@@ -1080,7 +1145,7 @@ checkpoint directories.
 ## Standalone dense-model screening
 
 The completed dense screen can be reproduced with
-`notebooks/archive/kaggle_dense_standalone_screening.ipynb` after building or
+`notebooks/archive/retrieval/kaggle_dense_standalone_screening.ipynb` after building or
 uploading a verified dense cache archive. Set only `DENSE_TARGET` from 1 through
 7 according to the notebook's model table. The notebook discovers either an
 expanded cache dataset or `retrieval_cache_<slug>.tar`, extracts archives under
@@ -1179,7 +1244,7 @@ by exact contribution to the macro Recall@50 deficit.
 `query_diagnostics.jsonl` retains gold ranks and attribution, and `summary.json`
 contains compact aggregate results. The multi-dense notebook runs this audit
 automatically and packages the outputs and required development rankings.
-Use `notebooks/archive/kaggle_query_recall50_analysis.ipynb` to inspect those artifacts
+Use `notebooks/archive/diagnostics/kaggle_query_recall50_analysis.ipynb` to inspect those artifacts
 separately. It accepts one compatible `multi_dense_results.tar.gz`, performs no
 model inference, displays only focused tables, and produces the lightweight
 `query_recall50_diagnostics.tar.gz` download.
@@ -1211,7 +1276,7 @@ resolved config and retriever metadata record the selected policy. This test
 maximizes distinct-article coverage within the existing chunk-scored pool; it
 is not the later treatment that guarantees the article-level fused top 50.
 
-The archived `notebooks/archive/kaggle_multi_dense_weight_selection.ipynb` has returned
+The archived `notebooks/archive/retrieval/kaggle_multi_dense_weight_selection.ipynb` has returned
 to the measured `top_chunks` control after the negative `best_per_aid`
 ablation. It uses packed-stream reranking with batch size 256 and writes under
 `/kaggle/working/multi_dense_wrrf_reference`, packaging
@@ -1325,7 +1390,7 @@ scope, parameters, and every accepted expansion.
 
 ### Harrier + BGE-M3 multi-dense notebook
 
-Run `notebooks/archive/kaggle_multi_dense_harrier_bge.ipynb` on Kaggle T4 x2 for the
+Run `notebooks/archive/retrieval/kaggle_multi_dense_harrier_bge.ipynb` on Kaggle T4 x2 for the
 no-reference dense-peer control. Attach the same corpus, query, reranker, BM25,
 Harrier, and chunk-cache inputs as the main multi-dense notebook. Attach a
 verified `bge_m3` retrieval cache when available; otherwise the notebook builds
@@ -1343,10 +1408,10 @@ multilingual-E5 run is a cross-model treatment comparison, not a parity check.
 The two follow-up launchers use the same execution contract and separate output
 roots:
 
-- `notebooks/archive/kaggle_multi_dense_harrier_vietlegal_e5.ipynb` writes
+- `notebooks/archive/retrieval/kaggle_multi_dense_harrier_vietlegal_e5.ipynb` writes
   `/kaggle/working/multi_dense_harrier_vietlegal_e5_results.tar.gz` and requires
   the verified `vietlegal_e5` cache (or builds only that missing cache).
-- `notebooks/archive/kaggle_multi_dense_harrier_e5_retuned.ipynb` writes
+- `notebooks/archive/retrieval/kaggle_multi_dense_harrier_e5_retuned.ipynb` writes
   `/kaggle/working/multi_dense_harrier_e5_retuned_results.tar.gz` and reuses the
   verified `multilingual_e5_large` cache.
 
@@ -1357,7 +1422,7 @@ the same session as another GPU experiment.
 
 ### Frozen first-stage 2-by-2 gate
 
-Use `notebooks/archive/kaggle_main_frozen_first_stage.ipynb` for the final candidate
+Use `notebooks/archive/retrieval/kaggle_main_frozen_first_stage.ipynb` for the final candidate
 distribution gate. At the top of its configuration cell, change only:
 
 ```python
@@ -1396,8 +1461,8 @@ tables are `gate_summary.csv`, `candidate_cost.csv`, `epoch3_summary.csv`, and
 ### Vietnamese warm-start reranker treatments
 
 The active fine-tuning comparison uses only the two pointwise-BCE notebooks:
-`notebooks/archive/kaggle_finetune_reranker_warmstart_bce.ipynb` for pool 50 and
-`notebooks/archive/kaggle_finetune_reranker_warmstart_bce_pool100.ipynb` for pool 100.
+`notebooks/archive/training/kaggle_finetune_reranker_warmstart_bce.ipynb` for pool 50 and
+`notebooks/archive/training/kaggle_finetune_reranker_warmstart_bce_pool100.ipynb` for pool 100.
 Both use the pinned `AITeamVN/Vietnamese_Reranker` Kaggle model as a
 weights-only initialization, retain five new adaptation snapshots, and
 evaluate the warm start plus every snapshot on the matching frozen development
@@ -1442,8 +1507,8 @@ flag, candidate source, and chunk-selection policy in addition to the artifact
 checksum and query coverage.
 
 Completed training outputs can be evaluated without rerunning training through
-`notebooks/archive/kaggle_evaluate_pointwise_mil_pool50_checkpoints.ipynb` and
-`notebooks/archive/kaggle_evaluate_pointwise_mil_pool100_checkpoints.ipynb`. Their
+`notebooks/archive/evaluation/kaggle_evaluate_pointwise_mil_pool50_checkpoints.ipynb` and
+`notebooks/archive/evaluation/kaggle_evaluate_pointwise_mil_pool100_checkpoints.ipynb`. Their
 checkpoint steps are explicit parameters, not directory discovery: the current
 pool-50 sequence is `1208,2418,3630,4842,6054`, and the current pool-100
 sequence is `1238,2479,3721,4961,6203`. Each notebook consumes the matching
@@ -1530,8 +1595,8 @@ and output directory. This keeps the warm-start control and adaptation epochs
 1 through 5 identifiable even when Papermill duplicates library log lines.
 
 For staged execution, run
-`notebooks/archive/kaggle_prepare_reranker_mining_pool50.ipynb` and
-`notebooks/archive/kaggle_prepare_reranker_mining_pool100.ipynb` before the corresponding
+`notebooks/archive/preparation/kaggle_prepare_reranker_mining_pool50.ipynb` and
+`notebooks/archive/preparation/kaggle_prepare_reranker_mining_pool100.ipynb` before the corresponding
 pointwise training run. They stop after deterministic teacher mining and create,
 respectively,
 `/kaggle/working/vietnamese_reranker_mining_pool50_refon.tar.gz` and

@@ -88,15 +88,15 @@ windows remain historical appendix evidence and are not rerun.
 
 | Representation | Precision@2 | Recall@2 | Macro-F2@2 | Recall@10 | Recall@50 | Recall@100 |
 |---|---:|---:|---:|---:|---:|---:|
-| Article truncation | 0.336758 | 0.573195 | 0.502618 | 0.796391 | 0.912514 | 0.942194 |
-| Fixed token window 448/64 | **0.342466** | **0.580806** | **0.509841** | **0.816634** | **0.925560** | **0.951653** |
-| Khoản + fallback 448/64 | 0.334475 | 0.574201 | 0.502212 | 0.799299 | 0.918580 | 0.947086 |
-| Hierarchical Khoản–Điểm 448/64 | 0.337900 | 0.581050 | 0.507947 | 0.803050 | 0.924364 | 0.946325 |
+| Article truncation | 0.3368 | 0.5732 | 0.5026 | 0.7964 | 0.9125 | 0.9422 |
+| Fixed token window 448/64 | **0.3425** | **0.5808** | **0.5098** | **0.8166** | **0.9256** | **0.9517** |
+| Khoản + fallback 448/64 | 0.3345 | 0.5742 | 0.5022 | 0.7993 | 0.9186 | 0.9471 |
+| Hierarchical Khoản–Điểm 448/64 | 0.3379 | 0.5811 | 0.5079 | 0.8031 | 0.9244 | 0.9463 |
 
 The fixed-window control is the point-estimate winner. Hierarchical
-Khoản–Điểm improves over article truncation by `+0.005329` Macro-F2@2 and
-`+0.011850` Recall@50, but trails fixed windows by `-0.001894` Macro-F2@2 and
-`-0.001196` Recall@50. These small differences require paired query-level
+Khoản–Điểm improves over article truncation by `+0.0053` Macro-F2@2 and
+`+0.0119` Recall@50, but trails fixed windows by `-0.0019` Macro-F2@2 and
+`-0.0012` Recall@50. These small differences require paired query-level
 uncertainty analysis before making a significance claim.
 
 **Slide S1:** after all four rows complete, show Representation, Macro-F2@2,
@@ -136,20 +136,22 @@ derived from the final ratio rather than separately tuned optima.
 
 | First-stage components | WRRF weights over enabled components | Precision@2 | Recall@2 | Macro-F2@2 | Recall@50 |
 |---|---:|---:|---:|---:|---:|
-| BM25 + VnCoreNLP | `1.0` |  |  |  |  |
-| Dense 1: VietLegal-Harrier | `1.0` |  |  |  |  |
-| Dense 2: multilingual-E5-large | `1.0` |  |  |  |  |
-| BM25 + Dense 1 | `0.21 / 0.79` |  |  |  |  |
-| Dense 1 + Dense 2 | `0.65 / 0.35` |  |  |  |  |
-| BM25 + Dense 1 + Dense 2 | `0.15 / 0.55 / 0.30` |  |  |  |  |
+| BM25 + VnCoreNLP | `1.0` | 0.2511 | 0.4297 | 0.3762 | 0.8348 |
+| Dense 1: VietLegal-Harrier | `1.0` | 0.3379 | 0.5811 | 0.5079 | 0.9244 |
+| Dense 2: multilingual-E5-large | `1.0` | 0.3116 | 0.5293 | 0.4644 | 0.8960 |
+| BM25 + Dense 1 | `0.21 / 0.79` | 0.3402 | 0.5795 | 0.5080 | 0.9243 |
+| Dense 1 + Dense 2 | `0.65 / 0.35` | 0.3505 | 0.5974 | 0.5236 | 0.9244 |
+| **BM25 + Dense 1 + Dense 2** | `0.15 / 0.55 / 0.30` | **0.3516** | **0.5977** | **0.5243** | **0.9278** |
 
 **Slide S2:** use these six rows with Method, Macro-F2@2, and Recall@50. The
 row order communicates the component-building logic, not a guaranteed
 monotonic progression.
 
-**Source:** detailed Tables 2, 5, and 6 in
-`tables_experiment_catalog.md`. Rows at different screening stages must not be
-read as a single causal ablation.
+**Source:** complete user-executed Table-R3 notebook cases reported on
+2026-11-01. All rows were derived offline from the same saved component
+rankings and development qids. The result archive remains to be ingested for
+independent provenance verification. These are matched component ablations,
+but the small observed differences do not establish statistical significance.
 
 ---
 
@@ -161,20 +163,23 @@ read as a single causal ablation.
 references independently improve the strong retrieval/reranking pipeline?
 
 **Protocol.** Freeze split, encoders, WRRF, candidate budget, reranker,
-LightGBM schema, final policy, and evaluator. Structure off/on must change only
-the chunk representation. References use graph v3, same-document scope, top-five
-seeds, maximum four additions, and fixed-budget displacement. Candidate recall
-and nested final metrics must both be reported.
+LightGBM schema, final policy, and evaluator. The non-structural control is the
+fixed token window 448/64 selected by the point estimates in R2; the structural
+treatment is hierarchical Khoản–Điểm 448/64. References use graph v3,
+same-document scope, top-five seeds, maximum four additions, and fixed-budget
+displacement. Thus each row changes only chunk representation, reference
+expansion, or both. Candidate recall and nested final metrics must both be
+reported.
 
-| Structure-aware chunks | Same-document references | Candidate Recall@50 | Precision | Recall | Nested-OOF Macro-F2 | Status |
+| Chunk representation | Same-document references | Candidate Recall@50 | Precision | Recall | Nested-OOF Macro-F2 | Status |
 |---|---|---:|---:|---:|---:|---|
-| No | No |  |  |  |  | Missing matched cell |
-| Yes | No | 0.904175 |  |  | 0.648354 | Recorded control |
-| No | Yes |  |  |  |  | Missing matched cell |
-| Yes | Yes | 0.916623 |  |  | 0.647035 | Candidate recall improved; final F2 did not |
+| Fixed token window 448/64 | Off |  |  |  |  | Missing matched cell |
+| Hierarchical Khoản–Điểm 448/64 | Off | 0.9042 |  |  | 0.6484 | Recorded control |
+| Fixed token window 448/64 | On |  |  |  |  | Missing matched cell |
+| Hierarchical Khoản–Điểm 448/64 | On | 0.9166 |  |  | 0.6470 | Candidate recall improved; final F2 did not |
 
-Supporting fixed-budget graph-v3 gate: no expansion Recall@50 `0.927789`;
-same-document expansion `0.948174`; cross-document expansion `0.928930`.
+Supporting fixed-budget graph-v3 gate: no expansion Recall@50 `0.9278`;
+same-document expansion `0.9482`; cross-document expansion `0.9289`.
 This gate is a retrieval diagnostic, not a substitute for the missing factorial
 cells.
 
