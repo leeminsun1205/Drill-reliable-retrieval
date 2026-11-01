@@ -479,6 +479,9 @@ Report output-size statistics and fold dispersion before selecting a new policy.
 | Utility histogram gradient boosting | 0.574429 | 0.675304 | 0.652391 | 1.847 | 5 | Lower recall |
 | Pairwise logistic preference | 0.600647 | 0.661416 | 0.648298 | 1.532 | 5 | Precision-oriented, under-selects |
 | Multiclass histogram gradient boosting | 0.625989 | 0.600723 | 0.605612 | 1.235 | 5 | Highest exact-k but severe under-selection |
+| Fixed balanced multiclass (confirmatory) | 0.547755 | 0.709437 | 0.669890 | 2.388 | 5 | Parsimonious final policy |
+| Multiclass–Ridge ensemble | 0.568950 | 0.701446 | **0.670230** | 2.176 | 5 | Practically tied; lambda=0.75 |
+| Cost-sensitive multiclass | 0.212253 | 0.786111 | 0.510219 | 4.658 | 5 | Rejected: severe over-selection |
 | Oracle prefix through k=5 | 0.722793 | **0.794809** | 0.779280 | 1.610 | 5 | Upper bound only |
 
 **Evidence.** Verified local execution of
@@ -569,6 +572,7 @@ Do not select a new policy from private results.
 | Listwise prefix-utility Ridge | 1025919 | 0.6661 | 1025907 | **0.6245** | 0.0416 |
 | Tuned prefix-utility Ridge | 1025993 | 0.6700 | 1025992 | 0.6265 | 0.0435 |
 | Balanced multiclass logistic | 1025984 | **0.6847** | 1025979 | **0.6368** | 0.0479 |
+| Multiclass–Ridge ensemble | 1026035 | **0.6863** | 1026030 | 0.6354 | 0.0509 |
 
 Learned stopping exceeds score gap by `0.0121` public and `0.0076` private;
 unlike threshold versus score gap, the direction is consistent across splits.

@@ -94,6 +94,16 @@ probabilities. The ensemble combines standardized log class probabilities with
 Ridge utilities; its mixing weight is selected only in inner folds from
 `{0.25,0.5,0.75}`. The unchanged multiclass winner is included as the baseline.
 
+The final evidence-set diagnostic is frozen in
+`configs/final_evidence_subset.yaml`. Unlike every prefix policy above, it may
+select a non-contiguous subset of the frozen top five. It compares exactly two
+cases: predicted cardinality plus a binary per-candidate selector, and Ridge
+utility over all 31 nonempty top-five subsets. Both retain the same outer/inner
+query folds and select hyperparameters inside training folds only. Report both
+oracle-prefix and oracle-subset scores: their difference isolates headroom from
+non-prefix selection and neither is deployable. This is a final offline
+diagnostic, not permission for another open-ended leaderboard search.
+
 ## Metrics
 
 The primary DRiLL-compatible metrics are Precision, Recall, and F2, aggregated

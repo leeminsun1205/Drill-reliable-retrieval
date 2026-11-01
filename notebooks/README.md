@@ -61,6 +61,12 @@ and `scripts/`.
   nested winner. It retains the winning balanced multiclass logistic baseline
   and compares cost-sensitive expected-F2 decoding with an inner-tuned
   multiclass–Ridge ensemble, preserving complete models and provenance.
+- `kaggle_final_evidence_subset_selection.ipynb`: final, lightweight decision-
+  layer experiment over the same frozen `enhanced_v2` top-five rankings. It
+  compares cardinality-plus-binary candidate selection with joint utility over
+  all 31 nonempty top-five subsets, reports prefix/subset oracle headroom, saves
+  nested-OOF predictions and packages every public/private case. It does not
+  rerun retrieval, reranking, or LightGBM.
 - `kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`: matched
   Table-R4 case-1 submission control using fixed 448/64 token windows,
   references disabled, checkpoint 1208, and a freshly fitted `enhanced_v2`

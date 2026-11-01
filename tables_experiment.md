@@ -272,7 +272,13 @@ adopting a new selector.
 | Learned stopping policy |  |  |  |  | 5 | Nested-OOF values must be copied from the saved artifact; official results are in R8 |
 | Multiclass logistic cardinality | 0.556355 | **0.705441** | **0.669557** | 2.315 | 5 | Closed-screen nested-OOF winner; C=0.1, balanced |
 | Tuned prefix-utility Ridge | **0.574658** | 0.697184 | 0.668670 | 2.039 | 5 | Close second; alpha=1.0 |
+| Fixed balanced multiclass (confirmatory) | 0.547755 | **0.709437** | 0.669890 | 2.388 | 5 | Parsimonious final policy |
+| Multiclass–Ridge ensemble | **0.568950** | 0.701446 | **0.670230** | 2.176 | 5 | Practically tied; lambda=0.75 |
+| Cost-sensitive multiclass | 0.212253 | 0.786111 | 0.510219 | 4.658 | 5 | Rejected: severe over-selection |
+| Cardinality + binary subset selector |  |  |  |  | 5 | Final non-prefix diagnostic; nested OOF pending |
+| Joint utility over 31 top-five subsets |  |  |  |  | 5 | Final non-prefix diagnostic; nested OOF pending |
 | Oracle prefix through k=5 | 0.722793 | 0.794809 | 0.779280 | 1.610 | 5 | Upper bound only |
+| Oracle subset through top 5 |  |  |  |  | 5 | Non-deployable upper bound; pending final artifact |
 
 Platt and isotonic calibrated thresholds both measured the same F2 `0.656754`
 as the raw nested threshold and are omitted from this compact table because a
@@ -319,6 +325,7 @@ provided only F2 here.
 | This project, listwise prefix-utility Ridge | Codabench | 0.6661 |  |  | **0.6245** | Public 1025919; private 1025907 |
 | This project, tuned prefix-utility Ridge | Codabench | 0.6700 |  |  | 0.6265 | Public 1025993; private 1025992 |
 | This project, balanced multiclass logistic | Codabench | **0.6847** |  |  | **0.6368** | Public 1025984; private 1025979 |
+| This project, multiclass–Ridge ensemble | Codabench | **0.6863** |  |  | 0.6354 | Public 1026035; private 1026030 |
 
 **Slide S5:** keep organizer two-stage, at most two published systems (normally
 ViDRILL and EDM), and the four project-policy rows. Do not display a project

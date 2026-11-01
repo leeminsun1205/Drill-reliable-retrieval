@@ -1163,6 +1163,20 @@ six validated ZIPs. The archive
 nested fold records, deployment selection, complete JSON model coefficients,
 input hashes, predictions, and submissions so the experiment need not rerun.
 
+For the final non-prefix evidence-set diagnostic, attach that same completed
+stopping-notebook output and run
+`notebooks/submission/kaggle_final_evidence_subset_selection.ipynb`. It calls
+`!python scripts/run_final_evidence_subset.py` using
+`configs/final_evidence_subset.yaml`; it does not rerun retrieval, reranking, or
+LightGBM. Required inputs are `WeDev-VLSP`, `WeDev-VLSP-test`, and exactly one
+stopping output containing `lightgbm_enhanced_v2` plus its 438-query persisted
+development split. The output
+`/kaggle/working/final_evidence_subset_selection_results.tar.gz` contains four
+submission ZIPs, complete nested-OOF predictions, serialized models, tuning,
+hashes, oracle diagnostics, and a consolidated record of previously measured
+policy scores. Select a new case only from `selected_by_nested_oof.json`; test
+labels remain unavailable and Codabench results are reporting-only.
+
 For the matched Table-R4 winner control, use
 `notebooks/submission/kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`.
 It does not consume Table-R4 result artifacts. The notebook rebuilds

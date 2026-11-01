@@ -2322,6 +2322,8 @@ scores supplied from completed submissions, not development estimates:
 | Private | Tuned prefix-utility Ridge (`alpha=1`) | 1025992 | 0.6265 |
 | Public | Balanced multiclass logistic (`C=0.1`) | 1025984 | **0.6847** |
 | Private | Balanced multiclass logistic (`C=0.1`) | 1025979 | **0.6368** |
+| Public | Multiclass–Ridge ensemble (`lambda=0.75`) | 1026035 | **0.6863** |
+| Private | Multiclass–Ridge ensemble (`lambda=0.75`) | 1026030 | 0.6354 |
 
 Score-gap leads threshold by `0.0027` on public, while threshold leads
 score-gap by `0.0007` on private. The ordering therefore does not transfer
@@ -2390,7 +2392,26 @@ multiclass baseline, expected-F2 cost-sensitive decoding, and an inner-tuned
 multiclass–Ridge ensemble. Its artifact contract stores nested metrics and fold
 records, deployment selection, JSON model parameters and utility matrix,
 public/private predictions and ZIPs, input hashes, and one aggregate archive.
-No result is claimed until that archive is executed and inspected.
+The confirmatory archive completed on 2026-11-01. Fixed balanced multiclass
+reproduced nested-OOF Precision/Recall/F2 `0.547755/0.709437/0.669890` with mean
+output `2.388`. The multiclass–Ridge ensemble selected deployment
+`lambda_multiclass=0.75` and reached `0.568950/0.701446/0.670230`, mean output
+`2.176`; its F2 gain was only `0.000340`. Cost-sensitive decoding over-selected
+with mean output `4.658`, producing Precision `0.212253`, Recall `0.786111`, and
+F2 `0.510219`; reject it. Ensemble submissions scored `0.6863` public
+(`1026035`) and `0.6354` private (`1026030`), only `+0.0016/-0.0014` relative to
+plain multiclass. This mixed, negligible difference does not justify the extra
+Ridge component; retain plain multiclass as the parsimonious final policy.
+
+The final evidence-shape experiment is
+`notebooks/submission/kaggle_final_evidence_subset_selection.ipynb`, configured
+by `configs/final_evidence_subset.yaml` and implemented by
+`scripts/run_final_evidence_subset.py`. It reuses the same frozen
+`enhanced_v2` OOF/public/private rankings and compares exactly two non-prefix
+top-five selectors. The artifact stores nested-OOF predictions as well as
+metrics, fold tuning, deployment models, diagnostics, input hashes, every ZIP,
+and oracle-prefix/oracle-subset upper bounds. Results are currently unmeasured;
+do not call either case an improvement until the nested artifact exists.
 
 ### Controlled first-stage component ablation (Table R3)
 

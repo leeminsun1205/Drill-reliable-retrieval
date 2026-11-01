@@ -23,6 +23,7 @@ Measured official F2 as of 2026-11-01:
 | Listwise prefix-utility Ridge | 0.6661 | **0.6245** |
 | Tuned prefix-utility Ridge (`alpha=1`) | 0.6700 | 0.6265 |
 | Balanced multiclass logistic (`C=0.1`) | **0.6847** | **0.6368** |
+| Multiclass–Ridge ensemble (`lambda=0.75`) | **0.6863** | 0.6354 |
 
 Relative to LightGBM fixed top 2, learned stopping adds `0.0683/0.0571` on
 public/private. It also exceeds score gap by `0.0121/0.0076` and threshold by
@@ -39,6 +40,12 @@ was confirmed on both hidden splits. It exceeds tuned Ridge by `0.0147/0.0103`,
 learned stopping by `0.0175/0.0245`, and fixed top 2 by `0.0858/0.0816` on
 public/private. Use multiclass logistic as the final cardinality policy and
 retain tuned Ridge as the closest controlled alternative.
+
+The confirmatory ensemble improved nested-OOF by only `0.000340` and public by
+`0.0016`, while private fell `0.0014`. Keep plain balanced multiclass as the
+final policy because it is simpler and has the best private confirmation;
+report the ensemble as a practically tied ablation. Cost-sensitive decoding is
+a negative result (nested F2 `0.510219`, mean output `4.658`).
 
 ## Required report tables
 

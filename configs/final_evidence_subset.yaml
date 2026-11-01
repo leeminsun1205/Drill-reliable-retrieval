@@ -1,0 +1,22 @@
+seed: 42
+outer_folds: 5
+inner_folds: 5
+maximum_k: 5
+multiclass:
+  C: 0.1
+  class_weight: balanced
+binary_selector:
+  C: [0.1, 1.0, 10.0]
+subset_utility:
+  alpha: [0.1, 1.0, 10.0, 100.0]
+cases:
+  - cardinality_binary_subset
+  - joint_subset_utility
+reported_codabench:
+  fixed_top2: {public: 0.5989, private: 0.5552, public_id: 1022898, private_id: 1022897}
+  score_gap: {public: 0.6551, private: 0.6047, public_id: 1021732, private_id: 1021639}
+  learned_stopping: {public: 0.6672, private: 0.6123, public_id: 1025830, private_id: 1025816}
+  tuned_ridge: {public: 0.6700, private: 0.6265, public_id: 1025993, private_id: 1025992}
+  multiclass_logistic: {public: 0.6847, private: 0.6368, public_id: 1025984, private_id: 1025979}
+  multiclass_ridge_ensemble: {public: 0.6863, private: 0.6354, public_id: 1026035, private_id: 1026030}
+

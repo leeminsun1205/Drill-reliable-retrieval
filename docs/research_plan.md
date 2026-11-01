@@ -1060,3 +1060,22 @@ ensemble with mixing weights `{0.25,0.5,0.75}`. No additional model family or
 grid is allowed in this confirmatory notebook. It persists every fold record,
 deployment decision, coefficient, utility matrix, prediction, hash, and ZIP;
 future reporting should read the artifact rather than rerun it.
+
+Measured confirmatory result, 2026-11-01: multiclass–Ridge (`lambda=0.75`)
+reached nested-OOF F2 `0.670230` versus fixed multiclass `0.669890`, then scored
+`0.6863/0.6354` public/private (submissions `1026035/1026030`) versus
+`0.6847/0.6368` for plain multiclass. The directions split and all differences
+are at most `0.0016`; retain the simpler multiclass policy. Cost-sensitive
+decoding collapsed to F2 `0.510219` because mean output size rose to `4.657534`.
+These results close cardinality-model development; do not tune further from the
+leaderboard.
+
+User-authorized final diagnostic, 2026-11-02: cardinality model development
+remains closed, but one controlled change to the *shape* of the returned set is
+allowed. `configs/final_evidence_subset.yaml` tests exactly two non-prefix
+selectors over the already frozen top-five LightGBM ranking: multiclass
+cardinality plus binary candidate selection, and joint Ridge utility over all
+31 nonempty subsets. It also measures oracle prefix versus oracle subset. No
+retrieval, reranking, feature, split, or maximum-output setting changes, and
+selection remains nested-OOF only. After this run, freeze the decision layer;
+do not add families or tune from public/private outcomes.
