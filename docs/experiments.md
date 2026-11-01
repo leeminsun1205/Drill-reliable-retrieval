@@ -2445,9 +2445,34 @@ from the LightGBM `dev_run_dir` provenance instead of assuming the historical
 notebook output and treat only unchanged `baseline_multiclass` as the
 policy-matched comparison; the other two cases remain rejected controls.
 
+Measured policy-matched fixed-window update, 2026-11-02: unchanged balanced
+multiclass scored public/private F2 `0.6833/0.6677` (submissions
+`1026181/1026178`). Relative to hierarchical balanced multiclass
+`0.6847/0.6368`, this is `-0.0014/+0.0309`: essentially unchanged public and a
+large private gain. Fixed-window multiclass–Ridge scored `0.6933/0.6685`
+(`1026176/1026175`), the highest measured project scores on both hidden splits;
+it improves over fixed multiclass by `0.0100/0.0008`. This hidden-split
+agreement is encouraging, but the final policy must follow the fixed run's
+saved nested-OOF ordering in `summary.json` and `selected_by_nested_oof.json`,
+not these leaderboard differences. The earlier statement that the ensemble is
+a rejected control applies to the hierarchical representation and must not be
+silently transferred to this new policy–representation interaction.
+
+The checkpoint itself is not representation-matched training. Checkpoint 1208
+was adapted with article-level labels over frozen hierarchical Khoản–Điểm
+chunk bags: each epoch cycles through at most four chunks per article and the
+pointwise BCE objective max-pools within the selected slice. The fixed-window
+submission applies that trained query–passage scorer to overlapping 448/64
+fixed chunks at inference. This is a valid transfer evaluation and keeps the
+neural model constant for the R4 representation comparison, but it must not be
+described as fixed-window fine-tuning. The strong fixed result therefore shows
+that the learned scorer transfers across chunk boundaries; it does not measure
+the additional effect of retraining on fixed-window bags.
+
 ### Controlled first-stage component ablation (Table R3)
 
-The Table-R3 Kaggle notebook was executed on 2026-11-01. All six rows reuse the
+The Table-R3 Kaggle notebook was executed on 2026-11-01 with the historical
+hierarchical Khoản–Điểm representation. All six measured rows below reuse the
 same persisted 438-query seed-42 development split and the same saved component
 rankings. BM25 uses VnCoreNLP; both dense encoders use the shared BGE-M3
 Khoản–Điểm 448/64 representation, exact cosine search, and max
@@ -2471,6 +2496,15 @@ effectively tied with Harrier alone at the reported precision. These are
 observed development differences without confidence intervals, not claims of
 statistical significance. Values were supplied from the completed notebook
 rows; independent archive ingestion and hash verification remain pending.
+
+Because fixed 448/64 windows were subsequently selected as the final
+representation, the current Table-R3 notebook now reads the complete
+fixed/reference-off submission output and recomputes all six rows offline from
+its frozen `component_rankings.jsonl`. This rerun changes only the shared dense
+representation; component models, declared WRRF weights, split IDs, depths,
+metrics, and disabled expansions remain fixed. Until that archive is executed
+and ingested, the numbers above remain labelled as the historical hierarchical
+screen and must not be reported as fixed-window measurements.
 
 ### Completed matched structure × reference factorial (Table R4)
 

@@ -16,7 +16,8 @@ and `scripts/`.
 - `kaggle_table2_chunking_ablation.ipynb`: controlled four-case dense chunking
   comparison for report Table R2.
 - `kaggle_table3_first_stage_ablation.ipynb`: controlled six-case first-stage
-  component comparison for report Table R3.
+  component comparison for report Table R3, recomputed offline from the frozen
+  fixed-window/reference-off component rankings.
 - `kaggle_table4_structure_reference_factorial.ipynb`: controlled 2×2
   fixed-window/Khoản–Điểm × same-document-reference experiment for report
   Table R4, including checkpoint-1208 reranking and per-cell `enhanced_v2`

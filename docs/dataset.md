@@ -1,5 +1,26 @@
 # Dataset
 
+## Persisted train/development partition statistics
+
+The official 2,190 labeled queries are partitioned by the persisted seed-42
+development IDs stored in
+`results/pool50_epoch1_lightgbm_feature_screen.tar.gz` under
+`selected_reranker_dev_run/split_dev_qids.json`. A direct local measurement on
+2026-11-02 produced 1,752 supervised-training queries and 438 development
+queries. Whitespace-delimited question counts are respectively
+average/minimum/maximum `19.78/6/45` and `19.46/11/45`. Relevant-article counts
+are `1.34/1/9` and `1.35/1/7`. After stable per-query deduplication, the
+partitions contain 2,343 and 593 query–article relevance assignments. Combined
+question-length values reproduce the official train statistics
+(`19.71/6/45`).
+
+The measured local input SHA-256 is
+`eda60aa24d6237e86052cb0150540bd8b46771d0dce080589936ac4256f9ff0e`;
+the persisted development-QID JSON member SHA-256 is
+`32d08a722c8d02f7dde1432fcd832562187eecc73e1ed4f80c2f1d66bc838ffa`.
+These are measured project values, while public/private relevance aggregates
+remain published external statistics.
+
 ## Official test queries
 
 The post-competition public and private query files are JSON arrays. Each row

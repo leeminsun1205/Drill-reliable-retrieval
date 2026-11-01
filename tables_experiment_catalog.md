@@ -71,7 +71,7 @@ The final deliverables use three layers:
 | Report table | Final title | Evidence catalogue source | Target size | Role in the argument |
 |---|---|---|---|---|
 | R1 | Dataset and Evaluation Setting | Tables 1 and 21 | 4 rows, about 1/3 page | Define task, splits, variable evidence-set size, and reproducibility boundary |
-| R2 | Effect of Legal-Structure-Aware Chunking | Table 4 | 5 rows, about 1/2 page | Establish the structure-aware representation result |
+| R2 | Effect of Chunk Representation on Dense Legal Retrieval | Table 4 | 4 rows, about 1/2 page | Select fixed 448/64 and quantify the structure-aware negative result |
 | R3 | Selection of the First-Stage Retrieval Pipeline | Tables 2, 5, and 6 | 4–5 rows, about 1/2 page | Compare the sparse anchor, dense anchor, legal dense winner, and selected multi-dense fusion |
 | R4 | Structure and Cross-Reference Ablation | Tables 8 and 9 | Four factorial rows, about 1/2 page | Answer the primary research question; incomplete cells must remain explicit until run |
 | R5 | Reranker Adaptation and Candidate-Budget Comparison | Tables 7 and 11 | Warm start plus three finalists, about 1/2 page | Select checkpoint and pool without threshold leakage |
@@ -114,15 +114,17 @@ retrieval units, and show why fixed top-k is structurally mismatched to a
 variable-size evidence-set task.
 
 **Protocol.** Corpus values come from the verified 2026-09-28 local snapshot.
-Train/public/private query counts and test evidence-set statistics come from the
-official DRiLL report. Do not infer labels for public/private. Report both raw
-articles and indexable non-blank articles.
+The official train collection is split using the persisted seed-42 set of 438
+development qids; internal partition statistics are measured directly from
+local `train.parquet`. Public/private counts and evidence-set aggregates come
+from the official DRiLL report. Do not infer labels for public/private. Report
+both raw articles and indexable non-blank articles.
 
 | Collection / split | Legal documents | Raw articles | Indexed non-blank articles | Queries | Mean relevant articles | Maximum relevant articles | Label availability |
 |---|---:|---:|---:|---:|---:|---:|---|
 | Legal corpus | 2,157 | 59,636 | 59,628 |  |  |  | Corpus only |
-| Train |  |  |  | 2,190 | 1.34 | 9 | Available |
-| Persisted development subset |  |  |  | 438 |  |  | Available |
+| Supervised train partition |  |  |  | 1,752 | 1.34 | 9 | Available |
+| Persisted development partition |  |  |  | 438 | 1.35 | 7 | Available |
 | Public test |  |  |  | 312 | 1.31 | 4 | Hidden |
 | Private test |  |  |  | 627 | 1.32 | 5 | Hidden |
 
@@ -176,12 +178,13 @@ should remain supplementary rather than occupy the main report.
 
 ---
 
-## Table 4. Chunking and Retrieval Granularity under a Fixed Dense Encoder
+## Table 4. Chunk Representation under a Fixed Dense Encoder
 
 **Status:** `REPORT + SLIDES`
 
-**Purpose.** Test whether legal boundaries improve retrieval over article
-truncation and generic token windows while holding the encoder fixed.
+**Purpose.** Select the main article representation by comparing truncation,
+legal boundaries, and generic overlapping windows while holding the encoder
+fixed.
 
 **Protocol.** Use `mainguyen9/vietlegal-harrier-0.6b`, its model-card query
 instruction, BGE-M3 chunk boundaries, exact cosine search, max
@@ -194,9 +197,16 @@ and remain pending independent result-archive verification.
 | Representation | Precision@2 | Recall@2 | Macro-F2@2 | Recall@10 | Recall@50 | Recall@100 | Runtime (s) | Evidence |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
 | Article truncation | 0.3368 | 0.5732 | 0.5026 | 0.7964 | 0.9125 | 0.9422 | 3332.47 | User-reported / pending archive verification |
-| Fixed token window 448/64 | **0.3425** | 0.5808 | **0.5098** | **0.8166** | **0.9256** | **0.9517** | 5798.79 | User-reported / pending archive verification |
 | Khoản + fallback 448/64 | 0.3345 | 0.5742 | 0.5022 | 0.7993 | 0.9186 | 0.9471 | 5812.49 | User-reported / pending archive verification |
 | Hierarchical Khoản–Điểm 448/64 | 0.3379 | **0.5811** | 0.5079 | 0.8031 | 0.9244 | 0.9463 | 5431.82 | User-reported / pending archive verification |
+| Fixed token window 448/64 | **0.3425** | 0.5808 | **0.5098** | **0.8166** | **0.9256** | **0.9517** | 5798.79 | User-reported / pending archive verification |
+
+**Decision.** Select fixed token windows 448/64 for the final pipeline. They
+lead five of six reported metrics, while hierarchical Khoản–Điểm leads only
+Recall@2 by `0.0003`. The matched R4 experiment also favors fixed/reference-off
+at the final nested-OOF stage (`0.6681` versus `0.6597`). This is a measured
+representation choice, not a claim that checkpoint 1208 was fine-tuned on
+fixed windows; its hierarchical-bag training remains an explicit limitation.
 
 **Evidence.** `docs/experiments.md` and the four Table-R2 notebook outputs.
 The earlier multilingual-E5-base/top-3 chunking screen is historical evidence,

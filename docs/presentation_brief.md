@@ -14,9 +14,11 @@ hay không.
 
 Đến hiện tại, đồ án đã xây dựng được pipeline tái lập từ dữ liệu đến submission,
 đã có baseline BM25, dense, hybrid, reranker, fine-tuning và LightGBM fusion.
-Kết quả hiện có cung cấp bằng chứng ban đầu rằng biểu diễn theo Khoản–Điểm hữu
-ích. Phần cross-reference-aware retrieval vẫn chưa được triển khai và là phần
-quan trọng còn lại để trả lời đầy đủ câu hỏi nghiên cứu.
+Kết quả có kiểm soát cho thấy fixed token windows 448/64 ổn định hơn biểu diễn
+Khoản–Điểm, còn reference expansion tăng candidate recall nhưng không tăng
+final F2. Đây là negative result có giá trị: đưa cấu trúc pháp lý vào pipeline
+không tự động cải thiện retrieval. Cấu hình cuối vì vậy dùng fixed windows và
+references off.
 
 ## 2. Storyline đề xuất
 
@@ -25,10 +27,13 @@ Mạch trình bày nên đi theo thứ tự:
 1. Văn bản pháp luật dài và có cấu trúc; một câu hỏi có thể cần nhiều điều luật.
 2. Truy hồi nguyên article bằng từ khóa hoặc cắt cụt văn bản chưa đủ tốt.
 3. Xây dựng baseline từ BM25, dense retrieval, hybrid và reranking.
-4. Đưa cấu trúc Khoản–Điểm vào biểu diễn văn bản và so sánh có kiểm soát.
-5. Fine-tune reranker trên đúng loại evidence dùng khi suy luận.
+4. So sánh article, Khoản, Khoản–Điểm và fixed windows có kiểm soát; fixed
+   448/64 thắng tổng thể.
+5. Fine-tune reranker bằng article-level MIL trên hierarchical chunk bags, rồi
+   giữ checkpoint cố định để đo khả năng transfer sang fixed windows.
 6. Kết hợp các tín hiệu bằng LightGBM để tạo hệ thống hiện tại.
-7. Trình bày giới hạn và kế hoạch bổ sung cross-reference retrieval.
+7. Trình bày ablation cho structure/reference và giới hạn train–inference
+   representation mismatch.
 
 Không nên kể đồ án như một chuỗi thử model rời rạc. Trọng tâm khoa học là ảnh
 hưởng của biểu diễn cấu trúc và, trong giai đoạn tiếp theo, tham chiếu chéo.
@@ -346,33 +351,34 @@ Ba câu có thể dùng để kết bài:
 
 1. Đồ án đã xây dựng được pipeline truy hồi pháp luật tái lập và một baseline
    hybrid–reranker tương đối mạnh.
-2. Kết quả hiện tại cho thấy biểu diễn theo Khoản–Điểm có lợi hơn cắt cụt hoặc
-   chia đoạn tổng quát trong các setup đã chạy.
-3. Reference-aware retrieval và ablation đầy đủ là phần còn lại để trả lời trọn
-   vẹn câu hỏi nghiên cứu.
+2. Fixed windows 448/64 đạt kết quả tổng thể tốt hơn Khoản–Điểm; mô hình hóa cấu
+   trúc pháp lý không tự động tạo gain và là một negative result quan trọng.
+3. Reference expansion tăng candidate recall nhưng giảm nhẹ final F2; cấu hình
+   cuối tắt references và dùng learned final-set selection.
 
 ## 4. Pipeline mạnh nhất hiện tại
 
 Có thể dùng sơ đồ này trong slide tổng kết kỹ thuật:
 
 ```text
-VnCoreNLP BM25
-       +
-BGE-M3 Khoản–Điểm 448/64
+VnCoreNLP BM25 + VietLegal-Harrier + multilingual-E5-large
        ↓
-Weighted RRF, k=20, sparse/dense=0.2/0.8
+Fixed token windows 448/64 + weighted RRF 0.15/0.55/0.30, k=10
        ↓
 Top 50 fused retrieved chunks
        ↓
-BGE reranker fine-tuned BCE, epoch 3
+Vietnamese reranker, pointwise MIL epoch 1 / checkpoint 1208
        ↓
 Max aggregation theo aid
        ↓
-LightGBM feature fusion + threshold/fallback
+LightGBM enhanced_v2 (61 features)
+       ↓
+Balanced multiclass / multiclass–Ridge final-set selection
 ```
 
-Đây là pipeline được chọn từ các thí nghiệm hiện có, chưa phải pipeline cuối của
-toàn bộ đề tài vì thành phần reference-aware chưa tồn tại.
+Đây là pipeline cuối theo bằng chứng hiện có. Checkpoint 1208 được train trên
+hierarchical chunk bags rồi giữ cố định khi chấm fixed windows; phải trình bày
+đây là transfer setting, không phải fixed-window fine-tuning.
 
 ## 5. Thông tin audit cấu trúc có thể dùng
 

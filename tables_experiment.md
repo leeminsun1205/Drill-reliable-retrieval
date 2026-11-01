@@ -14,7 +14,7 @@ specifications, and all 21 source tables are retained in
 | Final table | Report | Slides | Slide treatment |
 |---|:---:|:---:|---|
 | R1. Dataset and evaluation setting | Yes | No | Show dataset scale as large-number callouts, not a table |
-| R2. Legal-structure-aware chunking | Yes | Yes — S1 | Keep Article, Token window, Khoản, and Khoản–Điểm rows; retain Macro-F2 and Recall@100 |
+| R2. Chunk representation for dense legal retrieval | Yes | Yes — S1 | Keep Article, Khoản, Khoản–Điểm, and selected Token window rows; retain Macro-F2 and Recall@100 |
 | R3. First-stage retrieval selection | Yes | Yes — S2 | Show the six controlled component combinations; retain Macro-F2 and Recall@50 |
 | R4. Structure and cross-reference ablation | Yes | Yes — S3 | Keep the four factorial rows and Macro-F2; if incomplete, show candidate-recall gate with limitation |
 | R5. Reranker adaptation and candidate budget | Yes | No | Supporting checkpoint-selection detail; feed its winner into S4 |
@@ -37,45 +37,56 @@ never used for tuning.
 **Question.** What is the query scale, question-length distribution, and
 variable output-set requirement across the official DRiLL splits?
 
-**Protocol.** Values in the three official split columns follow Table 2 of the
-DRiLL shared-task overview. Word counts use the organizer's question-level
-counting convention and are descriptive rather than tokenizer lengths. Public
-and private relevance labels remain hidden and are never used for tuning. The
-project development set is a persisted seed-42 subset of 438 training queries.
+**Protocol.** The official 2,190-query training collection is shown after the
+project's persisted seed-42 split into 1,752 supervised-training and 438
+development queries. Internal values were measured from local `train.parquet`
+with the exact persisted `split_dev_qids.json`; whitespace-delimited question
+counts reproduce the organizer's full-train average/minimum/maximum
+`19.71/6/45`. Public/private aggregates follow Table 2 of the DRiLL shared-task
+overview. They remain hidden labels and are never used for tuning.
 
-| Statistic | Train | Public test | Private test |
-|---|---:|---:|---:|
-| Number of questions | 2,190 | 312 | 627 |
-| Words per question — average | 19.71 | 20.00 | 19.90 |
-| Words per question — minimum | 6 | 11 | 11 |
-| Words per question — maximum | 45 | 42 | 44 |
-| Relevant articles/question — average | 1.34 | 1.31 | 1.32 |
-| Relevant articles/question — minimum | 1 | 1 | 1 |
-| Relevant articles/question — maximum | 9 | 4 | 5 |
+| Statistic | Supervised train | Development | Public test | Private test |
+|---|---:|---:|---:|---:|
+| Number of questions | 1,752 | 438 | 312 | 627 |
+| Words per question — average | 19.78 | 19.46 | 20.00 | 19.90 |
+| Words per question — minimum | 6 | 11 | 11 | 11 |
+| Words per question — maximum | 45 | 45 | 42 | 44 |
+| Relevant articles/question — average | 1.34 | 1.35 | 1.31 | 1.32 |
+| Relevant articles/question — minimum | 1 | 1 | 1 | 1 |
+| Relevant articles/question — maximum | 9 | 7 | 4 | 5 |
+
+**Label note.** Query-level relevance labels are available only for the two
+internal partitions. Public/private relevance statistics are published
+aggregates from the shared-task report; their hidden query-level labels were
+not accessed for training, model selection, or threshold fitting.
 
 The accompanying corpus contains 2,157 legal documents and 59,636 raw
 article-level retrieval units; 59,628 non-blank articles are indexed. Article
 IDs (`aid`) are the prediction unit. These corpus statistics are stated in
 prose to avoid mixing corpus-only fields with query-split columns.
 
-**Source:** `docs/dataset.md`, `docs/evaluation.md`, official DRiLL overview.
+**Source:** local `data/train.parquet`, persisted split inside
+`results/pool50_epoch1_lightgbm_feature_screen.tar.gz`, `docs/dataset.md`,
+`docs/evaluation.md`, and the official DRiLL overview.
 
 ---
 
-## R2. Effect of Legal-Structure-Aware Chunking
+## R2. Effect of Chunk Representation on Dense Legal Retrieval
 
 **Use:** `REPORT + SLIDES` (`S1`)
 
-**Question.** Do legal Khoản/Điểm boundaries improve dense retrieval relative
-to article truncation and generic token windows?
+**Question.** Which article representation—truncation, legal-structure-aware
+chunking, or overlapping fixed windows—provides the strongest dense candidate
+ranking under a controlled encoder and evaluation protocol?
 
-**Protocol.** Rerun all four rows from scratch with the primary dense component
-`mainguyen9/vietlegal-harrier-0.6b`. Freeze its model revision, model-card query
-instruction, document prefix, pooling, maximum sequence length, exact cosine
-search, max chunk-to-article aggregation, candidate depth 100, persisted
-seed-42 development qids, and evaluator. Use fixed top 2 for official
-Precision/Recall/Macro-F2 so this table is aligned with downstream checkpoint
-selection. Report Recall@10/50/100 from the same saved depth-100 rankings.
+**Protocol.** All four rows were run from scratch with the primary dense
+component `mainguyen9/vietlegal-harrier-0.6b`. Its model revision, model-card
+query instruction, document prefix, pooling, maximum sequence length, exact
+cosine search, max chunk-to-article aggregation, candidate depth 100,
+persisted seed-42 development qids, and evaluator were fixed. Fixed top 2
+supplies official Precision/Recall/Macro-F2 and aligns the table with downstream
+checkpoint selection. Recall@10/50/100 comes from the same saved depth-100
+rankings.
 
 The only treatment variable is representation: article truncation, fixed token
 window, Khoản, or hierarchical Khoản–Điểm. Article truncation emits one full
@@ -89,22 +100,35 @@ windows remain historical appendix evidence and are not rerun.
 | Representation | Precision@2 | Recall@2 | Macro-F2@2 | Recall@10 | Recall@50 | Recall@100 |
 |---|---:|---:|---:|---:|---:|---:|
 | Article truncation | 0.3368 | 0.5732 | 0.5026 | 0.7964 | 0.9125 | 0.9422 |
-| Fixed token window 448/64 | **0.3425** | **0.5808** | **0.5098** | **0.8166** | **0.9256** | **0.9517** |
 | Khoản + fallback 448/64 | 0.3345 | 0.5742 | 0.5022 | 0.7993 | 0.9186 | 0.9471 |
-| Hierarchical Khoản–Điểm 448/64 | 0.3379 | 0.5811 | 0.5079 | 0.8031 | 0.9244 | 0.9463 |
+| Hierarchical Khoản–Điểm 448/64 | 0.3379 | **0.5811** | 0.5079 | 0.8031 | 0.9244 | 0.9463 |
+| Fixed token window 448/64 | **0.3425** | 0.5808 | **0.5098** | **0.8166** | **0.9256** | **0.9517** |
 
-The fixed-window control is the point-estimate winner. Hierarchical
-Khoản–Điểm improves over article truncation by `+0.0053` Macro-F2@2 and
-`+0.0119` Recall@50, but trails fixed windows by `-0.0019` Macro-F2@2 and
-`-0.0012` Recall@50. These small differences require paired query-level
-uncertainty analysis before making a significance claim.
+The fixed-window treatment is the selected representation for the final
+pipeline: it has the best Precision@2, Macro-F2@2, and Recall@10/50/100.
+Hierarchical Khoản–Điểm has the highest Recall@2 by only `0.0003` and improves
+over article truncation by `+0.0053` Macro-F2@2 and `+0.0119` Recall@50, but
+trails fixed windows by `-0.0019` Macro-F2@2 and `-0.0012` Recall@50. The
+matched R4 end-to-end experiment independently supports this choice, with
+fixed/reference-off nested-OOF F2 `0.6681` versus `0.6597` for hierarchical/
+reference-off. These point estimates select fixed 448/64 as the main
+representation; they do not establish statistical significance without paired
+query-level uncertainty analysis.
 
-**Slide S1:** after all four rows complete, show Representation, Macro-F2@2,
-and Recall@100. Every slide value must be copied unchanged from R2.
+The fixed-window choice is a representation decision, not evidence that the
+reranker was trained on fixed chunks. Checkpoint 1208 was adapted with
+article-level supervision over hierarchical chunk bags and is held constant
+when scoring fixed chunks, so the final result measures cross-representation
+transfer at inference.
+
+**Slide S1:** show Representation, Macro-F2@2, and Recall@100; highlight fixed
+448/64 as the selected main representation and annotate that Khoản–Điểm alone
+wins Recall@2. Every slide value must be copied unchanged from R2.
 
 **Source:** complete user-executed Table-R2 notebook runs reported on
-2026-11-01; detailed Table 4 in `tables_experiment_catalog.md`. Provenance and
-paired verification remain pending ingestion of the result archive.
+2026-11-01 and matched R4 confirmation reported on 2026-11-02; detailed Table 4
+is in `tables_experiment_catalog.md`. Provenance and paired verification remain
+pending ingestion of the result archive.
 
 ---
 
@@ -116,8 +140,8 @@ paired verification remain pending ingestion of the result archive.
 complementary first-stage candidate ranking without turning the study into a
 model zoo?
 
-**Protocol.** Freeze the seed-42 split, BGE-M3-tokenized hierarchical
-Khoản–Điểm 448/64 chunk store, model-card prefixes, exact cosine search, max
+**Protocol.** Freeze the seed-42 split, BGE-M3-tokenized fixed token-window
+448/64 chunk store selected by R2, model-card prefixes, exact cosine search, max
 chunk-to-article aggregation, component depth 100, and evaluator. Dense 1 is
 VietLegal-Harrier and Dense 2 is multilingual-E5-large. Combination rows reuse
 the exact saved component rankings and WRRF `k=10`; their relative weights are
@@ -128,6 +152,13 @@ same saved component rankings rather than mixing historical runs. Report the
 same fixed top-2 Precision/Recall/Macro-F2 and Recall@50 for every row because
 50 articles is the frozen downstream reranker budget; retain Recall@100 only
 in the detailed artifact as a depth diagnostic.
+
+The populated numbers below are the historical hierarchical-screen results and
+remain provenance for the original component choice. They must be replaced by
+the controlled fixed-window rerun before the final report. The rerun reads the
+saved component rankings from the complete fixed/reference-off submission
+output and does not repeat encoding. It is a representation-matched component
+ablation, not a new weight search.
 
 The exact enabled-component weights are: BM25 `1.0`; Harrier `1.0`; E5 `1.0`;
 BM25+Harrier `0.21/0.79`; Harrier+E5 `0.65/0.35`; and the full hybrid
@@ -330,6 +361,8 @@ provided only F2 here.
 | This project, joint subset utility | Codabench | 0.6685 |  |  | 0.6337 | Public 1026118; private 1026111; not selected |
 | This project, fixed 448/64, ref-off, threshold | Codabench | 0.6669 |  |  | 0.6520 | Public 1026162; private 1026154; matched R4 case 1 |
 | This project, fixed 448/64, ref-off, score gap | Codabench | 0.6739 |  |  | **0.6580** | Public 1026161; private 1026153; policy differs from multiclass |
+| This project, fixed 448/64, ref-off, multiclass | Codabench | 0.6833 |  |  | 0.6677 | Public 1026181; private 1026178; policy-matched control |
+| This project, fixed 448/64, ref-off, multiclass–Ridge | Codabench | **0.6933** |  |  | **0.6685** | Public 1026176; private 1026175; final choice requires fixed nested OOF |
 
 **Slide S5:** keep organizer two-stage, at most two published systems (normally
 ViDRILL and EDM), and the four project-policy rows. Do not display a project

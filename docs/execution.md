@@ -146,20 +146,20 @@ constructing R2.
 
 `notebooks/experiments/retrieval/kaggle_table3_first_stage_ablation.ipynb` evaluates the six
 first-stage component cases used by report Table R3. Set `TABLE3_CASE` to
-`1`--`6`, or to `0` for all rows. The notebook materializes the frozen BM25,
-Harrier, and E5-large rankings once and derives every single-component and WRRF
-combination from those same rankings. It uses WRRF `k=10`, rounded subset
-weights `0.21/0.79` and `0.65/0.35`, full weights `0.15/0.55/0.30`, fixed top
-2, and Recall@50. Reranking, references, LightGBM, and test data are excluded.
-The notebook installs both the `dense` and `vietnamese` optional dependency
-groups and imports the VnCoreNLP Python wrapper before starting retrieval; the
-VnCoreNLP JAR alone is insufficient. It also verifies the Java executable and
-automatically discovers the four verified Table-R3 caches (BM25, shared chunks,
-Harrier, and E5-large) under `/kaggle/input`. An attached cache is used with
-`require_hit: true`; only a missing cache is rebuilt under the notebook work
-directory. Because editable installation occurs after the live notebook kernel
-starts, the setup cell also registers the repository `src/` directory and
-imports `drill_ir` as a preflight before launching the backbone subprocess.
+`1`--`6`, or preferably to `0` for all rows in one inexpensive run. Attach the
+complete output of `kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`
+and the WeDev-VLSP training dataset. The notebook locates the single verified
+`table4_case1_token_window_refoff` development run, checks its seed, 448/64
+fixed-window representation, disabled expansions, WRRF contract, persisted 438
+development IDs, and retrieval Recall@50 gate. It then derives every
+single-component and WRRF combination from the saved
+`component_rankings.jsonl`; it does not encode the corpus again. It uses WRRF
+`k=10`, rounded subset weights `0.21/0.79` and `0.65/0.35`, full weights
+`0.15/0.55/0.30`, fixed top 2, and Recall@50. Reranking, references, LightGBM,
+test data, model inputs, dense caches, and VnCoreNLP installation are excluded.
+Attach exactly one complete fixed/reference-off output to avoid ambiguous
+artifact discovery. The result archive is
+`/kaggle/working/table3_fixed_first_stage_ablation_results.tar.gz`.
 
 ### Re-running report Table R4
 

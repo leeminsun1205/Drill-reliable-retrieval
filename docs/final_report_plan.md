@@ -7,23 +7,30 @@ labels in `tables_experiment.md` govern report assembly.
 
 ## Frozen finalist
 
-The frozen neural/retrieval backbone is pool 50, reference expansion enabled,
-WRRF `k=10` with BM25/Harrier/E5 weights `0.15/0.55/0.30`, pointwise MIL epoch
-1 checkpoint `1208`, and the 61-feature `enhanced_v2` LightGBM schema. Official
-feedback must not be used to alter this backbone.
+The selected representation is fixed token windows 448/64 with reference
+expansion disabled. The frozen neural/retrieval backbone retains pool 50, WRRF
+`k=10` with BM25/Harrier/E5 weights `0.15/0.55/0.30`, pointwise MIL epoch-1
+checkpoint `1208`, and the 61-feature `enhanced_v2` LightGBM schema. This
+representation was selected by the R2 dense screen and matched R4 nested-OOF
+comparison, not private feedback. Checkpoint 1208 was trained on hierarchical
+article-chunk bags and transfers to fixed chunks at inference; do not describe
+it as fixed-window fine-tuning.
 
-Measured official F2 as of 2026-11-01:
+Measured official F2 as of 2026-11-02:
 
 | Final policy | Public | Private |
 |---|---:|---:|
 | Fixed top 2 | 0.5989 | 0.5552 |
-| Threshold with fallback 2 | 0.6524 | **0.6054** |
-| Score gap | **0.6551** | 0.6047 |
-| Fold-safe learned stopping | **0.6672** | **0.6123** |
-| Listwise prefix-utility Ridge | 0.6661 | **0.6245** |
+| Threshold with fallback 2 | 0.6524 | 0.6054 |
+| Score gap | 0.6551 | 0.6047 |
+| Fold-safe learned stopping | 0.6672 | 0.6123 |
+| Listwise prefix-utility Ridge | 0.6661 | 0.6245 |
 | Tuned prefix-utility Ridge (`alpha=1`) | 0.6700 | 0.6265 |
-| Balanced multiclass logistic (`C=0.1`) | **0.6847** | **0.6368** |
-| Multiclass–Ridge ensemble (`lambda=0.75`) | **0.6863** | 0.6354 |
+| Balanced multiclass logistic (`C=0.1`) | 0.6847 | 0.6368 |
+| Multiclass–Ridge ensemble (`lambda=0.75`) | 0.6863 | 0.6354 |
+| Fixed 448/64, ref-off, score gap | 0.6739 | 0.6580 |
+| Fixed 448/64, ref-off, balanced multiclass | 0.6833 | 0.6677 |
+| Fixed 448/64, ref-off, multiclass–Ridge | **0.6933** | **0.6685** |
 
 Relative to LightGBM fixed top 2, learned stopping adds `0.0683/0.0571` on
 public/private. It also exceeds score gap by `0.0121/0.0076` and threshold by
@@ -35,17 +42,21 @@ The listwise treatment nearly matches stopping on public (`-0.0011`) and leads
 it on private (`+0.0122`), but the final policy must be chosen from their saved
 nested-OOF development evidence rather than this private ordering.
 
-The closed nested screen selected balanced multiclass logistic, and that choice
-was confirmed on both hidden splits. It exceeds tuned Ridge by `0.0147/0.0103`,
-learned stopping by `0.0175/0.0245`, and fixed top 2 by `0.0858/0.0816` on
-public/private. Use multiclass logistic as the final cardinality policy and
-retain tuned Ridge as the closest controlled alternative.
+On the historical hierarchical ranking, the closed nested screen selected
+balanced multiclass logistic and that ordering transferred to both hidden
+splits. On the selected fixed-window ranking, balanced multiclass reached
+`0.6833/0.6677`, while multiclass–Ridge reached the best measured project pair
+`0.6933/0.6685`. The final policy label must follow the fixed run's saved
+nested-OOF ordering; hidden scores are confirmation rather than a selection
+signal.
 
-The confirmatory ensemble improved nested-OOF by only `0.000340` and public by
-`0.0016`, while private fell `0.0014`. Keep plain balanced multiclass as the
-final policy because it is simpler and has the best private confirmation;
-report the ensemble as a practically tied ablation. Cost-sensitive decoding is
-a negative result (nested F2 `0.510219`, mean output `4.658`).
+On the historical hierarchical ranking, the confirmatory ensemble improved
+nested-OOF by only `0.000340` and public by
+`0.0016`, while private fell `0.0014`; plain balanced multiclass was therefore
+the correct historical choice. On fixed windows the interaction changes and
+the ensemble leads both hidden scores, so the fixed nested-OOF artifact must
+decide whether that gain is reportable as the selected policy. Cost-sensitive
+decoding remains a negative result (nested F2 `0.510219`, mean output `4.658`).
 
 ## Required report tables
 

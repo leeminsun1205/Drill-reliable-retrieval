@@ -36,27 +36,29 @@ Implement and verify methods in this order:
 Before dense retrieval, verify corpus flattening, article identifiers,
 ground-truth mapping, evaluation, and a reproducible BM25 result.
 
-The selected strong pipeline for subsequent controlled comparisons is hybrid
-Khoản–Điểm retrieval with 448-token chunks and 64-token overlap, weighted RRF,
-then direct reranking of the top 50 fused retrieved chunks with a 512-token
-cross-encoder pair budget. Reranker scores are max-aggregated to unique `aid`
-values, the multi-dense fifteen-feature pointwise LightGBM model supplies the
-final ranking scores, and both threshold/fallback and query-adaptive early
-score-gap policies remain frozen reported controls. Article-first rechunking
-remains an ablation, not the default pipeline.
-Hold this configuration fixed when testing structure or reference components.
+The selected final representation is now overlapping fixed token windows with
+a 448-token document budget and 64-token overlap, with reference expansion
+disabled. The hybrid retains BM25, VietLegal-Harrier, multilingual-E5-large,
+weighted RRF, and direct reranking of the top 50 fused retrieved chunks with a
+512-token cross-encoder pair budget. Reranker scores are max-aggregated to
+unique `aid` values and the 61-feature `enhanced_v2` LightGBM model supplies
+the final ranking scores. Checkpoint 1208 remains fixed even though it was
+adapted on hierarchical article-chunk bags; applying it to fixed windows is an
+explicit cross-representation transfer setting. Hold this configuration fixed
+for final reporting. Hierarchical chunks and references are controlled
+treatments, not components of the selected deployment pipeline.
 
-The completed matched Table-R4 factorial now supplies the required control:
+The completed matched Table-R4 factorial supplies the selection evidence:
 fixed 448/64 windows achieved nested-OOF F2 `0.6681/0.6669` with references
 off/on, versus `0.6597/0.6583` for hierarchical Khoản–Điểm. Same-document
 references increased candidate Recall@50 in both representations but slightly
 reduced final F2; the F2 difference-in-differences was about `0.0002`. Thus the
 point estimates do not support a structure/reference interaction and identify
-fixed windows as the stronger development control. The historical selected
-pipeline remains frozen for already reported official results; changing the
-deployment representation requires its own predeclared rerun and must not be
-selected from private-test feedback. Artifact/hash verification and paired
-uncertainty are still pending.
+fixed windows as the stronger development control. The policy-matched
+fixed-window rerun subsequently retained public performance and improved
+private performance, but those hidden scores are confirmation rather than the
+selection signal. Historical Khoản–Điểm/reference-on results remain valid
+ablations. Artifact/hash verification and paired uncertainty are still pending.
 
 The completed multi-dense treatment improves the user-reported matched
 threshold submission from single-BGE public/private F2 `0.6160/0.5882` to
@@ -1099,3 +1101,21 @@ private, but comparison with the final hierarchical multiclass result is
 confounded by decision policy. If one final experiment is run, it must apply
 the already frozen balanced multiclass protocol to the fixed-window OOF and
 test rankings; do not tune that choice from the private improvement.
+
+The policy-matched run completed on 2026-11-02. Fixed-window balanced
+multiclass scored `0.6833/0.6677` public/private (`1026181/1026178`), compared
+with hierarchical multiclass `0.6847/0.6368`. Fixed-window multiclass–Ridge
+scored `0.6933/0.6685` (`1026176/1026175`), the highest measured project pair.
+Because the ensemble's gain over fixed multiclass is asymmetric
+(`+0.0100/+0.0008`), select it only if the fixed run's predeclared nested-OOF
+comparison also ranks it first. Regardless of policy, the matched evidence now
+supports fixed 448/64, reference-off as the more robust representation.
+
+Interpretation boundary: epoch-1 checkpoint 1208 was trained with article-level
+supervision on hierarchical Khoản–Điểm chunk bags, not fixed-window bags. The
+fixed pipeline changes the chunks scored at inference while deliberately
+holding the neural checkpoint constant. This supports fixed-window robustness
+and cross-representation transfer, but a claim about fixed-window supervised
+training would require a separate retraining ablation. That retraining is not
+required for the final report and should not be opened with the presentation
+deadline approaching.
