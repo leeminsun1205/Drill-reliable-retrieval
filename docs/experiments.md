@@ -2500,11 +2500,37 @@ rows; independent archive ingestion and hash verification remain pending.
 Because fixed 448/64 windows were subsequently selected as the final
 representation, the current Table-R3 notebook now reads the complete
 fixed/reference-off submission output and recomputes all six rows offline from
-its frozen `component_rankings.jsonl`. This rerun changes only the shared dense
-representation; component models, declared WRRF weights, split IDs, depths,
-metrics, and disabled expansions remain fixed. Until that archive is executed
+its frozen `component_rankings.jsonl`. This rerun changes the shared dense
+representation and, in the revised controlled search below, the fusion weights;
+component models, split IDs, depths, metrics, and disabled expansions remain
+fixed. Until that archive is executed
 and ingested, the numbers above remain labelled as the historical hierarchical
 screen and must not be reported as fixed-window measurements.
+
+The three fixed-window controls measured on 2026-11-02 are: BM25
+`0.2511/0.4297/0.3762/0.8348`, Harrier
+`0.3425/0.5808/0.5098/0.9256`, and E5-large
+`0.3174/0.5347/0.4703/0.9106` for Precision@2, Recall@2, Macro-F2@2, and
+Recall@50 respectively. The historical full ratio `0.15/0.55/0.30` produced
+Macro-F2@2 `0.5348`, slightly below Harrier+E5 at `0.5354`; therefore it is not
+a persuasive fixed-window final weighting.
+
+The revised notebook selects positive three-component WRRF weights on a
+step-0.05 simplex grid (171 candidates), augmented by equal weights, the
+historical ratio, and three standalone-performance ratios normalized to sum to
+one from Macro-F2@2, Recall@2, or Recall@50. In particular, the requested
+standalone-quality candidate uses the BM25, Harrier, and E5 single-component
+Macro-F2 values and divides each by their sum; it is recomputed inside every
+training fold rather than from held-out labels. The notebook uses five shuffled
+query folds with seed 42: each
+fold tunes on four folds and scores the held-out fold. BM25+Harrier and
+Harrier+E5 ratios are obtained by renormalizing that fold's selected full ratio,
+so all three combination rows share one selection hypothesis. The primary
+selection objective is Macro-F2@2 with Recall@50, Precision@2, Recall@2, and
+distance to the historical ratio as deterministic tie-breakers. A separate
+full-dev ratio is stored only as the deployment configuration; combination
+metrics in the table are assembled strictly from held-out OOF rankings. This
+offline search reuses saved component rankings and does not rerun encoding.
 
 ### Completed matched structure × reference factorial (Table R4)
 

@@ -154,9 +154,20 @@ fixed-window representation, disabled expansions, WRRF contract, persisted 438
 development IDs, and retrieval Recall@50 gate. It then derives every
 single-component and WRRF combination from the saved
 `component_rankings.jsonl`; it does not encode the corpus again. It uses WRRF
-`k=10`, rounded subset weights `0.21/0.79` and `0.65/0.35`, full weights
-`0.15/0.55/0.30`, fixed top 2, and Recall@50. Reranking, references, LightGBM,
-test data, model inputs, dense caches, and VnCoreNLP installation are excluded.
+`k=10` and searches 171 positive three-component ratios on a step-0.05 simplex
+grid. The candidate pool additionally includes equal and historical weights,
+plus ratios obtained by normalizing the three standalone component results to
+sum to one using Macro-F2@2, Recall@2, or Recall@50. These proportional ratios
+are recomputed only from each fold's training queries. Five-fold query-level
+cross-fitting (shuffle seed 42) tunes each ratio on
+four folds and evaluates the held-out fold; two-component ratios are obtained
+by renormalizing the selected three-component ratio over enabled components.
+The primary objective is Macro-F2@2 with ordered Recall@50, Precision@2,
+Recall@2, and distance to the historical ratio as tie-breakers. The notebook
+separately records a full-dev deployment
+ratio, while reporting only OOF metrics for combination rows. Reranking,
+references, LightGBM, test data, model inputs, dense caches, and VnCoreNLP
+installation are excluded.
 Attach exactly one complete fixed/reference-off output to avoid ambiguous
 artifact discovery. The result archive is
 `/kaggle/working/table3_fixed_first_stage_ablation_results.tar.gz`.

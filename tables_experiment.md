@@ -144,45 +144,45 @@ model zoo?
 448/64 chunk store selected by R2, model-card prefixes, exact cosine search, max
 chunk-to-article aggregation, component depth 100, and evaluator. Dense 1 is
 VietLegal-Harrier and Dense 2 is multilingual-E5-large. Combination rows reuse
-the exact saved component rankings and WRRF `k=10`; their relative weights are
-inherited from the frozen final ratio BM25/Harrier/E5 `0.15/0.55/0.30` and
-renormalized only over the enabled components. No reranker, reference
+the exact saved component rankings and WRRF `k=10`. Select the three-component
+weights on a positive simplex grid with step `0.05`, using five-fold
+query-level cross-fitting with seed 42 and Macro-F2@2 as the primary objective;
+use Recall@50, Precision@2, and Recall@2 only as ordered tie-breakers. Within
+each outer fold, derive the two-component rows by renormalizing the selected
+three-component weights over the enabled components. The search also includes
+equal and historical ratios and fold-local ratios proportional to the three
+standalone methods' Macro-F2@2, Recall@2, or Recall@50, each normalized to sum
+to one. No reranker, reference
 expansion, or LightGBM is allowed in this table. Rerun all six rows from the
 same saved component rankings rather than mixing historical runs. Report the
 same fixed top-2 Precision/Recall/Macro-F2 and Recall@50 for every row because
 50 articles is the frozen downstream reranker budget; retain Recall@100 only
 in the detailed artifact as a depth diagnostic.
 
-The populated numbers below are the historical hierarchical-screen results and
-remain provenance for the original component choice. They must be replaced by
-the controlled fixed-window rerun before the final report. The rerun reads the
-saved component rankings from the complete fixed/reference-off submission
-output and does not repeat encoding. It is a representation-matched component
-ablation, not a new weight search.
-
-The exact enabled-component weights are: BM25 `1.0`; Harrier `1.0`; E5 `1.0`;
-BM25+Harrier `0.21/0.79`; Harrier+E5 `0.65/0.35`; and the full hybrid
-`0.15/0.55/0.30`. The two-component weights are rounded, declared controls
-derived from the final ratio rather than separately tuned optima.
+The three single-component rows below are measured fixed-window results. The
+combination rows remain empty until the cross-fitted rerun completes. The
+notebook also selects one full-development deployment ratio for later inference,
+but that fitted ratio is not used to score the OOF combination rows. This keeps
+weight selection separate from evaluation while avoiding another corpus encode.
 
 | First-stage components | WRRF weights over enabled components | Precision@2 | Recall@2 | Macro-F2@2 | Recall@50 |
 |---|---:|---:|---:|---:|---:|
 | BM25 + VnCoreNLP | `1.0` | 0.2511 | 0.4297 | 0.3762 | 0.8348 |
-| Dense 1: VietLegal-Harrier | `1.0` | 0.3379 | 0.5811 | 0.5079 | 0.9244 |
-| Dense 2: multilingual-E5-large | `1.0` | 0.3116 | 0.5293 | 0.4644 | 0.8960 |
-| BM25 + Dense 1 | `0.21 / 0.79` | 0.3402 | 0.5795 | 0.5080 | 0.9243 |
-| Dense 1 + Dense 2 | `0.65 / 0.35` | 0.3505 | 0.5974 | 0.5236 | 0.9244 |
-| **BM25 + Dense 1 + Dense 2** | `0.15 / 0.55 / 0.30` | **0.3516** | **0.5977** | **0.5243** | **0.9278** |
+| Dense 1: VietLegal-Harrier | `1.0` | 0.3425 | 0.5808 | 0.5098 | 0.9256 |
+| Dense 2: multilingual-E5-large | `1.0` | 0.3174 | 0.5347 | 0.4703 | 0.9106 |
+| BM25 + Dense 1 | Cross-fitted; derived from full ratio |  |  |  |  |
+| Dense 1 + Dense 2 | Cross-fitted; derived from full ratio |  |  |  |  |
+| BM25 + Dense 1 + Dense 2 | Cross-fitted simplex grid |  |  |  |  |
 
 **Slide S2:** use these six rows with Method, Macro-F2@2, and Recall@50. The
 row order communicates the component-building logic, not a guaranteed
 monotonic progression.
 
-**Source:** complete user-executed Table-R3 notebook cases reported on
-2026-11-01. All rows were derived offline from the same saved component
-rankings and development qids. The result archive remains to be ingested for
-independent provenance verification. These are matched component ablations,
-but the small observed differences do not establish statistical significance.
+**Source:** fixed-window single-component rows supplied from the matched
+user-executed rerun on 2026-11-02. Combination rows await the cross-fitted
+weight-selection archive. All rows use the same saved component rankings and
+development qids; small observed differences do not establish statistical
+significance.
 
 ---
 
