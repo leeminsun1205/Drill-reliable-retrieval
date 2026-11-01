@@ -2410,8 +2410,40 @@ by `configs/final_evidence_subset.yaml` and implemented by
 `enhanced_v2` OOF/public/private rankings and compares exactly two non-prefix
 top-five selectors. The artifact stores nested-OOF predictions as well as
 metrics, fold tuning, deployment models, diagnostics, input hashes, every ZIP,
-and oracle-prefix/oracle-subset upper bounds. Results are currently unmeasured;
-do not call either case an improvement until the nested artifact exists.
+and oracle-prefix/oracle-subset upper bounds. A case can be called an
+improvement only when supported by the nested artifact, not leaderboard scores.
+
+The two submission pairs completed on 2026-11-02. Cardinality plus binary
+subset selection obtained public/private F2 `0.6847/0.6368` (submission IDs
+`1026117/1026110`), numerically identical at leaderboard precision to the plain
+multiclass policy. Joint subset utility obtained `0.6685/0.6337`
+(`1026118/1026111`), changes of `-0.0162/-0.0031` relative to plain multiclass.
+These scores provide no evidence that non-prefix selection improves the frozen
+ranking. Aggregate equality is not evidence of identical per-query outputs;
+that requires direct prediction-file comparison. Keep plain multiclass as the
+selected simple policy and close this experiment family.
+
+### Fixed-window no-reference hidden-split result
+
+The matched Table-R4 case-1 submission completed on 2026-11-02 using fixed
+448/64 token windows, references disabled, checkpoint 1208, and a freshly fit
+`enhanced_v2` LightGBM model. Threshold selection scored public/private F2
+`0.6669/0.6520` (submissions `1026162/1026154`); score-gap selection scored
+`0.6739/0.6580` (`1026161/1026153`). The score-gap result is `+0.0188/+0.0533`
+over the hierarchical reference-on score-gap submission (`0.6551/0.6047`). It
+also exceeds the hierarchical balanced-multiclass pipeline on private by
+`0.0212` but trails it on public by `0.0108`. This is not yet a policy-matched
+comparison: fixed-window uses score gap while the latter uses learned
+multiclass cardinality. Report the robustness trade-off explicitly and use
+development/nested-OOF evidence—not private score—to decide whether a
+policy-matched fixed-window run is scientifically warranted.
+
+The existing multiclass confirmatory notebook supports that matched control
+without changing its policy configuration. It resolves the development split
+from the LightGBM `dev_run_dir` provenance instead of assuming the historical
+`selected_reranker_dev_run` directory. Run it with exactly one fixed-window
+notebook output and treat only unchanged `baseline_multiclass` as the
+policy-matched comparison; the other two cases remain rejected controls.
 
 ### Controlled first-stage component ablation (Table R3)
 

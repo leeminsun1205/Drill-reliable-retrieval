@@ -275,8 +275,8 @@ adopting a new selector.
 | Fixed balanced multiclass (confirmatory) | 0.547755 | **0.709437** | 0.669890 | 2.388 | 5 | Parsimonious final policy |
 | Multiclass–Ridge ensemble | **0.568950** | 0.701446 | **0.670230** | 2.176 | 5 | Practically tied; lambda=0.75 |
 | Cost-sensitive multiclass | 0.212253 | 0.786111 | 0.510219 | 4.658 | 5 | Rejected: severe over-selection |
-| Cardinality + binary subset selector |  |  |  |  | 5 | Final non-prefix diagnostic; nested OOF pending |
-| Joint utility over 31 top-five subsets |  |  |  |  | 5 | Final non-prefix diagnostic; nested OOF pending |
+| Cardinality + binary subset selector |  |  |  |  | 5 | Public/private 0.6847/0.6368; aggregate tie with plain multiclass |
+| Joint utility over 31 top-five subsets |  |  |  |  | 5 | Public/private 0.6685/0.6337; not selected |
 | Oracle prefix through k=5 | 0.722793 | 0.794809 | 0.779280 | 1.610 | 5 | Upper bound only |
 | Oracle subset through top 5 |  |  |  |  | 5 | Non-deployable upper bound; pending final artifact |
 
@@ -326,6 +326,10 @@ provided only F2 here.
 | This project, tuned prefix-utility Ridge | Codabench | 0.6700 |  |  | 0.6265 | Public 1025993; private 1025992 |
 | This project, balanced multiclass logistic | Codabench | **0.6847** |  |  | **0.6368** | Public 1025984; private 1025979 |
 | This project, multiclass–Ridge ensemble | Codabench | **0.6863** |  |  | 0.6354 | Public 1026035; private 1026030 |
+| This project, cardinality + binary subset | Codabench | **0.6847** |  |  | **0.6368** | Public 1026117; private 1026110; aggregate tie with multiclass |
+| This project, joint subset utility | Codabench | 0.6685 |  |  | 0.6337 | Public 1026118; private 1026111; not selected |
+| This project, fixed 448/64, ref-off, threshold | Codabench | 0.6669 |  |  | 0.6520 | Public 1026162; private 1026154; matched R4 case 1 |
+| This project, fixed 448/64, ref-off, score gap | Codabench | 0.6739 |  |  | **0.6580** | Public 1026161; private 1026153; policy differs from multiclass |
 
 **Slide S5:** keep organizer two-stage, at most two published systems (normally
 ViDRILL and EDM), and the four project-policy rows. Do not display a project

@@ -19,4 +19,6 @@ reported_codabench:
   tuned_ridge: {public: 0.6700, private: 0.6265, public_id: 1025993, private_id: 1025992}
   multiclass_logistic: {public: 0.6847, private: 0.6368, public_id: 1025984, private_id: 1025979}
   multiclass_ridge_ensemble: {public: 0.6863, private: 0.6354, public_id: 1026035, private_id: 1026030}
+  cardinality_binary_subset: {public: 0.6847, private: 0.6368, public_id: 1026117, private_id: 1026110}
+  joint_subset_utility: {public: 0.6685, private: 0.6337, public_id: 1026118, private_id: 1026111}
 

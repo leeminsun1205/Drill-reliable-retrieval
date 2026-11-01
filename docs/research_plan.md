@@ -1079,3 +1079,23 @@ cardinality plus binary candidate selection, and joint Ridge utility over all
 retrieval, reranking, feature, split, or maximum-output setting changes, and
 selection remains nested-OOF only. After this run, freeze the decision layer;
 do not add families or tune from public/private outcomes.
+
+Measured hidden-split update, 2026-11-02: cardinality plus binary subset
+selection scored `0.6847/0.6368` on public/private (submissions
+`1026117/1026110`), exactly matching plain multiclass to four reported decimal
+places. Joint subset utility scored `0.6685/0.6337` (`1026118/1026111`), lower
+than plain multiclass by `0.0162/0.0031`. Equal aggregate scores do not prove
+query-level predictions are identical; verify the two `results.json` files
+before making that stronger claim. No non-prefix method earns selection from
+these hidden-split results, and plain multiclass remains the parsimonious final
+policy subject to the predeclared nested-OOF record.
+
+Measured representation update, 2026-11-02: the matched fixed-window 448/64,
+reference-off pipeline scored `0.6669/0.6520` with threshold selection
+(`1026162/1026154`) and `0.6739/0.6580` with score gap
+(`1026161/1026153`) on public/private. Its score-gap variant substantially
+improves over the hierarchical reference-on score-gap result, especially on
+private, but comparison with the final hierarchical multiclass result is
+confounded by decision policy. If one final experiment is run, it must apply
+the already frozen balanced multiclass protocol to the fixed-window OOF and
+test rankings; do not tune that choice from the private improvement.

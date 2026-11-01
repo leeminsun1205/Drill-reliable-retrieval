@@ -1163,6 +1163,15 @@ six validated ZIPs. The archive
 nested fold records, deployment selection, complete JSON model coefficients,
 input hashes, predictions, and submissions so the experiment need not rerun.
 
+The same confirmatory notebook can perform the policy-matched fixed-window
+control by attaching the completed
+`kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb` output instead of
+the hierarchical stopping output. Attach exactly one `lightgbm_enhanced_v2`
+artifact. The resolver reads `dev_run_dir` from its provenance and requires the
+438-query `split_dev_qids.json` from that exact run, preventing cross-run split
+mixing. For this control, report/submit only `baseline_multiclass`; the other
+two cases were already rejected and are not new leaderboard candidates.
+
 For the final non-prefix evidence-set diagnostic, attach that same completed
 stopping-notebook output and run
 `notebooks/submission/kaggle_final_evidence_subset_selection.ipynb`. It calls
