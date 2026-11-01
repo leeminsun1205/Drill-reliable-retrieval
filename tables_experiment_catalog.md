@@ -183,21 +183,24 @@ should remain supplementary rather than occupy the main report.
 **Purpose.** Test whether legal boundaries improve retrieval over article
 truncation and generic token windows while holding the encoder fixed.
 
-**Protocol.** Use `intfloat/multilingual-e5-base`, the same query/document
-prefixes, tokenizer, 512-token budget, 64-token overlap/fallback, exact cosine
-search, max chunk-to-article aggregation, candidate depth 100, final top 3,
-seed-42 split, and evaluator. Only representation boundaries change. These
-values require artifact confirmation before a final paper claim.
+**Protocol.** Use `mainguyen9/vietlegal-harrier-0.6b`, its model-card query
+instruction, BGE-M3 chunk boundaries, exact cosine search, max
+chunk-to-article aggregation, candidate depth 100, fixed top 2, seed-42 split,
+and the common evaluator. Article truncation uses the frozen 512-token encoder
+limit; the three chunked treatments use 448/64. Only representation boundaries
+change. Values are complete user-executed measurements reported on 2026-11-01
+and remain pending independent result-archive verification.
 
-| Representation | Precision | Recall | Macro-F2 | Recall@10 | Recall@50 | Recall@100 | Evidence |
-|---|---:|---:|---:|---:|---:|---:|---|
-| Article truncation | 0.191781 | 0.485350 | 0.371588 | 0.670303 | 0.848184 | 0.879849 | User-reported / pending verification |
-| Fixed token window 512/64 | 0.207002 | 0.524163 | 0.401217 | 0.698407 | 0.874766 | 0.904659 | User-reported / pending verification |
-| Recursive token window 512/64 | 0.204718 | 0.514650 | 0.395037 | 0.705121 | 0.873625 | 0.905420 | User-reported / pending verification |
-| Khoản + fallback 512/64 | 0.221461 | 0.557154 | 0.427540 | 0.728142 | 0.869684 | 0.901288 | User-reported / pending verification |
-| Điểm + Khoản lead-in 512/64 | **0.230594** | **0.582763** | **0.446409** | **0.738035** | **0.879273** | **0.911562** | User-reported / pending verification |
+| Representation | Precision@2 | Recall@2 | Macro-F2@2 | Recall@10 | Recall@50 | Recall@100 | Runtime (s) | Evidence |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Article truncation | 0.336758 | 0.573195 | 0.502618 | 0.796391 | 0.912514 | 0.942194 | 3332.47 | User-reported / pending archive verification |
+| Fixed token window 448/64 | **0.342466** | 0.580806 | **0.509841** | **0.816634** | **0.925560** | **0.951653** | 5798.79 | User-reported / pending archive verification |
+| Khoản + fallback 448/64 | 0.334475 | 0.574201 | 0.502212 | 0.799299 | 0.918580 | 0.947086 | 5812.49 | User-reported / pending archive verification |
+| Hierarchical Khoản–Điểm 448/64 | 0.337900 | **0.581050** | 0.507947 | 0.803050 | 0.924364 | 0.946325 | 5431.82 | User-reported / pending archive verification |
 
-**Evidence.** `docs/experiments.md`, multilingual-E5-base chunking runs.
+**Evidence.** `docs/experiments.md` and the four Table-R2 notebook outputs.
+The earlier multilingual-E5-base/top-3 chunking screen is historical evidence,
+not part of this controlled report table.
 
 ---
 

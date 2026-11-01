@@ -142,6 +142,13 @@ Harrier, and E5-large rankings once and derives every single-component and WRRF
 combination from those same rankings. It uses WRRF `k=10`, rounded subset
 weights `0.21/0.79` and `0.65/0.35`, full weights `0.15/0.55/0.30`, fixed top
 2, and Recall@50. Reranking, references, LightGBM, and test data are excluded.
+The notebook installs both the `dense` and `vietnamese` optional dependency
+groups and imports the VnCoreNLP Python wrapper before starting retrieval; the
+VnCoreNLP JAR alone is insufficient. It also verifies the Java executable and
+automatically discovers the four verified Table-R3 caches (BM25, shared chunks,
+Harrier, and E5-large) under `/kaggle/input`. An attached cache is used with
+`require_hit: true`; only a missing cache is rebuilt under the notebook work
+directory.
 
 After saving `/kaggle/working/retrieval-cache` as a Kaggle output or dataset,
 point the corresponding cache directories at that attached input and enable

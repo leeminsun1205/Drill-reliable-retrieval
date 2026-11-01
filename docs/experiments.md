@@ -1058,6 +1058,27 @@ ablation, not six independently tuned systems. Report fixed-top-2 metrics and
 Recall@50 as the main candidate metric because the downstream reranker consumes
 50 articles; retain Recall@100 only as an artifact diagnostic.
 
+### Controlled Harrier chunking rerun for report Table R2 (2026-11-01)
+
+The owner completed all four seed-42 development cases with VietLegal-Harrier,
+fixed top 2, retrieval depth 100, and the controlled Table-R2 protocol. The
+reported values are recorded below pending independent artifact/provenance
+ingestion; they are measured user-reported results, not illustrative values.
+
+| Representation | Precision@2 | Recall@2 | Macro-F2@2 | R@10 | R@50 | R@100 | Runtime (s) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Article truncation | 0.336758 | 0.573195 | 0.502618 | 0.796391 | 0.912514 | 0.942194 | 3332.47 |
+| Fixed token window 448/64 | 0.342466 | 0.580806 | 0.509841 | 0.816634 | 0.925560 | 0.951653 | 5798.79 |
+| Khoản + fallback 448/64 | 0.334475 | 0.574201 | 0.502212 | 0.799299 | 0.918580 | 0.947086 | 5812.49 |
+| Hierarchical Khoản–Điểm 448/64 | 0.337900 | 0.581050 | 0.507947 | 0.803050 | 0.924364 | 0.946325 | 5431.82 |
+
+The fixed-window control has the strongest point estimates. Hierarchical
+Khoản–Điểm still improves on article truncation at fixed top 2 and Recall@50,
+but does not establish an advantage over generic fixed windows. The difference
+between fixed windows and Khoản–Điểm is only `0.001894` Macro-F2 and `0.001196`
+Recall@50; run a paired query-level bootstrap or randomization test from the
+saved predictions before describing that gap as statistically reliable.
+
 This notebook run changes both WRRF and reference treatment relative to the
 measured baseline, so its final delta cannot identify their separate causal
 effects. It is an operational combined candidate for the owner, while the

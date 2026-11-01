@@ -88,15 +88,23 @@ windows remain historical appendix evidence and are not rerun.
 
 | Representation | Precision@2 | Recall@2 | Macro-F2@2 | Recall@10 | Recall@50 | Recall@100 |
 |---|---:|---:|---:|---:|---:|---:|
-| Article truncation |  |  |  |  |  |  |
-| Fixed token window 448/64 |  |  |  |  |  |  |
-| Khoản + fallback 448/64 |  |  |  |  |  |  |
-| Hierarchical Khoản–Điểm 448/64 |  |  |  |  |  |  |
+| Article truncation | 0.336758 | 0.573195 | 0.502618 | 0.796391 | 0.912514 | 0.942194 |
+| Fixed token window 448/64 | **0.342466** | **0.580806** | **0.509841** | **0.816634** | **0.925560** | **0.951653** |
+| Khoản + fallback 448/64 | 0.334475 | 0.574201 | 0.502212 | 0.799299 | 0.918580 | 0.947086 |
+| Hierarchical Khoản–Điểm 448/64 | 0.337900 | 0.581050 | 0.507947 | 0.803050 | 0.924364 | 0.946325 |
+
+The fixed-window control is the point-estimate winner. Hierarchical
+Khoản–Điểm improves over article truncation by `+0.005329` Macro-F2@2 and
+`+0.011850` Recall@50, but trails fixed windows by `-0.001894` Macro-F2@2 and
+`-0.001196` Recall@50. These small differences require paired query-level
+uncertainty analysis before making a significance claim.
 
 **Slide S1:** after all four rows complete, show Representation, Macro-F2@2,
 and Recall@100. Every slide value must be copied unchanged from R2.
 
-**Source:** detailed Table 4 in `tables_experiment_catalog.md`.
+**Source:** complete user-executed Table-R2 notebook runs reported on
+2026-11-01; detailed Table 4 in `tables_experiment_catalog.md`. Provenance and
+paired verification remain pending ingestion of the result archive.
 
 ---
 
