@@ -159,30 +159,33 @@ same fixed top-2 Precision/Recall/Macro-F2 and Recall@50 for every row because
 50 articles is the frozen downstream reranker budget; retain Recall@100 only
 in the detailed artifact as a depth diagnostic.
 
-The three single-component rows below are measured fixed-window results. The
-combination rows remain empty until the cross-fitted rerun completes. The
-notebook also selects one full-development deployment ratio for later inference,
-but that fitted ratio is not used to score the OOF combination rows. This keeps
-weight selection separate from evaluation while avoiding another corpus encode.
+All rows below are measured fixed-window results. Single-component rows require
+no fitting; combination rows are five-fold OOF estimates. The notebook also
+selected one full-development deployment ratio for later inference, but that
+fitted ratio was not used to score the OOF combination rows. This keeps weight
+selection separate from evaluation while avoiding another corpus encode.
 
 | First-stage components | WRRF weights over enabled components | Precision@2 | Recall@2 | Macro-F2@2 | Recall@50 |
 |---|---:|---:|---:|---:|---:|
 | BM25 + VnCoreNLP | `1.0` | 0.2511 | 0.4297 | 0.3762 | 0.8348 |
 | Dense 1: VietLegal-Harrier | `1.0` | 0.3425 | 0.5808 | 0.5098 | 0.9256 |
 | Dense 2: multilingual-E5-large | `1.0` | 0.3174 | 0.5347 | 0.4703 | 0.9106 |
-| BM25 + Dense 1 | Cross-fitted; derived from full ratio |  |  |  |  |
-| Dense 1 + Dense 2 | Cross-fitted; derived from full ratio |  |  |  |  |
-| BM25 + Dense 1 + Dense 2 | Cross-fitted simplex grid |  |  |  |  |
+| BM25 + Dense 1 | OOF fold-tuned; deploy `0.19 / 0.81` | 0.3482 | 0.5846 | 0.5147 | 0.9338 |
+| Dense 1 + Dense 2 | OOF fold-tuned; deploy `0.76 / 0.24` | 0.3539 | 0.5934 | 0.5227 | 0.9350 |
+| **BM25 + Dense 1 + Dense 2** | OOF fold-tuned; deploy `0.15 / 0.65 / 0.20` | **0.3573** | **0.5951** | **0.5252** | **0.9387** |
 
 **Slide S2:** use these six rows with Method, Macro-F2@2, and Recall@50. The
 row order communicates the component-building logic, not a guaranteed
 monotonic progression.
 
-**Source:** fixed-window single-component rows supplied from the matched
-user-executed rerun on 2026-11-02. Combination rows await the cross-fitted
-weight-selection archive. All rows use the same saved component rankings and
-development qids; small observed differences do not establish statistical
-significance.
+**Source:** matched fixed-window rerun supplied on 2026-11-02. Combination rows
+are five-fold cross-fitted; all rows use the same saved component rankings and
+development qids. The full hybrid improves over Harrier+E5 by `+0.0025`
+Macro-F2@2 and `+0.0037` Recall@50. These are small OOF point differences and
+do not establish statistical significance. The deployment ratio is a new R3
+result; previously submitted fixed-window systems used `0.15/0.55/0.30`, so
+their public/private scores cannot be attributed to this new ratio without an
+end-to-end rerun.
 
 ---
 

@@ -69,11 +69,11 @@ and `scripts/`.
   nested-OOF predictions and packages every public/private case. It does not
   rerun retrieval, reranking, or LightGBM.
 - `kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`: matched
-  Table-R4 case-1 submission control using fixed 448/64 token windows,
-  references disabled, checkpoint 1208, and a freshly fitted `enhanced_v2`
-  LightGBM model. It deterministically rebuilds the exact development case,
-  reuses only compatible retrieval caches when available, and never consumes
-  prior R4 results or Khoản–Điểm development features.
+  fixed 448/64/reference-off end-to-end runner. Its default R3-retuned profile
+  uses BM25/Harrier/E5 `0.15/0.65/0.20`; a historical profile preserves
+  `0.15/0.55/0.30`. It reuses compatible retrieval caches, reruns affected
+  downstream stages, refits `enhanced_v2`, and produces confirmatory
+  multiclass–Ridge submissions in the same reproducibility bundle.
 
 ## Non-primary notebooks
 

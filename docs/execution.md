@@ -1178,14 +1178,14 @@ six validated ZIPs. The archive
 nested fold records, deployment selection, complete JSON model coefficients,
 input hashes, predictions, and submissions so the experiment need not rerun.
 
-The same confirmatory notebook can perform the policy-matched fixed-window
-control by attaching the completed
-`kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb` output instead of
-the hierarchical stopping output. Attach exactly one `lightgbm_enhanced_v2`
+The same confirmatory notebook can perform a policy-matched fixed-window
+control by attaching a completed fixed/ref-off LightGBM output instead of the
+hierarchical stopping output. Attach exactly one `lightgbm_enhanced_v2`
 artifact. The resolver reads `dev_run_dir` from its provenance and requires the
 438-query `split_dev_qids.json` from that exact run, preventing cross-run split
-mixing. For this control, report/submit only `baseline_multiclass`; the other
-two cases were already rejected and are not new leaderboard candidates.
+mixing. On the measured historical-weight fixed run, multiclass–Ridge was the
+nested-OOF winner and produced the strongest recorded public/private pair; do
+not transfer that conclusion to a new fusion ratio without refitting it.
 
 For the final non-prefix evidence-set diagnostic, attach that same completed
 stopping-notebook output and run
@@ -1203,18 +1203,25 @@ labels remain unavailable and Codabench results are reporting-only.
 
 For the matched Table-R4 winner control, use
 `notebooks/submission/kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`.
-It does not consume Table-R4 result artifacts. The notebook rebuilds
-`table4_case1_token_window_refoff` from the frozen configuration, reuses each
+The default `FUSION_PROFILE='r3_retuned'` tests the cross-fitted R3 deployment
+ratio BM25/Harrier/E5 `0.15/0.65/0.20`; set it to `historical` only to reproduce
+`0.15/0.55/0.30`. Profile-specific experiment and output names prevent stale
+historical artifacts from satisfying completion gates. It does not consume
+Table-R4 result artifacts. The notebook rebuilds the selected fixed/ref-off
+profile from configuration, reuses each
 compatible retrieval cache it can discover, and materializes missing caches
 under Kaggle working storage. Attach fixed-window shared-chunk, Harrier, E5, and
-BM25 caches only to reduce runtime; they are not result inputs. The launcher
-fails closed unless chunking is token-window 448/64,
-references and graph path are disabled, fixed-top-2 reranker F2 rounds to
-`0.5937`, and candidate Recall@50 rounds to `0.9341`. It relocates saved cache
-paths into the attached Kaggle input when present, locks all completed caches
-to cache-hit mode for public/private inference, reruns inference with checkpoint
-1208, and refits `enhanced_v2`; it does not reuse the hierarchical epoch-1
-feature-screen artifact.
+BM25 caches to reduce runtime; they are not result inputs. The launcher fails
+closed unless chunking is token-window 448/64, references and graph path are
+disabled, the selected component weights match, and the development candidate
+Recall@50 remains at least `0.93`. Historical mode additionally enforces the
+exact recorded retrieval/reranker/LightGBM gates. It relocates saved cache paths
+into the attached Kaggle input, locks completed caches to cache-hit mode for
+public/private inference, reruns fusion and checkpoint-1208 reranking, refits
+`enhanced_v2`, and then refits all three confirmatory cardinality policies. The
+final archive contains both score-gap and multiclass–Ridge submission ZIPs.
+Cached embeddings make retrieval preparation fast, but reranking and model
+refits still execute because their candidate ordering and features changed.
 
 If an older aligned run failed with
 `DistributedDataParallel object has no attribute preprocess`, pull the repaired

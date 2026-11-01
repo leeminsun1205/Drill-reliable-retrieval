@@ -2532,6 +2532,38 @@ full-dev ratio is stored only as the deployment configuration; combination
 metrics in the table are assembled strictly from held-out OOF rankings. This
 offline search reuses saved component rankings and does not rerun encoding.
 
+Measured fixed-window cross-fitted update, 2026-11-02:
+
+| First-stage components | Evaluation/deployment weights | Precision@2 | Recall@2 | Macro-F2@2 | Recall@50 |
+|---|---:|---:|---:|---:|---:|
+| BM25 + VnCoreNLP | `1.00` | 0.2511 | 0.4297 | 0.3762 | 0.8348 |
+| VietLegal-Harrier | `1.00` | 0.3425 | 0.5808 | 0.5098 | 0.9256 |
+| multilingual-E5-large | `1.00` | 0.3174 | 0.5347 | 0.4703 | 0.9106 |
+| BM25 + Harrier | OOF fold-tuned; deploy `0.19/0.81` | 0.3482 | 0.5846 | 0.5147 | 0.9338 |
+| Harrier + E5-large | OOF fold-tuned; deploy `0.76/0.24` | 0.3539 | 0.5934 | 0.5227 | 0.9350 |
+| BM25 + Harrier + E5-large | OOF fold-tuned; deploy `0.15/0.65/0.20` | 0.3573 | 0.5951 | 0.5252 | 0.9387 |
+
+The cross-fitted full hybrid exceeds Harrier+E5 by `+0.0025` Macro-F2@2 and
+`+0.0037` Recall@50 and exceeds standalone Harrier by `+0.0154` Macro-F2@2 and
+`+0.0131` Recall@50. The selected full-dev deployment ratio is
+BM25/Harrier/E5 `0.15/0.65/0.20`; subset deployment ratios are its normalized
+projections. These small OOF point differences do not establish statistical
+significance without paired uncertainty analysis.
+
+This new ratio has not yet been used by the completed fixed-window end-to-end
+submissions. Those runs, including the measured multiclass–Ridge public/private
+scores `0.6933/0.6685`, used `0.15/0.55/0.30`. Therefore the leaderboard scores
+must remain attached to the historical ratio until a controlled end-to-end
+rerun changes only the first-stage weights.
+
+The end-to-end retuned submission uses the full-development deployment ratio,
+as required for public/private inference. Its downstream nested LightGBM and
+cardinality development metrics condition on a ratio selected using all 438
+development labels, so they are post-selection diagnostics rather than a fully
+nested estimate of the entire pipeline-selection procedure. The R3
+cross-fitted first-stage metrics remain the unbiased evidence for selecting the
+ratio; public/private labels remain reporting-only.
+
 ### Completed matched structure × reference factorial (Table R4)
 
 The controlled rerun is implemented in
