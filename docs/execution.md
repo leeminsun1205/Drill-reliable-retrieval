@@ -160,6 +160,10 @@ test data, model inputs, dense caches, and VnCoreNLP installation are excluded.
 Attach exactly one complete fixed/reference-off output to avoid ambiguous
 artifact discovery. The result archive is
 `/kaggle/working/table3_fixed_first_stage_ablation_results.tar.gz`.
+The setup cell explicitly adds the cloned repository's `src/` directory to the
+live kernel and imports `drill_ir` as a preflight. This is required because an
+editable install performed by a notebook shell subprocess does not reliably
+refresh the already-running Jupyter kernel's import path.
 
 ### Re-running report Table R4
 
