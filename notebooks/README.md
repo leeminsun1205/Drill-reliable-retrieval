@@ -49,6 +49,10 @@ and `scripts/`.
   final score-gap selection with a query-grouped, nested fold-safe learned
   prefix stopping policy. It retains score-gap, threshold, and top-2 outputs as
   controls and packages stopping provenance separately.
+- `kaggle_pool50_epoch1_lightgbm_prefix_utility_submission.ipynb`: lightweight
+  confirmatory cardinality experiment that reuses the completed stopping run's
+  frozen `enhanced_v2` rankings, scores prefixes `k=1..5` with a fold-safe Ridge
+  utility model, and produces separate public/private submission ZIPs.
 - `kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`: matched
   Table-R4 case-1 submission control using fixed 448/64 token windows,
   references disabled, checkpoint 1208, and a freshly fitted `enhanced_v2`

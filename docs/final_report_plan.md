@@ -12,18 +12,20 @@ WRRF `k=10` with BM25/Harrier/E5 weights `0.15/0.55/0.30`, pointwise MIL epoch
 1 checkpoint `1208`, and the 61-feature `enhanced_v2` LightGBM schema. Official
 feedback must not be used to alter this backbone.
 
-Measured official F2 as of 2026-10-31:
+Measured official F2 as of 2026-11-01:
 
 | Final policy | Public | Private |
 |---|---:|---:|
 | Fixed top 2 | 0.5989 | 0.5552 |
 | Threshold with fallback 2 | 0.6524 | **0.6054** |
 | Score gap | **0.6551** | 0.6047 |
+| Fold-safe learned stopping | **0.6672** | **0.6123** |
 
-Relative to LightGBM fixed top 2, threshold adds `0.0535/0.0502` and score gap
-adds `0.0562/0.0495` on public/private. Final-set selection is therefore the
-highest-priority remaining treatment. These test results are external
-confirmation, not tuning labels.
+Relative to LightGBM fixed top 2, learned stopping adds `0.0683/0.0571` on
+public/private. It also exceeds score gap by `0.0121/0.0076` and threshold by
+`0.0148/0.0069`. Final-set selection is therefore the largest successful
+measured treatment after the frozen ranking pipeline. These test results are
+external confirmation, not tuning labels.
 
 ## Required report tables
 

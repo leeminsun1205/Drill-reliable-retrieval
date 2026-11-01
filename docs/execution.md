@@ -1133,6 +1133,17 @@ public/private labels are never read. The experimental outputs are
 predeclared nested-OOF comparison supports the stopping policy; private scores
 remain final robustness evidence only.
 
+To run the single predeclared listwise alternative without repeating retrieval,
+reranking, or LightGBM, attach the completed stopping-notebook output and run
+`notebooks/submission/kaggle_pool50_epoch1_lightgbm_prefix_utility_submission.ipynb`.
+It consumes only the frozen `lightgbm_enhanced_v2` OOF/public/private rankings
+and persisted 438 development query IDs, then invokes
+`scripts/run_prefix_utility_submission.py` with
+`configs/listwise_prefix_utility.yaml`. The outputs are
+`public_lightgbm_prefix_utility_results.zip` and
+`private_lightgbm_prefix_utility_results.zip`. Inspect nested-OOF F2 before
+submitting either ZIP; do not tune Ridge alpha using public/private feedback.
+
 For the matched Table-R4 winner control, use
 `notebooks/submission/kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb`.
 It does not consume Table-R4 result artifacts. The notebook rebuilds

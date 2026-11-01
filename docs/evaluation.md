@@ -68,6 +68,15 @@ unbiased primary estimate. Select a replacement policy only from nested
 development results; public and private test scores remain reporting evidence
 and must never train or select the policy.
 
+The confirmatory listwise prefix-utility treatment uses those same frozen OOF
+rankings, outer query folds, seed, and maximum output size five. It fits a Ridge
+regressor with fixed `alpha=10` to the observed per-query F2 of every available
+prefix and selects the highest predicted-utility prefix, breaking ties toward
+smaller output. The alpha, target, and tie rule are fixed in
+`configs/listwise_prefix_utility.yaml`; public/private labels cannot select or
+modify them. Compare its concatenated outer-fold metrics directly with binary
+stopping before interpreting an official submission.
+
 ## Metrics
 
 The primary DRiLL-compatible metrics are Precision, Recall, and F2, aggregated

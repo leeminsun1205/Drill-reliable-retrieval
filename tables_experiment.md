@@ -269,7 +269,8 @@ adopting a new selector.
 | Nested raw threshold + fallback 2 | 0.499125 | **0.713052** | 0.656754 | 2.235 | 6 | Threshold candidate |
 | Nested score gap | **0.532344** | 0.699734 | **0.658333** |  | 3 | Current scientific estimate |
 | Logistic gold-cardinality predictor | 0.338128 | 0.732002 | 0.593688 | 3.397 | 5 | Rejected baseline |
-| Learned stopping policy |  |  |  |  |  | Pending |
+| Learned stopping policy |  |  |  |  | 5 | Nested-OOF values must be copied from the saved artifact; official results are in R8 |
+| Listwise prefix-utility Ridge |  |  |  |  | 5 | Predeclared confirmatory treatment; pending nested-OOF execution |
 | Oracle prefix through k=5 | 0.722793 | 0.794809 | 0.779280 | 1.610 | 5 | Upper bound only |
 
 Platt and isotonic calibrated thresholds both measured the same F2 `0.656754`
@@ -310,9 +311,10 @@ provided only F2 here.
 | This project, fixed top 2 | Codabench | 0.5989 |  |  | 0.5552 | Public 1022898; private 1022897 |
 | This project, threshold + fallback 2 | Codabench | 0.6524 |  |  | **0.6054** | Public 1021667; private 1021640 |
 | This project, score gap | Codabench | **0.6551** |  |  | 0.6047 | Public 1021732; private 1021639 |
+| This project, fold-safe learned stopping | Codabench | **0.6672** |  |  | **0.6123** | Public 1025830; private 1025816 |
 
 **Slide S5:** keep organizer two-stage, at most two published systems (normally
-ViDRILL and EDM), and the three project-policy rows. Do not display a project
+ViDRILL and EDM), and the four project-policy rows. Do not display a project
 rank because protocols and competition timing differ.
 
 **Source:** `docs/competition_review.md`, `docs/experiments.md`, detailed Tables

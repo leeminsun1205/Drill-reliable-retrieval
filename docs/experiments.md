@@ -2211,7 +2211,8 @@ launchers complete. Each control regenerates checkpoint-dependent development
 features and refits LightGBM. These controls must not replace the selected
 epoch-1 pipeline based on private-test feedback.
 
-The learned-stopping treatment is now implemented but remains unmeasured. It
+The learned-stopping treatment is implemented and its frozen public/private
+submissions were measured on Codabench on 2026-11-01. It
 uses the same checkpoint-1208 `enhanced_v2` OOF rankings as the existing final
 policy screen. Binary training rows represent prefix boundaries, with a target
 of continuing toward the best development prefix through `k=5`. Its features
@@ -2220,7 +2221,20 @@ and entropy, the current boundary, prefix/tail summaries, and cumulative
 softmax mass. Outer query folds estimate generalization; continue-threshold
 selection occurs only from inner cross-fitted probabilities. The deployment
 policy stores coefficients, feature scaling, threshold, seed, and input hashes
-as JSON. No gain is claimed until the notebook records its nested-OOF result.
+as JSON. Codabench F2 is `0.6672` on public (submission `1025830`) and `0.6123`
+on private (submission `1025816`). Its nested-OOF development metrics must still
+be copied from the saved stopping artifact before reporting that internal row;
+the leaderboard values do not substitute for fold-safe development evidence.
+
+The sole predeclared follow-up is listwise prefix utility, configured in
+`configs/listwise_prefix_utility.yaml`. It changes only cardinality selection:
+the frozen `enhanced_v2` ranking, 438 query IDs, five folds, seed 42, and
+maximum output five remain identical. A fixed-alpha Ridge model predicts the
+per-query F2 utility of every prefix and chooses the highest predicted value
+with a smaller-k tie break. The runner and lightweight submission notebook are
+`scripts/run_prefix_utility_submission.py` and
+`notebooks/submission/kaggle_pool50_epoch1_lightgbm_prefix_utility_submission.ipynb`.
+No result is claimed until its generated `nested_oof_metrics.json` is inspected.
 
 A separate fixed-window/reference-off submission launcher is implemented from
 the completed Table-R4 case-1 development artifact. It freezes checkpoint
@@ -2285,7 +2299,7 @@ in `docs/dataset.md` and the reference ablation still depend on them.
 
 ### Official pool-50 checkpoint-1208 LightGBM results
 
-Codabench returned the following official scores on 2026-10-30 for the frozen
+Codabench returned the following official scores through 2026-11-01 for the frozen
 `enhanced_v2` LightGBM submission pipeline. These are measured leaderboard
 scores supplied from completed submissions, not development estimates:
 
@@ -2297,21 +2311,31 @@ scores supplied from completed submissions, not development estimates:
 | Private | Pooled score-gap, maximum cutoffs `{3,4,5}` | 1021639 | 0.6047 |
 | Public | Fixed top 2 | 1022898 | 0.5989 |
 | Private | Fixed top 2 | 1022897 | 0.5552 |
+| Public | Fold-safe learned stopping | 1025830 | **0.6672** |
+| Private | Fold-safe learned stopping | 1025816 | **0.6123** |
 
 Score-gap leads threshold by `0.0027` on public, while threshold leads
 score-gap by `0.0007` on private. The ordering therefore does not transfer
 consistently and the private difference is negligible at the reported
 precision. The score-gap public result is close to its pre-recorded nested-OOF
 development estimate (`0.658333`, difference `-0.003233`), but its private
-score is lower by `0.053633`. Keep score-gap as the predeclared primary policy
-and threshold as the documented control; do not switch the selected method
-post hoc based on the private leaderboard.
+score is lower by `0.053633`. Score gap remains the historical predeclared
+control. Learned stopping may replace it as the final selected policy only when
+its saved nested-OOF result confirms the predeclared development comparison;
+the private leaderboard alone must not make that selection.
 
 Compared with LightGBM fixed top 2, threshold improves public/private F2 by
 `0.0535/0.0502`, and score gap improves it by `0.0562/0.0495`. This isolates
 final-set cardinality as the largest measured remaining decision boundary. The
 next experiment plan and required report tables are frozen in
 `docs/final_report_plan.md`.
+
+The subsequently frozen learned-stopping policy improves over score gap by
+`0.0121` public and `0.0076` private, and over threshold/fallback 2 by `0.0148`
+public and `0.0069` private. Relative to fixed top 2, its gains are
+`0.0683/0.0571`. The same direction on both hidden splits is stronger robustness
+evidence than the crossed threshold/score-gap ordering, but it is not permission
+to tune the stopping model on either leaderboard split.
 
 ### Controlled first-stage component ablation (Table R3)
 

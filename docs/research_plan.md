@@ -998,3 +998,23 @@ pointwise-finalist branch; that historical pipeline remains a frozen baseline,
 not a silently rewritten configuration. The next allowed feature-pruning step
 is one predeclared confirmatory reduced-schema comparison, not an open-ended
 search over individual fields.
+
+Measured update, 2026-11-01: the predeclared fold-safe learned stopping policy
+on the frozen pool-50 checkpoint-1208, `enhanced_v2` ranking scored `0.6672` on
+the Codabench public split (submission `1025830`) and `0.6123` on private
+(submission `1025816`). This exceeds the frozen score-gap control by
+`0.0121/0.0076` and threshold/fallback 2 by `0.0148/0.0069` on public/private.
+The consistent direction across both hidden splits supports the hypothesis that
+query-conditional prefix stopping improves cardinality selection. It does not
+authorize leaderboard tuning: select it for the final report only after copying
+and checking its saved nested-OOF development result and provenance from the
+stopping artifact.
+
+One and only one follow-up cardinality treatment is predeclared: a fold-safe
+listwise prefix-utility Ridge model with `alpha=10`, maximum `k=5`, per-query
+prefix-F2 regression targets, and smaller-prefix tie breaking. It reuses the
+identical `enhanced_v2` OOF rankings and five outer folds as learned stopping.
+Its purpose is to test whether simultaneous comparison of all prefixes avoids
+error propagation from sequential continue/stop decisions. Do not open a
+hyperparameter search or submit it based only on leaderboard expectations;
+nested-OOF must determine whether it merits external evaluation.

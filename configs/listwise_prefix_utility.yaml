@@ -1,0 +1,10 @@
+policy: fold_safe_listwise_prefix_utility
+seed: 42
+folds: 5
+maximum_k: 5
+estimator:
+  type: ridge
+  alpha: 10.0
+target: per_query_prefix_f2
+tie_break: smaller_k
+
