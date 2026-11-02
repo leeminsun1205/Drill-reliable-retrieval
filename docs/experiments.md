@@ -2600,6 +2600,15 @@ checkpoints plus checksummed mining, training provenance, and compact metrics
 artifacts. No quality result is recorded until a separate matched fixed-window
 checkpoint evaluation is run.
 
+For a stricter process boundary and faster retries,
+`notebooks/preparation/kaggle_prepare_fixed448_train_handoff.ipynb` can create
+that train-side handoff in a separate Kaggle run from the complete R3-retuned
+submission output. The handoff covers exactly the persisted seed-42 1,752-query
+train side and stores fused top-50 chunks at retrieval depth 100 plus its
+contract and checksums. When attached, the training notebook skips BM25 and
+both dense retrievers entirely and starts at teacher-only mining. This artifact
+is not a development evaluation handoff and contains no dev or test labels.
+
 The end-to-end retuned submission uses the full-development deployment ratio,
 as required for public/private inference. Its downstream nested LightGBM and
 cardinality development metrics condition on a ratio selected using all 438

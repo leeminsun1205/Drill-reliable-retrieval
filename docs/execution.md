@@ -911,6 +911,18 @@ reference-off handoff. Do not reuse
 `drill-dev-handoff-pool50-refon-articlemilv1`, whose contract belongs to the
 historical hierarchical/reference-on treatment.
 
+To avoid loading the dense retrievers again during fine-tuning, first run
+`notebooks/preparation/kaggle_prepare_fixed448_train_handoff.ipynb`. Attach the
+complete R3-retuned fixed-window submission notebook output plus Harrier and
+multilingual-E5. This preparation-only notebook reuses its four caches, encodes
+the 1,752 train-side queries, and writes
+`fixed448_train_retrieval_handoff.tar.gz`; it performs neither teacher scoring
+nor training. Attach that output to the three-epoch fine-tuning notebook. The
+fine-tuning notebook verifies the handoff contract and SHA-256 values, skips all
+sparse/dense cache and model discovery, starts directly with the teacher phase,
+and then trains. The Vietnamese reranker warm start remains required because it
+is both the mining teacher and the adaptation initialization.
+
 Before committing GPU hours to the full corpus, run
 `notebooks/archive/diagnostics/kaggle_smoke_finetune_reranker.ipynb`. It uses one synthetic query,
 one positive, five negatives, one GPU, and one optimizer step. Passing verifies
