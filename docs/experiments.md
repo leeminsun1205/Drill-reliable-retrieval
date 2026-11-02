@@ -2280,6 +2280,28 @@ the submission manifest have been written. These lifecycle changes are
 output-invariant; the frozen reranker batch remains 256 and no fallback batch or
 model substitution is introduced.
 
+### New fixed-window epoch-1 checkpoint submission (planned execution)
+
+`notebooks/submission/kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_multiclass_ridge_submission.ipynb`
+is copied from the fixed-window/reference-off submission runner and preserves
+its selected R3-retuned retrieval weights (BM25/Harrier/E5 `0.15/0.65/0.20`),
+pool 50, `enhanced_v2` LightGBM, and confirmatory multiclass–Ridge final-set
+policy. It replaces checkpoint `1208` with the newly trained fixed-window
+epoch-1 checkpoint `1234`. Before inference it validates the checkpoint
+manifest, the five-epoch scheduler horizon, and the matching fixed-window
+448/64, reference-off, seed-42 pointwise-MIL mining treatment from the attached
+three-epoch training notebook output. It then rebuilds/refits all checkpoint-
+dependent development, test inference, LightGBM, and final-set policy stages.
+
+On completion, its `_complete_results.tar.gz` artifact includes the entire
+development run, public/private retrieval and reranker artifacts, LightGBM
+feature matrices and OOF results/model, all final-set policy outputs and
+submission ZIPs, and checkpoint/provenance metadata with hashes. Model weights
+remain in the attached training notebook output and are identified by the saved
+checkpoint metadata; no leaderboard result is claimed until this run and the
+official evaluation finish. The previous checkpoint-1208 notebook is retained
+unchanged as the measured reference.
+
 ### Repository artifact cleanup
 
 The 2026-10-30 final cleanup leaves only three current notebook entry points:
@@ -2657,7 +2679,7 @@ so there is no meaningful interaction in these point estimates. These rows were
 supplied from the completed notebook on 2026-11-01; result-archive ingestion,
 split-hash verification, and paired uncertainty remain pending.
 
-### Fixed-window three-epoch checkpoint evaluation (prepared)
+### Fixed-window three-epoch checkpoint evaluation
 
 `notebooks/experiments/reranking/kaggle_evaluate_fixed448_pool50_3epochs.ipynb`
 evaluates the Vietnamese reranker warm start and pointwise-MIL checkpoints at
@@ -2677,8 +2699,134 @@ feature matrix and labels, query-fold assignment, OOF candidate probabilities
 and rankings, threshold/score-gap metrics, feature importance, and final
 all-dev LightGBM model. These artifacts support later selection-policy
 experiments without repeating retrieval, reranking, feature construction, or
-LightGBM. The notebook does not access public/private splits. Results are
-pending execution; no metric is claimed here. Reranking uses packed-stream
-inference batches of 64 in fresh sequential processes to leave headroom on the
-Kaggle T4 GPUs. The training notebook remains the source of checkpoint weights;
-this evaluation bundle does not duplicate the large model files.
+LightGBM. The notebook does not access public/private splits. Reranking uses
+packed-stream inference batches of 64 in fresh sequential processes to leave
+headroom on the Kaggle T4 GPUs. The training notebook remains the source of
+checkpoint weights; this evaluation bundle does not duplicate the large model
+files.
+
+The project owner supplied the completed `checkpoint_scoreboard.csv` results on
+2026-11-02. All four models use the same 438-query development candidate pool.
+Fixed top-2 is the checkpoint-selection metric; the threshold/fallback-2 rows
+are a reranker-only diagnostic whose threshold was tuned on this same dev set.
+They are not an independent test estimate and do not include LightGBM.
+
+| Model | Policy | Precision | Recall | Macro-F2 |
+|---|---|---:|---:|---:|
+| Epoch 3 | Fixed top-2 | 0.420091 | 0.695852 | **0.615098** |
+| Epoch 2 | Fixed top-2 | 0.413242 | 0.688949 | 0.607841 |
+| Epoch 1 | Fixed top-2 | 0.406393 | 0.675875 | 0.596735 |
+| Warm start | Fixed top-2 | 0.399543 | 0.662253 | 0.585285 |
+| Epoch 3 | Dev threshold + fallback 2 | 0.553599 | 0.685959 | **0.654655** |
+| Epoch 2 | Dev threshold + fallback 2 | 0.506274 | 0.698021 | 0.648870 |
+| Warm start | Dev threshold + fallback 2 | 0.508103 | 0.686035 | 0.641132 |
+| Epoch 1 | Dev threshold + fallback 2 | 0.549087 | 0.665601 | 0.638504 |
+
+The remaining fixed-cutoff diagnostics from the same scoreboard are:
+
+| Model | Cutoff | Precision | Recall | Macro-F2 |
+|---|---:|---:|---:|---:|
+| Epoch 3 | 1 | 0.657534 | 0.564003 | **0.580518** |
+| Epoch 2 | 1 | 0.652968 | 0.558486 | 0.575129 |
+| Epoch 1 | 1 | 0.646119 | 0.554110 | 0.570354 |
+| Warm start | 1 | 0.634703 | 0.543836 | 0.559866 |
+| Epoch 3 | 3 | 0.302131 | 0.741726 | **0.574538** |
+| Epoch 2 | 3 | 0.298326 | 0.732594 | 0.567402 |
+| Warm start | 3 | 0.296804 | 0.727511 | 0.563861 |
+| Epoch 1 | 3 | 0.294521 | 0.724337 | 0.560686 |
+| Epoch 3 | 4 | 0.239155 | 0.774261 | **0.534897** |
+| Epoch 2 | 4 | 0.238014 | 0.772929 | 0.533245 |
+| Warm start | 4 | 0.233447 | 0.752816 | 0.520996 |
+| Epoch 1 | 4 | 0.231735 | 0.755730 | 0.520390 |
+| Epoch 3 | 5 | 0.199087 | 0.801658 | **0.499371** |
+| Epoch 2 | 5 | 0.197260 | 0.796657 | 0.495519 |
+| Warm start | 5 | 0.195434 | 0.784915 | 0.489576 |
+| Epoch 1 | 5 | 0.193607 | 0.779588 | 0.485625 |
+| Epoch 3 | 30 | 0.0404 | 0.9270 | **0.1719** |
+| Epoch 2 | 30 | 0.0402 | 0.9240 | 0.1713 |
+| Epoch 1 | 30 | 0.0400 | 0.9214 | 0.1704 |
+| Model not fine-tuned | 30 | 0.0395 | 0.9124 | 0.1682 |
+
+Epoch 3 leads the predeclared fixed-top-2 gate, improving Macro-F2 by `0.029813`
+over the model that has not been fine-tuned. It also leads each fixed cutoff
+from top-1 through top-5 and the reported top-30 diagnostic. Top-30 is the
+closest fixed cutoff to the mean 30.5 article candidates/query passed to
+LightGBM; actual LightGBM input is the full variable-length list, up to 50.
+Its dev-tuned threshold/fallback-2 diagnostic reaches
+Macro-F2 `0.654655`; this is a different output-cardinality policy on the same
+development queries, so it must not replace fixed top-2 for checkpoint
+selection or be presented as an unbiased estimate. These values are
+owner-reported from the completed notebook; archive/hash ingestion remains
+pending.
+
+The same notebook also refit the documented LightGBM treatment separately for
+each checkpoint. This is a downstream ablation and is not the reranker-only
+checkpoint-selection table above. The project owner supplied these additional
+results on 2026-11-02:
+
+For this evaluation, LightGBM receives every article in the cross-encoder's
+reranked candidate list, not merely the final top-2. The list contains at most
+50 unique article IDs per query because the reranker starts from a 50-chunk
+pool; the artifact contains 13,348 query/article rows over 438 queries
+(approximately 30.5 candidates per query). A `lightgbm_top_2` policy means
+LightGBM returns two articles after scoring all those candidates; it describes
+output cardinality, not LightGBM input depth. The reranker-only fixed-top-2
+table therefore isolates that stage but is not, by itself, an end-to-end
+checkpoint selection result.
+
+`notebooks/experiments/reranking/kaggle_summarize_fixed448_pool50_3epoch_lgbm_depth.ipynb`
+reads the saved
+`fixed448_pool50_refoff_3epoch_checkpoint_eval_results.tar.gz` archive. It
+validates that each saved LightGBM feature row covers the full reranked
+`(qid, aid, rank)` list and exports the reranker cutoff metrics, actual input
+depth summary, and LightGBM policy metrics. Its cutoff-50 reranker row is a
+full-pool return diagnostic, not a measure of rank ordering; smaller cutoffs
+show the quality of the top of the ranking.
+
+| Model | LightGBM policy | Precision | Recall | Macro-F2 |
+|---|---|---:|---:|---:|
+| Epoch 1 | Dev threshold + fallback 2 | 0.510611 | 0.758013 | **0.691047** |
+| Epoch 2 | Dev threshold + fallback 2 | 0.550342 | 0.720852 | 0.678791 |
+| Model not fine-tuned | Dev threshold + fallback 2 | 0.506148 | 0.729338 | 0.670229 |
+| Epoch 3 | Dev threshold + fallback 2 | 0.471521 | 0.739612 | 0.664095 |
+| Epoch 3 | Nested-OOF score-gap | 0.564307 | 0.719635 | **0.682086** |
+| Epoch 2 | Nested-OOF score-gap | 0.571537 | 0.713737 | 0.679904 |
+| Epoch 1 | Nested-OOF score-gap | 0.559361 | 0.712976 | 0.675854 |
+| Model not fine-tuned | Nested-OOF score-gap | 0.516743 | 0.698326 | 0.652470 |
+| Epoch 3 | Pooled-OOF score-gap, dev-tuned | 0.557078 | 0.733904 | **0.690094** |
+| Epoch 2 | Pooled-OOF score-gap, dev-tuned | 0.561263 | 0.726674 | 0.686226 |
+| Epoch 1 | Pooled-OOF score-gap, dev-tuned | 0.551370 | 0.718303 | 0.677291 |
+| Model not fine-tuned | Pooled-OOF score-gap, dev-tuned | 0.528539 | 0.706887 | 0.662197 |
+
+| Model | LightGBM fixed cutoff | Precision | Recall | Macro-F2 |
+|---|---:|---:|---:|---:|
+| Epoch 2 | Top-1 | 0.678082 | 0.581126 | **0.598234** |
+| Epoch 3 | Top-1 | 0.671233 | 0.579604 | 0.595873 |
+| Epoch 1 | Top-1 | 0.668950 | 0.574658 | 0.591328 |
+| Model not fine-tuned | Top-1 | 0.652968 | 0.561720 | 0.577871 |
+| Epoch 1 | Top-2 | 0.426941 | 0.701696 | **0.621680** |
+| Epoch 2 | Top-2 | 0.423516 | 0.699413 | 0.618791 |
+| Epoch 3 | Top-2 | 0.413242 | 0.691857 | 0.609650 |
+| Model not fine-tuned | Top-2 | 0.408676 | 0.682725 | 0.601989 |
+| Epoch 2 | Top-3 | 0.312785 | 0.767335 | **0.594536** |
+| Epoch 3 | Top-3 | 0.311263 | 0.766194 | 0.592886 |
+| Epoch 1 | Top-3 | 0.306697 | 0.749070 | 0.581362 |
+| Model not fine-tuned | Top-3 | 0.301370 | 0.734611 | 0.570565 |
+| Epoch 2 | Top-4 | 0.247146 | 0.798728 | **0.552233** |
+| Epoch 3 | Top-4 | 0.245434 | 0.796902 | 0.549822 |
+| Epoch 1 | Top-4 | 0.240297 | 0.775593 | 0.536546 |
+| Model not fine-tuned | Top-4 | 0.240868 | 0.773690 | 0.536384 |
+| Epoch 2 | Top-5 | 0.203653 | 0.814596 | **0.509127** |
+| Epoch 3 | Top-5 | 0.202740 | 0.817069 | 0.508752 |
+| Model not fine-tuned | Top-5 | 0.200913 | 0.803941 | 0.502373 |
+| Epoch 1 | Top-5 | 0.199087 | 0.801277 | 0.499253 |
+
+This is not a contradiction: the first table scores the cross-encoder ranking
+alone, while these rows score a separately refit LightGBM plus a specified
+output policy. Epoch 1 leads the LightGBM fixed top-2 and dev-threshold rows;
+epoch 3 leads the nested and pooled OOF score-gap rows; epoch 2 leads several
+other fixed cutoffs. The best checkpoint therefore depends on the declared
+downstream objective. Keep the fixed-top-2 reranker result as the isolated
+reranker ablation, and report LightGBM results separately with their policy and
+validation protocol. All are development results, not private-test estimates;
+archive/hash ingestion remains pending.

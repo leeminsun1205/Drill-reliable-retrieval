@@ -174,9 +174,12 @@ selection separate from evaluation while avoiding another corpus encode.
 | Dense 1 + Dense 2 | OOF fold-tuned; deploy `0.76 / 0.24` | 0.3539 | 0.5934 | 0.5227 | 0.9350 |
 | **BM25 + Dense 1 + Dense 2** | OOF fold-tuned; deploy `0.15 / 0.65 / 0.20` | **0.3573** | **0.5951** | **0.5252** | **0.9387** |
 
-**Slide S2:** use these six rows with Method, Macro-F2@2, and Recall@50. The
-row order communicates the component-building logic, not a guaranteed
-monotonic progression.
+**Slide S2:** show all six rows with Precision@2, Recall@2, Macro-F2@2, and
+Recall@50. Omit the weight column to keep the table legible; add a short note
+below the table with deployment ratios for the three combinations only. The
+first three rows are standalone retrievers. Combination scores remain the
+five-fold cross-fitted estimates. The row order communicates the
+component-building logic, not a guaranteed monotonic progression.
 
 **Source:** matched fixed-window rerun supplied on 2026-11-02. Combination rows
 are five-fold cross-fitted; all rows use the same saved component rankings and

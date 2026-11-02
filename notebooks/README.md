@@ -82,6 +82,13 @@ and `scripts/`.
   `0.15/0.55/0.30`. It reuses compatible retrieval caches, reruns affected
   downstream stages, refits `enhanced_v2`, and produces confirmatory
   multiclass–Ridge submissions in the same reproducibility bundle.
+- `kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_multiclass_ridge_submission.ipynb`:
+  new-checkpoint end-to-end counterpart to the fixed/reference-off submission
+  runner. It resolves and validates epoch-1 checkpoint `1234` from the attached
+  fixed-window three-epoch training notebook output, refits development,
+  public/private reranking, `enhanced_v2`, and multiclass–Ridge policy stages,
+  and packages the full reusable stage outputs and provenance. It does not
+  modify the earlier checkpoint-1208 submission notebook.
 
 ## Non-primary notebooks
 
