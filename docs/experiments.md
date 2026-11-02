@@ -2656,3 +2656,19 @@ slightly reducing final F2. The F2 difference-in-differences is about `0.0002`,
 so there is no meaningful interaction in these point estimates. These rows were
 supplied from the completed notebook on 2026-11-01; result-archive ingestion,
 split-hash verification, and paired uncertainty remain pending.
+
+### Fixed-window three-epoch checkpoint evaluation (prepared)
+
+`notebooks/experiments/reranking/kaggle_evaluate_fixed448_pool50_3epochs.ipynb`
+evaluates the Vietnamese reranker warm start and pointwise-MIL checkpoints at
+global steps 1234, 2471, and 3709. It validates each checkpoint manifest
+against its epoch, objective, seeded-cycle passage sampling, four-passage cap,
+and five-epoch scheduler horizon. One seed-42, 438-query dev retrieval handoff
+is generated with fixed token windows 448/64, references off, pool 50, and
+WRRF10 BM25/Harrier/E5 weights 0.15/0.65/0.20; all four models are scored on
+that identical handoff. Exact fixed-window caches are reused when attached;
+otherwise retrieval/cache construction runs once. The notebook reports fixed
+top-k results plus a descriptive threshold tuned on dev labels. It does not
+access public/private splits. Results are pending execution; no metric is
+claimed here. Reranking uses packed-stream inference batches of 64 in fresh
+sequential processes to leave headroom on the Kaggle T4 GPUs.

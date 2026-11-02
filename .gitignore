@@ -34,5 +34,9 @@ venv/
 # commit selected small artifacts explicitly with `git add -f`.
 /results/*
 
+# Slides: keep only rendered PDFs visible to Git
+/slides/*
+!/slides/*.pdf
+
 # Notebook state
 .ipynb_checkpoints/
