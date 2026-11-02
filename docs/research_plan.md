@@ -1105,17 +1105,36 @@ test rankings; do not tune that choice from the private improvement.
 The policy-matched run completed on 2026-11-02. Fixed-window balanced
 multiclass scored `0.6833/0.6677` public/private (`1026181/1026178`), compared
 with hierarchical multiclass `0.6847/0.6368`. Fixed-window multiclass–Ridge
-scored `0.6933/0.6685` (`1026176/1026175`), the highest measured project pair.
+scored `0.6933/0.6685` (`1026176/1026175`), the then-highest historical-WRRF
+project pair.
 Because the ensemble's gain over fixed multiclass is asymmetric
 (`+0.0100/+0.0008`), select it only if the fixed run's predeclared nested-OOF
 comparison also ranks it first. Regardless of policy, the matched evidence now
 supports fixed 448/64, reference-off as the more robust representation.
+
+R3-retuned fixed-window update, 2026-11-02: five-fold cross-fitted first-stage
+selection chose the full-development WRRF deployment ratio BM25/Harrier/E5
+`0.15/0.65/0.20`. Refitting the complete fixed/reference-off pipeline and the
+same confirmatory policy family produced multiclass–Ridge nested-OOF
+Precision/Recall/F2 `0.5449/0.7280/0.6822`, mean output size `2.3584`, and
+deployment `lambda_multiclass=0.5`. Public/private Macro-F2 reached
+`0.7055/0.6735` (submissions `1026275/1026274`), improving over the historical
+WRRF Ridge run by `+0.0122/+0.0050`. The fusion ratio was selected without
+public/private labels; hidden scores are reporting-only confirmation.
 
 Interpretation boundary: epoch-1 checkpoint 1208 was trained with article-level
 supervision on hierarchical Khoản–Điểm chunk bags, not fixed-window bags. The
 fixed pipeline changes the chunks scored at inference while deliberately
 holding the neural checkpoint constant. This supports fixed-window robustness
 and cross-representation transfer, but a claim about fixed-window supervised
-training would require a separate retraining ablation. That retraining is not
-required for the final report and should not be opened with the presentation
-deadline approaching.
+training requires a separate retraining ablation.
+
+That ablation is now implemented, but remains unmeasured, in
+`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs.ipynb`. It
+keeps pool 50, seed 42, WRRF10, the false-negative-aware article-bag mining
+policy, pointwise MIL BCE, four cycled passages per bag, pair length 512,
+effective batch 16, and learning rate `2e-5`. It changes only the intended
+upstream treatment to fixed token windows 448/64, references off, and the
+cross-fitted R3 deployment weights BM25/Harrier/E5 `0.15/0.65/0.20`, then runs
+three adaptation epochs. The notebook is a follow-up rather than a prerequisite
+for the existing final result.

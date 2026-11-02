@@ -9,7 +9,7 @@ labels in `tables_experiment.md` govern report assembly.
 
 The selected representation is fixed token windows 448/64 with reference
 expansion disabled. The frozen neural/retrieval backbone retains pool 50, WRRF
-`k=10` with BM25/Harrier/E5 weights `0.15/0.55/0.30`, pointwise MIL epoch-1
+`k=10` with cross-fitted R3 BM25/Harrier/E5 weights `0.15/0.65/0.20`, pointwise MIL epoch-1
 checkpoint `1208`, and the 61-feature `enhanced_v2` LightGBM schema. This
 representation was selected by the R2 dense screen and matched R4 nested-OOF
 comparison, not private feedback. Checkpoint 1208 was trained on hierarchical
@@ -30,7 +30,8 @@ Measured official F2 as of 2026-11-02:
 | Multiclass–Ridge ensemble (`lambda=0.75`) | 0.6863 | 0.6354 |
 | Fixed 448/64, ref-off, score gap | 0.6739 | 0.6580 |
 | Fixed 448/64, ref-off, balanced multiclass | 0.6833 | 0.6677 |
-| Fixed 448/64, ref-off, multiclass–Ridge | **0.6933** | **0.6685** |
+| Fixed 448/64, ref-off, multiclass–Ridge, historical WRRF | 0.6933 | 0.6685 |
+| Fixed 448/64, ref-off, multiclass–Ridge, R3-retuned WRRF | **0.7055** | **0.6735** |
 
 Relative to LightGBM fixed top 2, learned stopping adds `0.0683/0.0571` on
 public/private. It also exceeds score gap by `0.0121/0.0076` and threshold by
@@ -44,11 +45,18 @@ nested-OOF development evidence rather than this private ordering.
 
 On the historical hierarchical ranking, the closed nested screen selected
 balanced multiclass logistic and that ordering transferred to both hidden
-splits. On the selected fixed-window ranking, balanced multiclass reached
-`0.6833/0.6677`, while multiclass–Ridge reached the best measured project pair
-`0.6933/0.6685`. The final policy label must follow the fixed run's saved
-nested-OOF ordering; hidden scores are confirmation rather than a selection
-signal.
+splits. On fixed windows with historical WRRF weights, multiclass–Ridge reached
+`0.6933/0.6685`. After cross-fitted R3 selection changed BM25/Harrier/E5 to
+`0.15/0.65/0.20`, the same confirmatory family reached nested-OOF F2 `0.6822`
+and the best measured project public/private pair `0.7055/0.6735`. Fusion and
+policy choices follow development evidence; hidden scores are confirmation
+rather than a selection signal.
+
+The retuned Ridge result is recall-oriented: compared with the historical-WRRF
+Ridge dev result, precision changes `0.5690 → 0.5449`, recall
+`0.7014 → 0.7280`, mean output size `2.176 → 2.358`, and Macro-F2
+`0.6702 → 0.6822`. Report this trade-off rather than claiming every stage or
+metric improved.
 
 On the historical hierarchical ranking, the confirmatory ensemble improved
 nested-OOF by only `0.000340` and public by

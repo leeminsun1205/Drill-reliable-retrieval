@@ -3,7 +3,7 @@
 ## Usage contract
 
 This file contains exactly nine report tables for the 15-page final report.
-Five of them are also used in the presentation as reduced views. There are no
+Four of them are also used in the presentation as reduced views. There are no
 slide-only result tables: every number shown on slides must already appear in
 the corresponding report table.
 
@@ -16,11 +16,11 @@ specifications, and all 21 source tables are retained in
 | R1. Dataset and evaluation setting | Yes | No | Show dataset scale as large-number callouts, not a table |
 | R2. Chunk representation for dense legal retrieval | Yes | Yes — S1 | Keep Article, Khoản, Khoản–Điểm, and selected Token window rows; retain Macro-F2 and Recall@100 |
 | R3. First-stage retrieval selection | Yes | Yes — S2 | Show the six controlled component combinations; retain Macro-F2 and Recall@50 |
-| R4. Structure and cross-reference ablation | Yes | Yes — S3 | Keep the four factorial rows and Macro-F2; if incomplete, show candidate-recall gate with limitation |
-| R5. Reranker adaptation and candidate budget | Yes | No | Supporting checkpoint-selection detail; feed its winner into S4 |
-| R6. LightGBM feature design | Yes | No | Supporting learning-to-rank detail; feed its winner into S4 |
-| R7. Final-set decision policy | Yes | Yes — S4 | Keep fixed top 2, raw threshold, score gap, and oracle; combine with selected R5/R6 milestones |
-| R8. Official benchmark and hidden-split robustness | Yes | Yes — S5 | Keep organizer baseline, at most two published systems, and three project policies |
+| R4. Structure and cross-reference ablation | Yes | No | Keep as report-only negative-result evidence; do not spend slide space on the factorial table |
+| R5. Reranker adaptation and candidate budget | Yes | No | Supporting checkpoint-selection detail; feed its winner into S3 |
+| R6. LightGBM feature design | Yes | No | Supporting learning-to-rank detail; feed its winner into S3 |
+| R7. Final-set decision policy | Yes | Yes — S3 | Keep fixed top 2, raw threshold, score gap, and oracle; combine with selected R5/R6 milestones |
+| R8. Official benchmark and hidden-split robustness | Yes | Yes — S4 | Keep organizer baseline, at most two published systems, and three project policies |
 | R9. Error attribution and computational cost | Yes | No | Show as a failure funnel or examples rather than a dense slide table |
 
 Blank cells are intentional and mean that the controlled experiment or
@@ -191,7 +191,7 @@ end-to-end rerun.
 
 ## R4. Structure and Cross-Reference Ablation
 
-**Use:** `REPORT + SLIDES` (`S3`)
+**Use:** `REPORT ONLY`
 
 **Question.** Do structure-aware chunks and deterministic same-document legal
 references independently improve the strong retrieval/reranking pipeline?
@@ -220,10 +220,6 @@ windows and `0.0136` for hierarchical chunks, but reduce nested Macro-F2 by
 `0.0012` and `0.0014`. The difference-in-differences is only about `0.0002`, so
 the point estimates provide no meaningful structure/reference interaction.
 Paired uncertainty remains required before claiming significance.
-
-**Slide S3:** show the four completed cells and highlight that graph expansion
-improves candidate recall but not final F2, while fixed windows are consistently
-stronger under both graph settings.
 
 **Source:** complete user-executed Table-R4 notebook rows reported on 2026-11-01;
 independent archive/hash ingestion remains pending. Detailed Tables 8 and 9 in
@@ -286,7 +282,7 @@ in `tables_experiment_catalog.md`.
 
 ## R7. Final-Set Decision Policy Comparison
 
-**Use:** `REPORT + SLIDES` (`S4`)
+**Use:** `REPORT + SLIDES` (`S3`)
 
 **Question.** Given one frozen LightGBM ranking, how should the system choose
 the number of returned articles per query?
@@ -321,7 +317,7 @@ The multiclass winner exceeds tuned Ridge by only `0.000887` F2. Its exact-k,
 under-selection, and over-selection rates are `0.4840/0.1301/0.3858`; higher
 over-selection is consistent with the recall-weighted F2 objective.
 
-**Slide S4:** show four milestones: reranker fixed top 2 (`0.579928`, from R5),
+**Slide S3:** show four milestones: reranker fixed top 2 (`0.579928`, from R5),
 LightGBM fixed top 2 (`0.594233`, from R6), nested threshold (`0.656754`), and
 nested score gap (`0.658333`). Clearly label this as pipeline storytelling, not
 a single-variable ablation.
@@ -333,7 +329,7 @@ a single-variable ablation.
 
 ## R8. Official Benchmark and Hidden-Split Robustness
 
-**Use:** `REPORT + SLIDES` (`S5`)
+**Use:** `REPORT + SLIDES` (`S4`)
 
 **Question.** How does the frozen project pipeline compare with published DRiLL
 systems, and are its policy results stable across public/private splits?
@@ -365,9 +361,10 @@ provided only F2 here.
 | This project, fixed 448/64, ref-off, threshold | Codabench | 0.6669 |  |  | 0.6520 | Public 1026162; private 1026154; matched R4 case 1 |
 | This project, fixed 448/64, ref-off, score gap | Codabench | 0.6739 |  |  | **0.6580** | Public 1026161; private 1026153; policy differs from multiclass |
 | This project, fixed 448/64, ref-off, multiclass | Codabench | 0.6833 |  |  | 0.6677 | Public 1026181; private 1026178; policy-matched control |
-| This project, fixed 448/64, ref-off, multiclass–Ridge | Codabench | **0.6933** |  |  | **0.6685** | Public 1026176; private 1026175; final choice requires fixed nested OOF |
+| This project, fixed 448/64, ref-off, multiclass–Ridge, historical WRRF | Codabench | 0.6933 |  |  | 0.6685 | Public 1026176; private 1026175; WRRF `0.15/0.55/0.30` |
+| **This project, fixed 448/64, ref-off, multiclass–Ridge, R3-retuned WRRF** | Codabench | **0.7055** |  |  | **0.6735** | Public 1026275; private 1026274; WRRF `0.15/0.65/0.20`, selected from cross-fitted dev R3 |
 
-**Slide S5:** keep organizer two-stage, at most two published systems (normally
+**Slide S4:** keep organizer two-stage, at most two published systems (normally
 ViDRILL and EDM), and the four project-policy rows. Do not display a project
 rank because protocols and competition timing differ.
 
@@ -418,10 +415,8 @@ Slides must reuse report values, not introduce new calculations:
 1. **S1 from R2:** four chunking rows; Macro-F2 and Recall@100 only.
 2. **S2 from R3:** six controlled first-stage component rows; Macro-F2 and
    Recall@50 only; do not imply monotonic gains.
-3. **S3 from R4:** four factorial rows when complete; otherwise the explicitly
-   labelled reference recall gate.
-4. **S4 from R5–R7:** four pipeline milestones; label non-causal progression.
-5. **S5 from R8:** organizer two-stage, up to two published systems, and three
+3. **S3 from R5–R7:** four pipeline milestones; label non-causal progression.
+4. **S4 from R8:** organizer two-stage, up to two published systems, and three
    project policies.
 
 Any later correction to a result must be made in the report table first, then

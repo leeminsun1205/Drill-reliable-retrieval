@@ -2442,15 +2442,17 @@ The existing multiclass confirmatory notebook supports that matched control
 without changing its policy configuration. It resolves the development split
 from the LightGBM `dev_run_dir` provenance instead of assuming the historical
 `selected_reranker_dev_run` directory. Run it with exactly one fixed-window
-notebook output and treat only unchanged `baseline_multiclass` as the
-policy-matched comparison; the other two cases remain rejected controls.
+notebook output. Initially, unchanged `baseline_multiclass` was the primary
+policy-matched control; the subsequent fixed-window nested result selected the
+multiclass–Ridge ensemble, so it is no longer a rejected control in this
+representation.
 
 Measured policy-matched fixed-window update, 2026-11-02: unchanged balanced
 multiclass scored public/private F2 `0.6833/0.6677` (submissions
 `1026181/1026178`). Relative to hierarchical balanced multiclass
 `0.6847/0.6368`, this is `-0.0014/+0.0309`: essentially unchanged public and a
 large private gain. Fixed-window multiclass–Ridge scored `0.6933/0.6685`
-(`1026176/1026175`), the highest measured project scores on both hidden splits;
+(`1026176/1026175`), the then-highest historical-WRRF project scores on both hidden splits;
 it improves over fixed multiclass by `0.0100/0.0008`. This hidden-split
 agreement is encouraging, but the final policy must follow the fixed run's
 saved nested-OOF ordering in `summary.json` and `selected_by_nested_oof.json`,
@@ -2550,11 +2552,53 @@ BM25/Harrier/E5 `0.15/0.65/0.20`; subset deployment ratios are its normalized
 projections. These small OOF point differences do not establish statistical
 significance without paired uncertainty analysis.
 
-This new ratio has not yet been used by the completed fixed-window end-to-end
-submissions. Those runs, including the measured multiclass–Ridge public/private
-scores `0.6933/0.6685`, used `0.15/0.55/0.30`. Therefore the leaderboard scores
-must remain attached to the historical ratio until a controlled end-to-end
-rerun changes only the first-stage weights.
+The earlier fixed-window submissions, including the multiclass–Ridge
+public/private scores `0.6933/0.6685`, used `0.15/0.55/0.30`; those scores remain
+attached to the historical ratio. The controlled end-to-end rerun below changes
+the first-stage weights and refits every affected downstream stage.
+
+That controlled rerun completed on 2026-11-02. With R3-retuned WRRF
+BM25/Harrier/E5 `0.15/0.65/0.20`, the confirmatory multiclass–Ridge ensemble
+obtained nested-OOF Precision `0.544939`, Recall `0.728006`, Macro-F2
+`0.682172`, and mean output size `2.358447`; deployment selected
+`lambda_multiclass=0.5`. Balanced multiclass reached nested-OOF F2 `0.678279`,
+while cost-sensitive multiclass reached `0.560718`, so Ridge is the
+development-selected policy for this run. Its public/private Macro-F2 was
+`0.7055/0.6735` (submissions `1026275/1026274`), versus `0.6933/0.6685` for the
+historical-ratio Ridge run: `+0.0122/+0.0050`. This is the highest measured
+project pair. The ratio was selected from cross-fitted R3 development evidence,
+not from either hidden split.
+
+Relative to the historical-ratio Ridge development result
+(`0.568950/0.701446/0.670230`, mean output `2.175799`), the retuned run lowers
+precision by `0.024011` but raises recall by `0.026560`, raises Macro-F2 by
+`0.011942`, and increases mean output size by `0.182648`. The final gain is
+therefore recall-oriented and consistent with the DRiLL F2 objective; it should
+not be described as a uniform improvement of every intermediate metric.
+
+### Fixed-window matched reranker adaptation (planned execution)
+
+`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs.ipynb`
+implements the missing matched-supervision control. It is derived from the
+successful pool-50 pointwise-MIL workflow rather than from the failed grouped
+trainer. The frozen retrieval/mining contract is fixed token windows 448/64,
+reference expansion off, WRRF10, and BM25/Harrier/E5 weights
+`0.15/0.65/0.20`; the seed-42 split still excludes all 438 development queries
+from mining. The training objective and optimizer protocol remain pointwise
+MIL BCE, seeded four-passage cycling, maximum passage-logit aggregation,
+sequence length 512, two-GPU effective batch 16, learning rate `2e-5`, and
+three epochs.
+
+The notebook requires verified fixed-window BM25, shared chunk, Harrier, and
+multilingual-E5 caches and the Vietnamese warm-start checkpoint. It creates a
+fresh train-side retrieval handoff internally only to isolate retrieval memory
+from the teacher process. It deliberately does not require a development
+handoff and does not evaluate checkpoints: a former run had already saved all
+models before a stale reference-on handoff contract made its optional
+post-training cell fail. Completion is now defined by three loadable epoch
+checkpoints plus checksummed mining, training provenance, and compact metrics
+artifacts. No quality result is recorded until a separate matched fixed-window
+checkpoint evaluation is run.
 
 The end-to-end retuned submission uses the full-development deployment ratio,
 as required for public/private inference. Its downstream nested LightGBM and

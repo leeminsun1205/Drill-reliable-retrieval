@@ -879,6 +879,38 @@ corpus cache. Each run records cache hit/miss and embedding shape in
 
 ## Reranker fine-tuning on Kaggle
 
+For the matched fixed-window/reference-off follow-up, run
+`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs.ipynb` on a
+Kaggle T4x2 image. Attach `WeDev-VLSP`, the Vietnamese reranker warm start,
+VietLegal-Harrier, multilingual-E5-large, and verified caches with slugs
+`bm25s_vncorenlp`, `bge_m3_token_window448_chunks`,
+`vietlegal_harrier_0_6b_token_window448`, and
+`multilingual_e5_large_token_window448`. The notebook fails closed when a cache
+is missing; it does not silently rebuild corpus embeddings. No development
+handoff, public/private test data, reference graph, or old reference-on mining
+dataset is required.
+
+When those caches were built during the completed R3-retuned fixed-window
+submission run, attaching the complete output of
+`kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb` is sufficient:
+the fine-tuning notebook also discovers expanded cache directories recursively
+under `/kaggle/input/notebooks`. Attach the notebook output itself, not only its
+`*_results.tar.gz`; the compact result archive intentionally excludes caches.
+The later cache loaders still verify fingerprints and require cache hits before
+mining, so an arbitrary same-named directory is not accepted as valid evidence.
+
+The notebook mines the seed-42 train side in isolated retrieval and teacher
+subprocesses, then runs the validated pointwise-MIL DDP trainer for three
+epochs. Its terminal success marker is `TRAINING_COMPLETE`, and model snapshots
+remain beneath
+`/kaggle/working/reranker_fixed448_pool50_refoff_pointwise_mil_3epochs/`.
+`fixed448_pool50_refoff_pointwise_mil_3epochs_metrics.tar.gz` contains compact
+provenance and metrics only; it intentionally excludes checkpoint weights.
+Evaluate the checkpoints later with a newly generated matching fixed-window/
+reference-off handoff. Do not reuse
+`drill-dev-handoff-pool50-refon-articlemilv1`, whose contract belongs to the
+historical hierarchical/reference-on treatment.
+
 Before committing GPU hours to the full corpus, run
 `notebooks/archive/diagnostics/kaggle_smoke_finetune_reranker.ipynb`. It uses one synthetic query,
 one positive, five negatives, one GPU, and one optimizer step. Passing verifies

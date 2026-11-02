@@ -88,10 +88,10 @@ and detailed provenance belong in an appendix or artifact bundle.
 
 | Slide view | Content | Source | Presentation rule |
 |---|---|---|---|
-| S1 | First-stage and legal-structure progression | R2–R3 | Show at most four methods; use one highlighted takeaway |
-| S2 | Main structure/reference ablation | R4 | Use the four factorial cells; if incomplete, show the reference recall gate instead and state the limitation |
+| S1 | Chunk-representation selection | R2 | Show the four controlled representations and the fixed-window winner |
+| S2 | First-stage component selection | R3 | Show the controlled BM25, dense, and selected hybrid progression |
 | S3 | Reranker → LightGBM → adaptive selection progression | R5–R7 and Table 15 | Use one compact progressive table or chart; label it storytelling rather than causal ablation |
-| S4 | Final public/private result and benchmark context | R8 | Keep organizer baseline, one or two published systems, fixed top 2, and the two frozen adaptive policies |
+| S4 | Final public/private result and benchmark context | R8 | Keep organizer baseline, one or two published systems, and the strongest project controls/finalist |
 
 Dataset scale should normally be displayed as three or four large numbers rather
 than a separate table slide. Error analysis is better shown as a small failure
@@ -295,7 +295,7 @@ added from provenance when reporting efficiency.
 
 ## Table 8. Explicit Cross-Reference Expansion Recall Gate
 
-**Status:** `REPORT + SLIDES`
+**Status:** `REPORT ONLY`
 
 **Purpose.** Test whether deterministic legal references recover missing gold
 articles before spending reranker compute, and whether same-document or
@@ -320,7 +320,7 @@ presented as end-to-end F2.
 
 ## Table 9. Main Structure and Cross-Reference Ablation
 
-**Status:** `REPORT + SLIDES`
+**Status:** `REPORT ONLY`
 
 **Purpose.** Answer the primary research question by isolating legal structure
 and explicit references relative to a strong baseline.
@@ -815,16 +815,16 @@ entries even when their complete forms do not appear in the 15-page report.
 
 Use four result views, normally one per slide:
 
-1. **S1 — First-stage and structure progression.** Compress R2–R3 to at most
-   four rows: BM25, dense anchor, selected legal dense model, selected hybrid.
-2. **S2 — Main structure/reference result.** Use R4. Until all four factorial
-   cells exist, show Table 8 as a reference recall gate and state that final-F2
-   evidence is inconclusive.
+1. **S1 — Chunk-representation selection.** Use the compact R2 fixed-window
+   comparison.
+2. **S2 — First-stage component selection.** Use compact R3 with BM25,
+   Harrier, E5, and the selected retuned hybrid.
 3. **S3 — Downstream progression.** Compress R5–R7 to reranker, LightGBM, and
    adaptive selection. This is Table 15's storytelling view and must be labelled
    non-causal.
 4. **S4 — Final hidden-split result.** Use a reduced R8 with organizer baseline,
-   at most two published systems, fixed top 2, threshold, and score gap.
+   at most two published systems, the historical fixed-window control, and the
+   R3-retuned multiclass–Ridge finalist.
 
 Do not add a separate dataset table slide unless the presentation exceeds 15
 minutes. Show dataset scale as large-number callouts. Show error analysis as a

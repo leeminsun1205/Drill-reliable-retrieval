@@ -363,7 +363,7 @@ Có thể dùng sơ đồ này trong slide tổng kết kỹ thuật:
 ```text
 VnCoreNLP BM25 + VietLegal-Harrier + multilingual-E5-large
        ↓
-Fixed token windows 448/64 + weighted RRF 0.15/0.55/0.30, k=10
+Fixed token windows 448/64 + weighted RRF 0.15/0.65/0.20, k=10
        ↓
 Top 50 fused retrieved chunks
        ↓
@@ -376,7 +376,9 @@ LightGBM enhanced_v2 (61 features)
 Balanced multiclass / multiclass–Ridge final-set selection
 ```
 
-Đây là pipeline cuối theo bằng chứng hiện có. Checkpoint 1208 được train trên
+Đây là pipeline cuối theo bằng chứng hiện có. Multiclass–Ridge đạt nested-OOF
+F2 `0.6822` và public/private `0.7055/0.6735`; hidden splits chỉ xác nhận sau
+khi trọng số đã được chọn trên development. Checkpoint 1208 được train trên
 hierarchical chunk bags rồi giữ cố định khi chấm fixed windows; phải trình bày
 đây là transfer setting, không phải fixed-window fine-tuning.
 
