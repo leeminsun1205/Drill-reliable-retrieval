@@ -890,14 +890,14 @@ is missing; it does not silently rebuild corpus embeddings. No development
 handoff, public/private test data, reference graph, or old reference-on mining
 dataset is required.
 
-When those caches were built during the completed R3-retuned fixed-window
-submission run, attaching the complete output of
-`kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb` is sufficient:
-the fine-tuning notebook also discovers expanded cache directories recursively
-under `/kaggle/input/notebooks`. Attach the notebook output itself, not only its
-`*_results.tar.gz`; the compact result archive intentionally excludes caches.
-The later cache loaders still verify fingerprints and require cache hits before
-mining, so an arbitrary same-named directory is not accepted as valid evidence.
+The preparation notebook searches the complete output of
+`kaggle_pool50_epoch1_fixed_refoff_lightgbm_submission.ipynb` for expanded
+caches under `/kaggle/input/notebooks`. The measured output did not retain its
+BM25 cache, because the compact result archive intentionally excluded caches.
+Missing components are therefore rebuilt under its own Kaggle work directory;
+present fixed-window components are reused. The later cache loaders verify
+fingerprints before mining, so an arbitrary same-named directory is not
+accepted as valid evidence.
 
 The notebook mines the seed-42 train side in isolated retrieval and teacher
 subprocesses, then runs the validated pointwise-MIL DDP trainer for three
