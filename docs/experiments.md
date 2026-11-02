@@ -2666,9 +2666,19 @@ against its epoch, objective, seeded-cycle passage sampling, four-passage cap,
 and five-epoch scheduler horizon. One seed-42, 438-query dev retrieval handoff
 is generated with fixed token windows 448/64, references off, pool 50, and
 WRRF10 BM25/Harrier/E5 weights 0.15/0.65/0.20; all four models are scored on
-that identical handoff. Exact fixed-window caches are reused when attached;
-otherwise retrieval/cache construction runs once. The notebook reports fixed
-top-k results plus a descriptive threshold tuned on dev labels. It does not
-access public/private splits. Results are pending execution; no metric is
-claimed here. Reranking uses packed-stream inference batches of 64 in fresh
-sequential processes to leave headroom on the Kaggle T4 GPUs.
+that identical handoff. It first reuses a compatible dev handoff retained by
+the fixed-window epoch-1 submission output. If absent, it reuses exact
+fixed-window caches when attached; otherwise retrieval/cache construction runs
+once. For each warm-start/checkpoint reranker run it preserves first-stage and
+component rankings, per-chunk reranker evidence, predictions, metrics, split
+IDs, config, and runtime provenance. It then fits the same 61-feature
+`enhanced_v2` LightGBM screen separately for each model and preserves the raw
+feature matrix and labels, query-fold assignment, OOF candidate probabilities
+and rankings, threshold/score-gap metrics, feature importance, and final
+all-dev LightGBM model. These artifacts support later selection-policy
+experiments without repeating retrieval, reranking, feature construction, or
+LightGBM. The notebook does not access public/private splits. Results are
+pending execution; no metric is claimed here. Reranking uses packed-stream
+inference batches of 64 in fresh sequential processes to leave headroom on the
+Kaggle T4 GPUs. The training notebook remains the source of checkpoint weights;
+this evaluation bundle does not duplicate the large model files.

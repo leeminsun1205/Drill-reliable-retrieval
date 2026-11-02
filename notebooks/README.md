@@ -27,8 +27,12 @@ and `scripts/`.
 
 - `kaggle_evaluate_fixed448_pool50_3epochs.ipynb`: sequentially evaluates the
   Vietnamese warm start and fixed-window/reference-off pointwise-MIL checkpoints
-  `1234/2471/3709` on one seed-42 development retrieval handoff. It reuses exact
-  fixed-window caches when attached and otherwise builds the handoff once.
+  `1234/2471/3709` on one seed-42 development retrieval handoff. It first looks
+  for a compatible handoff retained by the fixed-window epoch-1 submission
+  output; otherwise it reuses exact fixed-window caches or rebuilds retrieval
+  once. For every model it stores the reranker artifacts and enhanced-v2
+  LightGBM feature rows, OOF scores/rankings, fold assignments, metrics, and
+  all-dev refit model, then bundles the complete reusable stages.
 - `kaggle_pool50_epoch1_lightgbm_feature_screen.ipynb`: reproduce the selected
   checkpoint-1208 development artifact and compare the controlled
   15/41/61/69-feature LightGBM schemas.
