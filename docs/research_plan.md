@@ -1136,5 +1136,5 @@ policy, pointwise MIL BCE, four cycled passages per bag, pair length 512,
 effective batch 16, and learning rate `2e-5`. It changes only the intended
 upstream treatment to fixed token windows 448/64, references off, and the
 cross-fitted R3 deployment weights BM25/Harrier/E5 `0.15/0.65/0.20`, then runs
-three adaptation epochs. The notebook is a follow-up rather than a prerequisite
-for the existing final result.
+three adaptation epochs with a three-epoch scheduler. The notebook is a
+follow-up rather than a prerequisite for the existing final result.

@@ -2587,7 +2587,18 @@ reference expansion off, WRRF10, and BM25/Harrier/E5 weights
 from mining. The training objective and optimizer protocol remain pointwise
 MIL BCE, seeded four-passage cycling, maximum passage-logit aggregation,
 sequence length 512, two-GPU effective batch 16, learning rate `2e-5`, and
-three epochs.
+three epochs. The three-epoch treatment uses its own three-epoch linear
+scheduler; compare its saved checkpoints within this run rather than treating
+them as exact continuations of the historical five-epoch schedule.
+
+The controlled scheduler ablation is
+`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs_sched5.ipynb`.
+It executes the same three epochs but predeclares the historical five-epoch
+scheduler horizon. All data, handoff, mining, objective, seed, batching, and
+optimizer settings are unchanged; work directories and archives are separate.
+Compare the two runs only through matched checkpoint evaluation on one frozen
+development handoff. The `3/5` run is not an extra model-selection split and
+must not be selected from private scores.
 
 The notebook requires verified fixed-window BM25, shared chunk, Harrier, and
 multilingual-E5 caches and the Vietnamese warm-start checkpoint. It creates a

@@ -911,6 +911,13 @@ reference-off handoff. Do not reuse
 `drill-dev-handoff-pool50-refon-articlemilv1`, whose contract belongs to the
 historical hierarchical/reference-on treatment.
 
+To run the scheduler-only control in a separate Kaggle session, use
+`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs_sched5.ipynb`
+with the same inputs. It runs three epochs with
+`scheduler_total_epochs=5` and writes only to the distinct
+`reranker_fixed448_pool50_refoff_pointwise_mil_3epochs_sched5` work directory.
+Do not change any other flag between the `3/3` and `3/5` sessions.
+
 To avoid loading the dense retrievers again during fine-tuning, first run
 `notebooks/preparation/kaggle_prepare_fixed448_train_handoff.ipynb`. Attach the
 complete R3-retuned fixed-window submission notebook output plus Harrier and
