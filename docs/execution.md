@@ -44,7 +44,7 @@ The launcher installs `.[dense,vietnamese,ltr,demo]` and `pyngrok`. Attach the
 legal corpus, Harrier and E5 model inputs, the fine-tuning output containing
 checkpoint-1234, and the selected submission notebook's `*_complete_results.tar.gz`
 output. Retrieval caches are optional; if absent, the adapter builds them at
-startup under `/kaggle/working`. Store `OPENAI_API_KEY` and
+startup under `/kaggle/working`. Store `GITHUB_TOKEN`, `OPENAI_API_KEY`, and
 `NGROK_AUTH_TOKEN` as separate Kaggle Secrets; set `OPENAI_MODEL` and optional
 `OPENAI_BASE_URL` as ordinary notebook configuration values. The API key is
 read by the app process, while the Ngrok token is used only by the notebook to
