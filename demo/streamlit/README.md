@@ -27,6 +27,8 @@ The app reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
 from the process environment and streams Chat Completions text into the chat as
 it arrives. Keep API keys in Kaggle Secrets; never place them in the notebook
 source. The configured OpenAI-compatible endpoint must support streaming.
+The chat input remains available for consecutive questions, and the current
+session keeps the previous turns and their retrieved evidence visible.
 The Kaggle notebook should populate the API key from Kaggle Secrets and start
 Streamlit in a subprocess. Ngrok is started by the notebook, not by this app.
 

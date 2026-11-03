@@ -51,21 +51,24 @@ except Exception as error:  # show a clear setup message inside the demo
 
 if backend_error:
     st.info(
-        "Giao diện đã khởi động. Notebook Kaggle cần nạp pipeline truy xuất và "
-        "đặt `DRILL_RETRIEVER_FACTORY` trước khi có thể nhận câu hỏi."
+        "Giao diện vẫn nhận câu hỏi, nhưng chưa thể trả lời cho đến khi pipeline "
+        "truy xuất khởi tạo thành công. Kiểm tra cấu hình bên dưới."
     )
     with st.expander("Thông tin cấu hình"):
         st.code(backend_error)
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        if message["role"] == "assistant":
-            show_sources(message.get("evidence", []))
+        if message.get("error"):
+            st.error(message["content"])
+        else:
+            st.markdown(message["content"])
+        if message["role"] == "assistant" and message.get("evidence"):
+            show_sources([normalize_evidence(item) for item in message["evidence"]])
 
 question = st.chat_input(
     "Ví dụ: Trường hợp nào được tạm hoãn gọi nhập ngũ?",
-    disabled=retrieval_backend is None,
+    key="legal_qa_chat_input",
 )
 
 if question:
@@ -74,16 +77,44 @@ if question:
         st.markdown(question)
 
     with st.chat_message("assistant"):
-        try:
-            with st.spinner("Đang truy xuất và tổng hợp căn cứ…"):
-                evidence = [
-                    normalize_evidence(item)
-                    for item in retrieval_backend.search(question)
-                ]
-            answer = st.write_stream(stream_answer(question, evidence))
-            show_sources(evidence)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": str(answer), "evidence": evidence}
+        if retrieval_backend is None:
+            answer = (
+                "Chưa thể truy xuất vì pipeline chưa khởi tạo được. "
+                "Xem phần Thông tin cấu hình phía trên."
             )
-        except Exception as error:
-            st.error(f"Chưa xử lý được câu hỏi: {error}")
+            st.error(answer)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": answer, "error": True}
+            )
+        else:
+            evidence: list[Evidence] = []
+            try:
+                with st.spinner("Đang truy xuất căn cứ pháp lý…"):
+                    evidence = [
+                        normalize_evidence(item)
+                        for item in retrieval_backend.search(question)
+                    ]
+                answer = st.write_stream(stream_answer(question, evidence))
+                show_sources(evidence)
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": str(answer),
+                        "evidence": [
+                            {
+                                "aid": item.aid,
+                                "text": item.text,
+                                "law_id": item.law_id,
+                                "title": item.title,
+                                "score": item.score,
+                            }
+                            for item in evidence
+                        ],
+                    }
+                )
+            except Exception as error:
+                answer = f"Chưa xử lý được câu hỏi: {error}"
+                st.error(answer)
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": answer, "error": True}
+                )
