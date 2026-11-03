@@ -88,13 +88,25 @@ if question:
             )
         else:
             evidence: list[Evidence] = []
+            progress = st.empty()
             try:
-                with st.spinner("Đang truy xuất căn cứ pháp lý…"):
-                    evidence = [
-                        normalize_evidence(item)
-                        for item in retrieval_backend.search(question)
-                    ]
-                answer = st.write_stream(stream_answer(question, evidence))
+                progress.caption("🔎 Đang truy xuất thông tin…")
+                evidence = [
+                    normalize_evidence(item)
+                    for item in retrieval_backend.search(question)
+                ]
+                progress.caption("✍️ Đang soạn câu trả lời…")
+
+                def answer_pieces():
+                    first_piece = True
+                    for piece in stream_answer(question, evidence):
+                        if first_piece:
+                            progress.empty()
+                            first_piece = False
+                        yield piece
+
+                answer = st.write_stream(answer_pieces())
+                progress.empty()
                 show_sources(evidence)
                 st.session_state.messages.append(
                     {
@@ -113,6 +125,7 @@ if question:
                     }
                 )
             except Exception as error:
+                progress.empty()
                 answer = f"Chưa xử lý được câu hỏi: {error}"
                 st.error(answer)
                 st.session_state.messages.append(
