@@ -36,19 +36,32 @@ Implement and verify methods in this order:
 Before dense retrieval, verify corpus flattening, article identifiers,
 ground-truth mapping, evaluation, and a reproducible BM25 result.
 
-The selected final representation is now overlapping fixed token windows with
-a 448-token document budget and 64-token overlap, with reference expansion
-disabled. The hybrid retains BM25, VietLegal-Harrier, multilingual-E5-large,
-weighted RRF, and direct reranking of the top 50 fused retrieved chunks with a
-512-token cross-encoder pair budget. Reranker scores are max-aggregated to
-unique `aid` values and the 61-feature `enhanced_v2` LightGBM model supplies
-the final ranking scores. Checkpoint 1208 remains fixed even though it was
-adapted on hierarchical article-chunk bags; applying it to fixed windows is an
-explicit cross-representation transfer setting. Hold this configuration fixed
-for final reporting. Hierarchical chunks and references are controlled
-treatments, not components of the selected deployment pipeline.
+The selected representation is overlapping fixed token windows with a
+448-token document budget and 64-token overlap, with reference expansion
+disabled. The current practical submission pipeline uses VnCoreNLP BM25,
+VietLegal-Harrier, and multilingual-E5-large fused by WRRF `k=10` with weights
+`0.15/0.65/0.20`; it reranks the pool-50 fused chunks with the pointwise-MIL
+cross-encoder (pair length 512), max-aggregates chunk scores to unique `aid`
+values, builds the 61-feature `enhanced_v2` LightGBM scores, and selects the
+final set with the multiclass–Ridge policy. Its reranker is fixed-window-trained
+epoch 1 / checkpoint `1234` (three adaptation epochs on a five-epoch scheduler
+horizon). The prior checkpoint-1208 run used hierarchical article-chunk bags
+and is a historical cross-representation-transfer result, not the current
+reranker.
 
-The completed matched Table-R4 factorial supplies the selection evidence:
+The owner-reported checkpoint-1234 multiclass–Ridge submissions scored
+`0.6978` public and `0.6825` private (IDs `1027650/1027647`); this is the
+current practical baseline because private performance is prioritized. The
+checkpoint-1208 run remains the public record at `0.7055`. Selecting the
+practical baseline after observing private scores is a post-hoc operational
+choice, not leakage-free scientific model selection. Do not continue tuning on
+private feedback; use saved development evidence for methodological claims.
+Hierarchical chunks and references remain controlled treatments, not parts of
+the current pipeline.
+
+The completed matched Table-R4 factorial, which holds the earlier
+checkpoint-1208 reranker fixed, supplies the representation/reference ablation
+evidence:
 fixed 448/64 windows achieved nested-OOF F2 `0.6681/0.6669` with references
 off/on, versus `0.6597/0.6583` for hierarchical Khoản–Điểm. Same-document
 references increased candidate Recall@50 in both representations but slightly
@@ -120,6 +133,26 @@ Later work may study evidence sufficiency, abstention, temporal/version-aware
 retrieval, grounded question answering, and citation evaluation. These are not
 part of the initial baseline scope.
 
+The presentation's future-work slides prioritize limitations of the current
+pipeline: incomplete document-level legal metadata; semantic mismatch between
+natural-language queries and formal provisions; the cross-encoder's 512-token
+pair limit; and retrieval signals not yet enriched with costly LLM-derived
+features. Addressing these limitations could improve retrieval, but gains are
+not established and full LLM-enriched cascades may exceed the available GPU,
+runtime, and API budget. Follow-up work should first enrich law/article titles,
+hierarchy, and version metadata from authoritative legal sources with
+identifier validation and provenance. Then compare query expansion and
+auxiliary article summaries while retaining the original text. Longer-context
+rerankers or controlled position-embedding extensions require matched-candidate
+quality and compute comparisons. As external DRiLL methods, EDM reports
+generated titles, LLM-derived features, and cascaded LambdaMART/LightGBM;
+FPT IS reports LLM data augmentation and hierarchical chunking; ViDRILL reports
+hard-negative mining. These are ideas to test, not results of this project.
+Start with a bounded hard-negative experiment, then evaluate cached enrichment
+on the frozen top-50 candidate set and report its generation and inference
+costs. Pilot the bounded training-side treatment first. Do not use private-test
+scores to select among these treatments.
+
 ## Controlled comparisons
 
 Keep unrelated variables fixed. In particular:
@@ -141,9 +174,10 @@ Hybrid + Reranker + Structure + Cross-reference
 
 Do not claim that a component helps unless its contribution can be isolated.
 
-## Architecture checkpoint after the multi-dense baseline
+## Historical architecture checkpoint after the multi-dense baseline
 
-As of 2026-10-27, the active strong pipeline is:
+This 2026-10-27 snapshot records the earlier active strong pipeline; the current
+submission configuration is summarized at the start of this document:
 
 ```text
 legal corpus
@@ -1129,12 +1163,26 @@ holding the neural checkpoint constant. This supports fixed-window robustness
 and cross-representation transfer, but a claim about fixed-window supervised
 training requires a separate retraining ablation.
 
-That ablation is now implemented, but remains unmeasured, in
-`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs.ipynb`. It
-keeps pool 50, seed 42, WRRF10, the false-negative-aware article-bag mining
+That ablation is implemented in
+`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs_sched5.ipynb`.
+It keeps pool 50, seed 42, WRRF10, the false-negative-aware article-bag mining
 policy, pointwise MIL BCE, four cycled passages per bag, pair length 512,
-effective batch 16, and learning rate `2e-5`. It changes only the intended
-upstream treatment to fixed token windows 448/64, references off, and the
-cross-fitted R3 deployment weights BM25/Harrier/E5 `0.15/0.65/0.20`, then runs
-three adaptation epochs with a three-epoch scheduler. The notebook is a
-follow-up rather than a prerequisite for the existing final result.
+effective batch 16, and learning rate `2e-5`. It uses fixed token windows
+448/64, references off, and cross-fitted R3 BM25/Harrier/E5 weights
+`0.15/0.65/0.20`, then trains three adaptation epochs on the five-epoch
+scheduler horizon. The checkpoint-1234 public/private submissions are now
+measured below; archive ingestion and a saved checkpoint-1234 development
+policy comparison remain outstanding.
+
+Owner-reported official submissions for the new fixed-window-trained epoch-1
+checkpoint `1234`, received 2026-11-02, scored balanced multiclass
+`0.6967/0.6809` public/private (IDs `1027658/1027657`) and multiclass–Ridge
+`0.6978/0.6825` (IDs `1027650/1027647`). The project now uses the Ridge pair as
+its practical baseline because private performance is prioritized; this is a
+post-hoc operational designation based on hidden leaderboard results, not an
+unbiased method-selection conclusion. The earlier checkpoint-1208 run remains
+the public-score record at `0.7055`, while checkpoint 1234 has the highest
+reported private score at `0.6825`. Preserve both results in comparisons and do
+not continue tuning against private feedback. Archive ingestion and a saved
+checkpoint-1234 development policy comparison remain necessary to support the
+methodological account.

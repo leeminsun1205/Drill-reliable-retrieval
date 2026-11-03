@@ -67,6 +67,32 @@ The final private leaderboard reported by the organizer is:
 Source: [extended organizer paper, Table 7](https://doi.org/10.25073/2588-1086/vnucsce.6463).
 These are published competition values, not measurements from this repository.
 
+### Public scores for the private top-seven teams
+
+The same official report publishes the public top-ten in Table 6. Pairing the
+top-seven private systems with their public F2 gives:
+
+| Private order | System | Public F2 | Private F2 |
+|---:|---|---:|---:|
+| 1 | EDM | 0.5982 | 0.7261 |
+| 2 | FPT IS | 0.7426 | 0.6966 |
+| 3 | CUDO | 0.7345 | 0.6955 |
+| 4 | Berry | 0.4456* | 0.6710 |
+| 5 | IUH.TD | 0.6337 | 0.6521 |
+| 6 | brain_rot | 0.7032 | 0.6495 |
+| 7 | AImba | 0.6473 | 0.6425 |
+
+* Berry's public F2 of 0.4456 is user-reported from the Codabench leaderboard;
+  it is not listed in the paper's published public top-ten table and has not
+  yet been independently checked against a saved leaderboard snapshot. Berry's
+  private F2 of 0.6710 is reported in the paper's private results table.
+
+The public table also reports BM25 at F2 0.2771; the two-stage baseline is not
+listed there. The private values above remain the official final ranking;
+public and private orders differ substantially.
+
+Source: [extended organizer paper, Table 6](https://doi.org/10.25073/2588-1086/vnucsce.6463).
+
 The public leaderboard had a different ordering: FPT IS, CUDO, and brain_rot
 were the top three, while eventual winner EDM ranked seventh. This change is a
 warning against selecting a method primarily from public-leaderboard feedback.

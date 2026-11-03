@@ -3,8 +3,24 @@
 Research code for reproducible Vietnamese legal information retrieval,
 initially centered on the VLSP 2025 DRiLL benchmark.
 
-The current goal is to establish strong lexical, dense, hybrid, and reranking
-baselines before evaluating structure-aware and cross-reference-aware retrieval.
+The current research goal is to evaluate legal structure and explicit article
+references against a strong, reproducible retrieval and reranking baseline.
+
+## Current pipeline and measured result
+
+The current practical submission baseline uses VnCoreNLP BM25,
+VietLegal-Harrier, and multilingual-E5-large fused by WRRF (`k=10`, weights
+`0.15/0.65/0.20`), fixed token windows 448/64, reference expansion off, a
+pool-50 cross-encoder, LightGBM `enhanced_v2` (61 features), and
+multiclass–Ridge final-set selection. The reranker is fixed-window pointwise-MIL
+epoch 1, checkpoint `1234` (three adaptation epochs trained with a five-epoch
+scheduler horizon).
+
+Owner-reported Codabench F2 is `0.6978` public (`1027650`) and `0.6825` private
+(`1027647`). This is the current practical baseline because the project
+prioritizes private performance. The prior checkpoint-1208 run remains the
+public-score record at `0.7055`; these results and the post-hoc selection
+caveat are documented in [`docs/experiments.md`](docs/experiments.md).
 
 ## Repository layout
 
@@ -13,6 +29,7 @@ configs/             Experiment configurations
 data/                Local datasets (ignored by Git)
 docs/                Research protocol and data/evaluation documentation
 notebooks/           Exploration, visualization, and error analysis
+demo/                Optional Streamlit interface for the Kaggle demo
 scripts/             Thin command-line entry points
 src/drill_ir/        Reusable research implementation
 tests/               Scientific correctness and regression tests
@@ -75,6 +92,9 @@ when multiple dataset versions are attached.
 - [Experiments and artifacts](docs/experiments.md)
 - [Local and Kaggle execution](docs/execution.md)
 - [Competition methods, results, and public code](docs/competition_review.md)
+- [Nine report tables and slide mapping](tables_experiment.md)
+- [Full 21-table experiment catalog](tables_experiment_catalog.md)
+- [Final report experiment plan](docs/final_report_plan.md)
 
 Raw data, model checkpoints, embeddings, and large generated outputs must remain
 outside Git.

@@ -36,6 +36,10 @@ ltr = [
     "lightgbm>=4.5,<5",
     "scikit-learn>=1.4,<2",
 ]
+demo = [
+    "openai>=1.66,<3",
+    "streamlit>=1.41,<2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

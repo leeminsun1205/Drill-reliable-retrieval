@@ -33,9 +33,9 @@ and `scripts/`.
   once. For every model it stores the reranker artifacts and enhanced-v2
   LightGBM feature rows, OOF scores/rankings, fold assignments, metrics, and
   all-dev refit model, then bundles the complete reusable stages.
-- `kaggle_pool50_epoch1_lightgbm_feature_screen.ipynb`: reproduce the selected
-  checkpoint-1208 development artifact and compare the controlled
-  15/41/61/69-feature LightGBM schemas.
+- `kaggle_pool50_epoch1_lightgbm_feature_screen.ipynb`: historical
+  checkpoint-1208 development feature screen; its feature comparison remains
+  useful context but is not the current submission entry point.
 
 ### `experiments/decision_policy/`
 
@@ -45,7 +45,7 @@ and `scripts/`.
 
 ### `submission/`
 
-- `kaggle_pool50_epoch1_lightgbm_submission.ipynb`: frozen public/private
+- `kaggle_pool50_epoch1_lightgbm_submission.ipynb`: historical public/private
   inference for pool 50, checkpoint 1208, `enhanced_v2`, and score-gap policy,
   with fixed-top-2 and threshold controls.
 - `kaggle_pool50_epoch4_lightgbm_submission.ipynb` and
@@ -53,7 +53,8 @@ and `scripts/`.
   for checkpoints 4842 and 6054. Each one regenerates its own development
   reranker artifacts from the frozen pool-50 handoff and refits LightGBM; they
   never reuse epoch-1 reranker scores or a fitted epoch-1 LightGBM model.
-- `kaggle_pool50_epoch1_lightgbm_stopping_submission.ipynb`: experimental
+- `kaggle_pool50_epoch1_lightgbm_stopping_submission.ipynb`: historical
+  checkpoint-1208 experimental
   epoch-1 variant that preserves the frozen ranking pipeline and replaces only
   final score-gap selection with a query-grouped, nested fold-safe learned
   prefix stopping policy. It retains score-gap, threshold, and top-2 outputs as
@@ -83,12 +84,22 @@ and `scripts/`.
   downstream stages, refits `enhanced_v2`, and produces confirmatory
   multiclass–Ridge submissions in the same reproducibility bundle.
 - `kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_multiclass_ridge_submission.ipynb`:
-  new-checkpoint end-to-end counterpart to the fixed/reference-off submission
-  runner. It resolves and validates epoch-1 checkpoint `1234` from the attached
+  current practical submission runner for the fixed/reference-off pipeline,
+  using the owner-designated private-priority multiclass–Ridge baseline. It
+  resolves and validates epoch-1 checkpoint `1234` from the attached
   fixed-window three-epoch training notebook output, refits development,
   public/private reranking, `enhanced_v2`, and multiclass–Ridge policy stages,
   and packages the full reusable stage outputs and provenance. It does not
   modify the earlier checkpoint-1208 submission notebook.
+
+### `demo/`
+
+- `kaggle_streamlit_legal_qa.ipynb`: installs and launches the Streamlit UI,
+  reads OpenAI and Ngrok credentials from separate Kaggle Secrets, and exposes
+  port 8501. It attaches the legal corpus, Harrier/E5 models, checkpoint-1234
+  training output, and the current submission's complete-results archive;
+  `demo/streamlit/pipeline_adapter.py` serves the frozen retrieval, reranking,
+  LightGBM, and Multiclass–Ridge pipeline per question.
 
 ## Non-primary notebooks
 

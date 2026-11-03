@@ -9,7 +9,10 @@ the corresponding report table.
 
 Detailed screening grids, full protocols, evidence labels, missing-experiment
 specifications, and all 21 source tables are retained in
-`tables_experiment_catalog.md`.
+`tables_experiment_catalog.md`. The current practical baseline is the
+checkpoint-1234 fixed-window-trained run (`0.6978` public / `0.6825` private);
+its designation prioritizes a post-hoc private result and is not a leakage-free
+scientific model-selection claim.
 
 | Final table | Report | Slides | Slide treatment |
 |---|:---:|:---:|---|
@@ -115,11 +118,12 @@ reference-off. These point estimates select fixed 448/64 as the main
 representation; they do not establish statistical significance without paired
 query-level uncertainty analysis.
 
-The fixed-window choice is a representation decision, not evidence that the
-reranker was trained on fixed chunks. Checkpoint 1208 was adapted with
-article-level supervision over hierarchical chunk bags and is held constant
-when scoring fixed chunks, so the final result measures cross-representation
-transfer at inference.
+The original inference-time comparison used checkpoint 1208, which was
+adapted with article-level supervision over hierarchical chunk bags and held
+constant when scoring fixed windows; that comparison measures
+cross-representation transfer at inference. The later matched fixed-window
+training treatment is reported separately in R5 and its checkpoint-1234
+submission results in R8.
 
 **Slide S1:** show Representation, Macro-F2@2, and Recall@100; highlight fixed
 448/64 as the selected main representation and annotate that Khoản–Điểm alone
@@ -237,21 +241,31 @@ independent archive/hash ingestion remains pending. Detailed Tables 8 and 9 in
 **Question.** Which adaptation checkpoint is best when threshold scale is
 removed from model selection, and is pool 100 better than pool 50?
 
-**Protocol.** Reuse one checksummed frozen handoff per pool. Load warm start and
-adaptation checkpoints in fresh subprocesses, score identical candidates, max
-aggregate chunk logits to `aid`, and select by fixed top 2. Threshold results
-are diagnostics, not checkpoint-selection metrics. Training/mining/graph/WRRF
-settings are fixed across pools except candidate budget.
+**Protocol.** Reuse one checksummed frozen handoff per original pool comparison.
+Load warm start and adaptation checkpoints in fresh subprocesses, score identical
+candidates, max-aggregate chunk logits to `aid`, and select the original pool
+comparison by fixed top 2. The separately trained fixed-window checkpoints
+1234/2471/3709 are listed as a matched representation-specific screen, not as
+a candidate-budget comparison. Thresholds tuned on the same dev set are
+diagnostics only.
 
-| Pool | Snapshot | Fixed top-2 Precision | Fixed top-2 Recall | Fixed top-2 Macro-F2 | Pooled threshold Macro-F2 | Decision |
+| Pool / treatment | Snapshot | Fixed top-2 Precision | Fixed top-2 Recall | Fixed top-2 Macro-F2 | Dev threshold/fallback-2 Macro-F2 | Decision |
 |---:|---|---:|---:|---:|---:|---|
 | 50 | Vietnamese warm start | 0.367580 | 0.615830 | 0.542546 | 0.585978 | Baseline |
 | 50 | Epoch 1 / `1208` | **0.393836** | **0.657610** | **0.579928** | **0.623556** | Selected finalist |
+| 50 | Fixed-window trained, epoch 1 / `1234` | 0.406393 | 0.675875 | 0.596735 | 0.638504 | Current practical submission; not the fixed-top-2 winner |
+| 50 | Fixed-window trained, epoch 2 / `2471` | 0.413242 | 0.688949 | 0.607841 | 0.648870 | Matched checkpoint control |
+| 50 | Fixed-window trained, epoch 3 / `3709` | **0.420091** | **0.695852** | **0.615098** | **0.654655** | Best fixed-top-2 score in this treatment |
 | 50 | Epoch 5 / `6054` | 0.391553 | 0.654566 | 0.577044 | 0.621791 | Late-epoch control |
 | 100 | Epoch 2 / `2479` | 0.385845 | 0.639612 | 0.565259 | 0.601615 | Pool-100 fixed-top-2 winner |
 
-**Source:** artifact-verified checkpoint archives; the complete 12-row sweep is
-Table 11 in `tables_experiment_catalog.md`.
+**Source:** artifact-verified original pool checkpoint archives plus owner-reported
+fixed-window checkpoint scoreboard. The full 12-row original pool sweep is in
+Table 11 of `tables_experiment_catalog.md`; fixed-window dev threshold values
+are tuned on the same 438 queries and are not unbiased estimates. The current
+private-priority submission uses epoch 1, although epoch 3 leads reranker-only
+dev cutoffs; this is an operational choice, not evidence that epoch 1 is the
+scientifically selected checkpoint.
 
 ---
 
@@ -338,10 +352,13 @@ a single-variable ablation.
 systems, and are its policy results stable across public/private splits?
 
 **Protocol.** Published private results are external context, not controlled
-baselines. Project rows freeze retrieval, checkpoint `1208`, `enhanced_v2`, and
-policy parameters before submission. Public/private results cannot select a new
-method. Missing project Precision/Recall remain blank because Codabench output
-provided only F2 here.
+baselines. Historical project rows retain the checkpoint/configuration frozen
+for each submission. The newest practical baseline uses checkpoint `1234`,
+`enhanced_v2`, and multiclass–Ridge. Its designation followed the owner
+priority for private performance after the hidden scores were observed; disclose
+this post-hoc choice and do not treat it as unbiased model selection or tune
+further on private. Missing project Precision/Recall remain blank because
+Codabench output provided only F2 here.
 
 | System / policy | Evidence type | Public Macro-F2 | Private Precision | Private Recall | Private Macro-F2 | Submission / source |
 |---|---|---:|---:|---:|---:|---|
@@ -365,7 +382,9 @@ provided only F2 here.
 | This project, fixed 448/64, ref-off, score gap | Codabench | 0.6739 |  |  | **0.6580** | Public 1026161; private 1026153; policy differs from multiclass |
 | This project, fixed 448/64, ref-off, multiclass | Codabench | 0.6833 |  |  | 0.6677 | Public 1026181; private 1026178; policy-matched control |
 | This project, fixed 448/64, ref-off, multiclass–Ridge, historical WRRF | Codabench | 0.6933 |  |  | 0.6685 | Public 1026176; private 1026175; WRRF `0.15/0.55/0.30` |
-| **This project, fixed 448/64, ref-off, multiclass–Ridge, R3-retuned WRRF** | Codabench | **0.7055** |  |  | **0.6735** | Public 1026275; private 1026274; WRRF `0.15/0.65/0.20`, selected from cross-fitted dev R3 |
+| This project, fixed 448/64, ref-off, multiclass–Ridge, R3-retuned WRRF, checkpoint 1208 | Codabench | **0.7055** |  |  | 0.6735 | Public 1026275; private 1026274; historical best public; WRRF `0.15/0.65/0.20` |
+| This project, fixed 448/64, ref-off, balanced multiclass, new epoch-1 checkpoint 1234 | Codabench | 0.6967 |  |  | 0.6809 | Public 1027658; private 1027657 |
+| **Current practical baseline: fixed 448/64, ref-off, multiclass–Ridge, new epoch-1 checkpoint 1234** | Codabench | 0.6978 |  |  | **0.6825** | Public 1027650; private 1027647; designated with private performance priority; disclose this post-hoc selection |
 
 **Slide S4:** keep organizer two-stage, at most two published systems (normally
 ViDRILL and EDM), and the four project-policy rows. Do not display a project

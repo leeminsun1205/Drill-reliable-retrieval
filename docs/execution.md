@@ -28,6 +28,29 @@ remain under `notebooks/temp/`. The authoritative index is
 
 ## Kaggle setup
 
+### Optional Streamlit legal QA demo
+
+The UI and interactive backend are in `demo/streamlit/`; the Kaggle launcher is
+`notebooks/demo/kaggle_streamlit_legal_qa.ipynb`. Its answer layer calls the OpenAI
+Responses API only after the existing retrieval pipeline returns evidence;
+the UI must not replace the project retriever or send the full corpus to the
+API. `pipeline_adapter.py` implements `search(question)` using the current
+fixed-window, reference-off, pool-50 pipeline and its saved model artifacts.
+It loads corpus indexes once, then runs the cross-encoder, 61-feature LightGBM,
+and Multiclass–Ridge selector per question. It verifies feature-schema and
+checkpoint/artifact compatibility and fails closed on mismatches.
+
+The launcher installs `.[dense,vietnamese,ltr,demo]` and `pyngrok`. Attach the
+legal corpus, Harrier and E5 model inputs, the fine-tuning output containing
+checkpoint-1234, and the selected submission notebook's `*_complete_results.tar.gz`
+output. Retrieval caches are optional; if absent, the adapter builds them at
+startup under `/kaggle/working`. Store `OPENAI_API_KEY` and
+`NGROK_AUTH_TOKEN` as separate Kaggle Secrets; set `OPENAI_MODEL` as a normal
+configuration value. The API key is read by the app process, while the Ngrok
+token is used only by the notebook to expose port 8501. Never print either
+secret or include it in notebook output. The launcher clones the GitHub
+repository, so publish the current repo changes before running it in Kaggle.
+
 For authenticated Hugging Face downloads, create a Kaggle Secret named
 `HF_TOKEN` using a read-only Hugging Face access token, then set it once near
 the top of the notebook without printing it or passing it as a CLI argument:
@@ -1152,7 +1175,7 @@ Use `--feature-schema base_v1` for the historical base-only treatment. It has
 components are schema-derived, a one-dense run correctly has 13 columns and
 must not be compared as if it were the same 15-feature treatment.
 
-After the feature screen is frozen, run
+For reproducibility of the historical checkpoint-1208 branch, run
 `notebooks/submission/kaggle_pool50_epoch1_lightgbm_submission.ipynb` for official
 public/private inference. Attach the pool-50 fine-tuning notebook output, the
 retained `pool50_epoch1_lightgbm_feature_screen` artifact, graph-v3 reference
@@ -1234,9 +1257,11 @@ control by attaching a completed fixed/ref-off LightGBM output instead of the
 hierarchical stopping output. Attach exactly one `lightgbm_enhanced_v2`
 artifact. The resolver reads `dev_run_dir` from its provenance and requires the
 438-query `split_dev_qids.json` from that exact run, preventing cross-run split
-mixing. On the measured historical-weight fixed run, multiclass–Ridge was the
-nested-OOF winner and produced the strongest recorded public/private pair; do
-not transfer that conclusion to a new fusion ratio without refitting it.
+mixing. On the historical-weight fixed run, multiclass–Ridge was the nested-OOF winner.
+The newer fixed-window-trained checkpoint-1234 run has owner-reported official
+scores recorded in `docs/experiments.md`; treat its Ridge submission as the
+current practical private-priority baseline, while keeping hidden-score-based
+selection separate from scientific model selection.
 
 For the final non-prefix evidence-set diagnostic, attach that same completed
 stopping-notebook output and run
@@ -1303,11 +1328,35 @@ loaded to encode development queries; the cache removes corpus encoding, which
 is the dominant cost. Weight tuning should happen later from saved component
 rankings so changing weighted-RRF coefficients does not rerun any encoder.
 
-## Public/private submission inference
+## Current practical submission baseline
 
-The submission runner fits the configured corpus index once, infers the public
-and private JSON query sets separately, then validates and packages each set.
-For the current Kaggle mounts, run the selected fixed configuration as follows:
+Use
+`notebooks/submission/kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_multiclass_ridge_submission.ipynb`
+for the current private-priority practical baseline. It validates epoch-1
+checkpoint `1234` from the output of
+`notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs_sched5.ipynb`,
+uses fixed windows 448/64, reference expansion off, WRRF10 weights
+BM25/Harrier/E5 `0.15/0.65/0.20`, pool 50, `enhanced_v2`, and multiclass–Ridge.
+Attach the training notebook output, WeDev-VLSP and WeDev-VLSP-test datasets,
+Harrier and E5 model inputs, and Kaggle Secrets `HF_TOKEN` / `GITHUB_TOKEN`.
+Compatible BM25, fixed-window chunk, Harrier, and E5 caches are optional; the
+notebook reuses verified cache hits and builds missing caches. It saves the full
+dev, public/private retrieval and reranker artifacts, LightGBM OOF/features,
+policy outputs, submission ZIPs, and checkpoint provenance in a
+`_complete_results.tar.gz` archive. The measured public/private scores are
+`0.6978/0.6825`; the private-priority designation is post-hoc and must not be
+used for further private-test tuning.
+
+The older checkpoint-1208 launchers below remain reproducibility controls for
+the earlier hierarchical-bag-trained reranker, not the current baseline.
+
+## Generic CLI public/private submission inference
+
+The generic submission runner fits the configured corpus index once, infers the
+public and private JSON query sets separately, then validates and packages each
+set. This direct CLI path does not refit the current LightGBM plus multiclass–
+Ridge decision pipeline; use the current submission notebook above for that
+baseline. For a configured retrieval/reranker-only run, use:
 
 ```python
 !python scripts/run_submission_inference.py \

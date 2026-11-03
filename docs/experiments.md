@@ -2197,11 +2197,14 @@ The selection hierarchy is deliberately asymmetric:
 4. Gain importance is descriptive. Group-removal ablation is stronger pruning
    evidence, but the many removals in this screen still require confirmation.
 
-Current decision: carry pool-50 epoch 1 / checkpoint `1208` forward. Retain the
-full 61-feature `enhanced_v2` schema as the primary LightGBM model and the full
-69-feature `enhanced_v3` fixed-top-2 ranking as a control. If compute permits
-one more development run, test exactly one predeclared reduced schema informed
-by the exploratory ablations; do not continue open-ended single-feature search.
+Historical feature-screen decision: carry pool-50 epoch 1 / checkpoint `1208`
+forward for that reference-on training branch; retain `enhanced_v2` (61 features)
+as its primary LightGBM schema and `enhanced_v3` as a fixed-top-2 control. This
+branch remains a reproducible historical baseline. The current practical
+submission uses the separate fixed-window-trained checkpoint `1234` with the
+same `enhanced_v2` schema; see the updated submission record below. Any schema
+pruning still requires one predeclared development comparison, not open-ended
+single-feature search.
 
 Two matched full-pipeline control launchers are available for epoch 4
 (`checkpoint-4842`) and epoch 5 (`checkpoint-6054`). Their checkpoint-screen
@@ -2249,19 +2252,17 @@ Khoản–Điểm/reference-on official runs.
 
 Not yet measured in this branch are an independently confirmed reduced schema,
 LightGBM hyperparameter tuning, LambdaRank or another learner, a nested
-threshold-policy estimate, uncertainty intervals for the final comparison, and
-an official public/private evaluation of the newly fine-tuned finalist. Do not
-report any of those as completed or infer leaderboard gains from the 438-query
-development results.
+threshold-policy estimate, and uncertainty intervals for the final comparison.
+The new fixed-window-trained checkpoint-1234 official submissions are measured
+below; their raw output archive and matched development policy summary have not
+yet been ingested here.
 
-The official-inference launcher is now prepared at
-`notebooks/submission/kaggle_pool50_epoch1_lightgbm_submission.ipynb`. It freezes
-checkpoint `1208`, `enhanced_v2`, seed 42, and score-gap maximum cutoffs
-`{3,4,5}`, reproduces the nested-OOF F2 gate before packaging, and emits
-public/private score-gap submissions plus fixed-top-2 and pooled-threshold
-controls. This records an executable plan, not an executed result: official
-scores remain unmeasured until the notebook completes and Codabench returns a
-recorded evaluation.
+The general checkpoint-1208 official-inference launcher at
+`notebooks/submission/kaggle_pool50_epoch1_lightgbm_submission.ipynb` is a
+historical reference, not the current selected entry point. The current
+fixed-window checkpoint-1234 submission is run with
+`notebooks/submission/kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_multiclass_ridge_submission.ipynb`;
+its owner-reported results and evidence limits are recorded below.
 
 The first official-inference attempt on 2026-10-30 is a failed execution, not a
 measured result. Retrieval completed in-process, but residual dense/FAISS GPU
@@ -2280,7 +2281,7 @@ the submission manifest have been written. These lifecycle changes are
 output-invariant; the frozen reranker batch remains 256 and no fallback batch or
 model substitution is introduced.
 
-### New fixed-window epoch-1 checkpoint submission (planned execution)
+### New fixed-window epoch-1 checkpoint submission
 
 `notebooks/submission/kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_multiclass_ridge_submission.ipynb`
 is copied from the fixed-window/reference-off submission runner and preserves
@@ -2293,21 +2294,24 @@ manifest, the five-epoch scheduler horizon, and the matching fixed-window
 three-epoch training notebook output. It then rebuilds/refits all checkpoint-
 dependent development, test inference, LightGBM, and final-set policy stages.
 
-On completion, its `_complete_results.tar.gz` artifact includes the entire
-development run, public/private retrieval and reranker artifacts, LightGBM
-feature matrices and OOF results/model, all final-set policy outputs and
-submission ZIPs, and checkpoint/provenance metadata with hashes. Model weights
-remain in the attached training notebook output and are identified by the saved
-checkpoint metadata; no leaderboard result is claimed until this run and the
-official evaluation finish. The previous checkpoint-1208 notebook is retained
-unchanged as the measured reference.
+The owner reports that the run completed and produced submissions `1027658`,
+`1027657`, `1027650`, and `1027647`, recorded below. The
+`_complete_results.tar.gz` artifact is intended to retain the full development
+run, public/private retrieval and reranker artifacts, LightGBM feature matrices
+and OOF results/model, final-set policy outputs and ZIPs, and checkpoint /
+provenance metadata with hashes. The checkpoint weights remain in the attached
+training notebook output. The artifact and matched checkpoint-1234 development
+policy summary have not yet been independently ingested into this repository.
+The previous checkpoint-1208 notebook and measurements remain unchanged.
 
 ### Repository artifact cleanup
 
-The 2026-10-30 final cleanup leaves only three current notebook entry points:
-cache construction, the pool-50 checkpoint-1208 LightGBM feature screen, and
-the corresponding official submission launcher. Completed pointwise
-mining/training/evaluation notebooks, deferred pairwise notebooks, superseded
+At the time of the 2026-10-30 repository cleanup, the supported entry points
+were cache construction, the checkpoint-1208 LightGBM feature screen, and its
+matching submission launcher. That historical inventory was later extended
+with fixed-window training/evaluation and the checkpoint-1234 submission
+notebook. Completed pointwise mining/training/evaluation notebooks, deferred
+pairwise notebooks, superseded
 reranker treatments, and preparation utilities are retained in
 `notebooks/archive/`; they are reproducibility records, not active workflows.
 
@@ -2587,9 +2591,9 @@ obtained nested-OOF Precision `0.544939`, Recall `0.728006`, Macro-F2
 while cost-sensitive multiclass reached `0.560718`, so Ridge is the
 development-selected policy for this run. Its public/private Macro-F2 was
 `0.7055/0.6735` (submissions `1026275/1026274`), versus `0.6933/0.6685` for the
-historical-ratio Ridge run: `+0.0122/+0.0050`. This is the highest measured
-project pair. The ratio was selected from cross-fitted R3 development evidence,
-not from either hidden split.
+historical-ratio Ridge run: `+0.0122/+0.0050`. This remains the highest measured
+project public score and an earlier historical-checkpoint result. The ratio was
+selected from cross-fitted R3 development evidence, not from either hidden split.
 
 Relative to the historical-ratio Ridge development result
 (`0.568950/0.701446/0.670230`, mean output `2.175799`), the retuned run lowers
@@ -2598,7 +2602,7 @@ precision by `0.024011` but raises recall by `0.026560`, raises Macro-F2 by
 therefore recall-oriented and consistent with the DRiLL F2 objective; it should
 not be described as a uniform improvement of every intermediate metric.
 
-### Fixed-window matched reranker adaptation (planned execution)
+### Fixed-window matched reranker adaptation and checkpoint results
 
 `notebooks/training/kaggle_finetune_reranker_fixed_refoff_3epochs.ipynb`
 implements the missing matched-supervision control. It is derived from the
@@ -2622,16 +2626,17 @@ Compare the two runs only through matched checkpoint evaluation on one frozen
 development handoff. The `3/5` run is not an extra model-selection split and
 must not be selected from private scores.
 
-The notebook requires verified fixed-window BM25, shared chunk, Harrier, and
-multilingual-E5 caches and the Vietnamese warm-start checkpoint. It creates a
-fresh train-side retrieval handoff internally only to isolate retrieval memory
-from the teacher process. It deliberately does not require a development
-handoff and does not evaluate checkpoints: a former run had already saved all
-models before a stale reference-on handoff contract made its optional
-post-training cell fail. Completion is now defined by three loadable epoch
-checkpoints plus checksummed mining, training provenance, and compact metrics
-artifacts. No quality result is recorded until a separate matched fixed-window
-checkpoint evaluation is run.
+The training notebook uses verified fixed-window BM25, shared chunk, Harrier,
+and multilingual-E5 caches when available, plus the Vietnamese warm-start
+checkpoint. It creates a train-side retrieval handoff to isolate retrieval
+memory from the teacher process; the 438 dev queries are excluded from mining.
+Its outputs include three loadable epoch checkpoints, checksummed mining and
+training provenance. A separate matched evaluation reports reranker-only
+Precision/Recall/F2 for checkpoints 1234/2471/3709 as
+`0.406393/0.675875/0.596735`, `0.413242/0.688949/0.607841`, and
+`0.420091/0.695852/0.615098`. Epoch 3 leads the fixed-top-2 gate, while the
+current practical submission uses epoch 1 / checkpoint 1234; the submitted
+private score must not be used as a dev estimate or a reason for further tuning.
 
 For a stricter process boundary and faster retries,
 `notebooks/preparation/kaggle_prepare_fixed448_train_handoff.ipynb` can create
@@ -2830,3 +2835,25 @@ downstream objective. Keep the fixed-top-2 reranker result as the isolated
 reranker ablation, and report LightGBM results separately with their policy and
 validation protocol. All are development results, not private-test estimates;
 archive/hash ingestion remains pending.
+
+
+### Updated practical baseline from fixed-window checkpoint 1234
+
+The owner reported two completed Codabench submission pairs on 2026-11-02 for
+the new fixed-window fine-tuned epoch-1 checkpoint `1234` under the current
+fixed 448/64, reference-off, R3-retuned pipeline. Balanced multiclass scored
+public/private F2 `0.6967/0.6809` (submissions `1027658/1027657`); the
+multiclass–Ridge ensemble scored `0.6978/0.6825` (`1027650/1027647`). Ridge is
+now designated the practical baseline because it has the higher reported
+private score (`+0.0016`) and also leads public by `+0.0011` over balanced
+multiclass. Compared with the previous checkpoint-1208 Ridge pair
+`0.7055/0.6735`, the new run is `-0.0077` public and `+0.0090` private. Thus
+`0.6978/0.6825` is the current practical baseline, while `0.7055` remains the
+highest public score.
+
+This designation uses private leaderboard performance as requested and is a
+post-hoc operational choice, not a leakage-free scientific model-selection
+result. Keep the fixed development/nested-OOF protocol as the basis for
+methodological claims, report all compared submissions, and do not tune further
+on private feedback. These scores were owner-reported; the submission artifacts
+have not been independently ingested in this repository.

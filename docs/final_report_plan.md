@@ -9,14 +9,18 @@ labels in `tables_experiment.md` govern report assembly.
 
 The selected representation is fixed token windows 448/64 with reference
 expansion disabled. The frozen neural/retrieval backbone retains pool 50, WRRF
-`k=10` with cross-fitted R3 BM25/Harrier/E5 weights `0.15/0.65/0.20`, pointwise MIL epoch-1
-checkpoint `1208`, and the 61-feature `enhanced_v2` LightGBM schema. This
+`k=10` with cross-fitted R3 BM25/Harrier/E5 weights `0.15/0.65/0.20`,
+pointwise MIL epoch-1 checkpoint `1234` (fixed-window-trained, scheduler
+horizon 5), and the 61-feature `enhanced_v2` LightGBM schema. The fixed-window
 representation was selected by the R2 dense screen and matched R4 nested-OOF
-comparison, not private feedback. Checkpoint 1208 was trained on hierarchical
-article-chunk bags and transfers to fixed chunks at inference; do not describe
-it as fixed-window fine-tuning.
+comparison (which held historical checkpoint `1208` fixed). The current practical submission baseline
+uses fixed-window-trained epoch-1 checkpoint `1234`; the checkpoint-1208 run
+remains a historical comparison trained on hierarchical article-chunk bags.
+The practical baseline designation prioritizes the observed private score and
+must be disclosed as post-hoc, not as leakage-free model selection.
 
-Measured official F2 as of 2026-11-02:
+Measured official F2 as of 2026-11-02 (new submissions 1027647, 1027650,
+1027657, and 1027658):
 
 | Final policy | Public | Private |
 |---|---:|---:|
@@ -31,7 +35,9 @@ Measured official F2 as of 2026-11-02:
 | Fixed 448/64, ref-off, score gap | 0.6739 | 0.6580 |
 | Fixed 448/64, ref-off, balanced multiclass | 0.6833 | 0.6677 |
 | Fixed 448/64, ref-off, multiclass–Ridge, historical WRRF | 0.6933 | 0.6685 |
-| Fixed 448/64, ref-off, multiclass–Ridge, R3-retuned WRRF | **0.7055** | **0.6735** |
+| Fixed 448/64, ref-off, multiclass–Ridge, R3-retuned WRRF, checkpoint 1208 | **0.7055** | 0.6735 |
+| Fixed 448/64, ref-off, balanced multiclass, checkpoint 1234 | 0.6967 | 0.6809 |
+| **Current practical baseline: fixed 448/64, ref-off, multiclass–Ridge, checkpoint 1234** | 0.6978 | **0.6825** |
 
 Relative to LightGBM fixed top 2, learned stopping adds `0.0683/0.0571` on
 public/private. It also exceeds score gap by `0.0121/0.0076` and threshold by
@@ -44,13 +50,14 @@ it on private (`+0.0122`), but the final policy must be chosen from their saved
 nested-OOF development evidence rather than this private ordering.
 
 On the historical hierarchical ranking, the closed nested screen selected
-balanced multiclass logistic and that ordering transferred to both hidden
-splits. On fixed windows with historical WRRF weights, multiclass–Ridge reached
-`0.6933/0.6685`. After cross-fitted R3 selection changed BM25/Harrier/E5 to
-`0.15/0.65/0.20`, the same confirmatory family reached nested-OOF F2 `0.6822`
-and the best measured project public/private pair `0.7055/0.6735`. Fusion and
-policy choices follow development evidence; hidden scores are confirmation
-rather than a selection signal.
+balanced multiclass logistic. On fixed windows with historical WRRF weights,
+multiclass–Ridge reached `0.6933/0.6685`. The checkpoint-1208 R3-retuned run
+reached `0.7055/0.6735` and remains the project's highest measured public score.
+The new fixed-window-trained checkpoint-1234 submissions scored `0.6967/0.6809`
+for balanced multiclass and `0.6978/0.6825` for multiclass–Ridge. Ridge is the
+current practical baseline by private score, while this post-hoc private-based
+choice must be disclosed and must not be presented as an unbiased model
+selection; scientific selection should follow the saved development protocol.
 
 The retuned Ridge result is recall-oriented: compared with the historical-WRRF
 Ridge dev result, precision changes `0.5690 → 0.5449`, recall
@@ -88,9 +95,10 @@ decoding remains a negative result (nested F2 `0.510219`, mean output `4.658`).
 ## Baselines and comparison models
 
 The minimum internal baselines are BM25, strongest single dense retriever,
-selected hybrid retrieval, hybrid plus warm-start cross-encoder, hybrid plus
-fine-tuned checkpoint `1208`, checkpoint `1208` plus LightGBM fixed top 2, and
-the same ranking with learned final-set policies. Published organizer BM25 and
+selected hybrid retrieval, hybrid plus warm-start cross-encoder, and the current
+fixed-window-trained checkpoint `1234` pipeline through LightGBM and
+multiclass–Ridge selection. Retain the checkpoint-1208 and fixed-top-2 runs as
+historical controls, and compare output policies on matched saved rankings. Published organizer BM25 and
 two-stage scores are context only, because their implementation is not fully
 specified. Published EDM, FPT IS/CUDO, and ViDRILL systems are external context,
 not controlled baselines.

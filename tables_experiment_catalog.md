@@ -204,9 +204,10 @@ and remain pending independent result-archive verification.
 **Decision.** Select fixed token windows 448/64 for the final pipeline. They
 lead five of six reported metrics, while hierarchical Khoản–Điểm leads only
 Recall@2 by `0.0003`. The matched R4 experiment also favors fixed/reference-off
-at the final nested-OOF stage (`0.6681` versus `0.6597`). This is a measured
-representation choice, not a claim that checkpoint 1208 was fine-tuned on
-fixed windows; its hierarchical-bag training remains an explicit limitation.
+at the final nested-OOF stage (`0.6681` versus `0.6597`). The original
+checkpoint-1208 reranking comparison used a model trained on hierarchical
+chunk bags; the later matched fixed-window training and its checkpoint results
+are reported separately in Table 11.
 
 **Evidence.** `docs/experiments.md` and the four Table-R2 notebook outputs.
 The earlier multilingual-E5-base/top-3 chunking screen is historical evidence,
@@ -325,9 +326,11 @@ presented as end-to-end F2.
 **Purpose.** Answer the primary research question by isolating legal structure
 and explicit references relative to a strong baseline.
 
-**Protocol.** Use one frozen split, BM25/Harrier/E5-large components, WRRF
-weights, component depth, candidate budget, reranker checkpoint, LightGBM
-schema, output policy, and evaluator. Define **structure off** as the selected
+**Protocol.** This is the completed historical factorial using pool-50
+checkpoint `1208`, not the newer fixed-window-trained checkpoint `1234`. Use
+one frozen split, BM25/Harrier/E5-large components, WRRF weights, component
+depth, candidate budget, LightGBM schema, output policy, and evaluator. Define
+**structure off** as the selected
 non-structural token-window representation under the same encoder/token budget;
 define **reference on** as graph-v3 same-document expansion with the fixed cap.
 Do not reuse separately retuned fusion or selector parameters in individual
@@ -378,16 +381,21 @@ rows are development diagnostics; fixed top 2 is the policy-neutral comparison.
 **Purpose.** Select the adaptation epoch without relying on threshold scale and
 test whether mining/reranking 100 candidates improves over pool 50.
 
-**Protocol.** Within each pool, reuse the exact checksummed handoff for warm
-start and epochs 1–5. Load checkpoints in fresh subprocesses, score identical
-candidates, use max chunk-logit article aggregation, and select by fixed top 2.
-Threshold/fallback-2 is diagnostic only. Pool comparison holds the graph, WRRF,
-mining, optimizer, maximum five-epoch schedule, and seed-cycle sampling fixed.
+**Protocol.** Within each original pool arm, reuse its exact checksummed
+handoff for warm start and epochs 1–5. Load checkpoints in fresh subprocesses,
+score identical candidates, max-aggregate chunk logits to article IDs, and
+select by fixed top 2. Threshold/fallback-2 is a same-dev diagnostic. The
+separate fixed-window-trained rows use a matched fixed-window handoff and are
+not part of the strict pool-50 versus pool-100 comparison; they come from the
+three-adaptation-epoch run with the five-epoch scheduler horizon.
 
 | Pool | Snapshot | Fixed top-2 Precision | Fixed top-2 Recall | Fixed top-2 Macro-F2 | Pooled threshold Macro-F2 |
 |---:|---|---:|---:|---:|---:|
 | 50 | Warm start | 0.367580 | 0.615830 | 0.542546 | 0.585978 |
 | 50 | Epoch 1 / `1208` | **0.393836** | **0.657610** | **0.579928** | **0.623556** |
+| 50, fixed-window trained | Epoch 1 / `1234` | 0.406393 | 0.675875 | 0.596735 | 0.638504 |
+| 50, fixed-window trained | Epoch 2 / `2471` | 0.413242 | 0.688949 | 0.607841 | 0.648870 |
+| 50, fixed-window trained | Epoch 3 / `3709` | **0.420091** | **0.695852** | **0.615098** | **0.654655** |
 | 50 | Epoch 2 / `2418` | 0.381279 | 0.639726 | 0.563353 | 0.616518 |
 | 50 | Epoch 3 / `3630` | 0.384703 | 0.641058 | 0.565669 | 0.606536 |
 | 50 | Epoch 4 / `4842` | 0.390411 | 0.649429 | 0.573351 | 0.622769 |
@@ -524,9 +532,16 @@ claims belong to Tables 4, 6, 9, 11, 12, and 14.
 | + LightGBM | `enhanced_v2`, 61 features | Fixed top 2 | 0.594233 |
 | + Adaptive final selection | Same `enhanced_v2` OOF ranking | Nested score gap | 0.658333 |
 
-**Evidence.** Values are recorded or artifact-verified in
-`docs/experiments.md` and retained archives. Do not label adjacent differences
-as isolated gains on the slide.
+**Current official baseline.** The development progression above remains the
+checkpoint-1208 feature-screen trajectory and must not be relabeled as
+checkpoint-1234 development metrics. The current practical submission is the
+fixed-window-trained checkpoint-1234 pipeline with `enhanced_v2` and
+multiclass–Ridge: public/private F2 `0.6978/0.6825`. Do not treat the difference
+from old development rows as a causal stage gain.
+
+**Evidence.** Historical progression values are recorded or artifact-verified
+in `docs/experiments.md` and retained archives. The new official scores are
+owner-reported pending archive ingestion.
 
 ---
 
@@ -555,7 +570,9 @@ rank the project retroactively.
 | This project, same ranking | Codabench, submission 1025816 | Fold-safe learned stopping |  |  | **0.6123** |
 | This project, same ranking | Codabench, submission 1025907 | Listwise prefix-utility Ridge |  |  | **0.6245** |
 | This project, same ranking | Codabench, submission 1025992 | Tuned prefix-utility Ridge (`alpha=1`) |  |  | 0.6265 |
-| This project, same ranking | Codabench, submission 1025979 | Balanced multiclass logistic (`C=0.1`) |  |  | **0.6368** |
+| This project, same ranking | Codabench, submission 1025979 | Balanced multiclass logistic (`C=0.1`) |  |  | 0.6368 |
+| This project, fixed-window trained checkpoint 1234 | Codabench, submission 1027657 | Balanced multiclass |  |  | 0.6809 |
+| **Current practical baseline, checkpoint 1234** | Codabench, submission 1027647 | **Multiclass–Ridge ensemble** |  |  | **0.6825** |
 
 **Evidence.** `docs/competition_review.md` and `docs/experiments.md`. External
 systems are context, not controlled baselines.
@@ -566,29 +583,43 @@ systems are context, not controlled baselines.
 
 **Status:** `REPORT + SLIDES`
 
-**Purpose.** Test whether the relative ordering of fixed and adaptive policies
-is stable across the two hidden splits, without using either split to retune.
+**Purpose.** Report how frozen output policies performed on public and private
+splits. This is descriptive robustness reporting; the current practical
+baseline was designated after seeing private scores and is not an unbiased
+selection claim.
 
-**Protocol.** Freeze retrieval, checkpoint `1208`, `enhanced_v2`, LightGBM
-training data, and policy parameters before submission. Report submission IDs.
-Do not select a new policy from private results.
+**Protocol.** Each historical policy pair freezes its own ranking/checkpoint,
+`enhanced_v2` features, LightGBM training data, and policy parameters before
+submission. Report IDs and checkpoint. The checkpoint-1234 scores are the
+current practical private-priority baseline by owner designation; label the
+post-hoc selection explicitly. Rows from checkpoints 1208 and 1234 use
+different reranker training treatments and must not be interpreted as a
+controlled policy comparison. Do not tune further on private.
 
-| Output policy | Public submission | Public Macro-F2 | Private submission | Private Macro-F2 | Public-private difference |
-|---|---:|---:|---:|---:|---:|
-| Fixed top 2 | 1022898 | 0.5989 | 1022897 | 0.5552 | 0.0437 |
-| Threshold + fallback 2 | 1021667 | 0.6524 | 1021640 | **0.6054** | 0.0470 |
-| Score gap | 1021732 | **0.6551** | 1021639 | 0.6047 | 0.0504 |
-| Fold-safe learned stopping | 1025830 | **0.6672** | 1025816 | **0.6123** | 0.0549 |
-| Listwise prefix-utility Ridge | 1025919 | 0.6661 | 1025907 | **0.6245** | 0.0416 |
-| Tuned prefix-utility Ridge | 1025993 | 0.6700 | 1025992 | 0.6265 | 0.0435 |
-| Balanced multiclass logistic | 1025984 | **0.6847** | 1025979 | **0.6368** | 0.0479 |
-| Multiclass–Ridge ensemble | 1026035 | **0.6863** | 1026030 | 0.6354 | 0.0509 |
+| Checkpoint / ranking | Output policy | Public submission | Public Macro-F2 | Private submission | Private Macro-F2 | Public-private difference |
+|---|---|---:|---:|---:|---:|---:|
+| Checkpoint 1208 / historical ranking | Fixed top 2 | 1022898 | 0.5989 | 1022897 | 0.5552 | 0.0437 |
+| Checkpoint 1208 / historical ranking | Threshold + fallback 2 | 1021667 | 0.6524 | 1021640 | **0.6054** | 0.0470 |
+| Checkpoint 1208 / historical ranking | Score gap | 1021732 | **0.6551** | 1021639 | 0.6047 | 0.0504 |
+| Checkpoint 1208 / historical ranking | Fold-safe learned stopping | 1025830 | **0.6672** | 1025816 | **0.6123** | 0.0549 |
+| Checkpoint 1208 / historical ranking | Listwise prefix-utility Ridge | 1025919 | 0.6661 | 1025907 | **0.6245** | 0.0416 |
+| Checkpoint 1208 / historical ranking | Tuned prefix-utility Ridge | 1025993 | 0.6700 | 1025992 | 0.6265 | 0.0435 |
+| Checkpoint 1208 / historical ranking | Balanced multiclass logistic | 1025984 | **0.6847** | 1025979 | **0.6368** | 0.0479 |
+| Checkpoint 1208 / historical ranking | Multiclass–Ridge ensemble | 1026035 | **0.6863** | 1026030 | 0.6354 | 0.0509 |
+| Checkpoint 1234 / fixed-window ranking | Balanced multiclass | 1027658 | 0.6967 | 1027657 | 0.6809 | 0.0158 |
+| **Checkpoint 1234 / fixed-window ranking** | **Multiclass–Ridge ensemble** | **1027650** | **0.6978** | **1027647** | **0.6825** | **0.0153** |
 
-Learned stopping exceeds score gap by `0.0121` public and `0.0076` private;
-unlike threshold versus score gap, the direction is consistent across splits.
+Within the historical checkpoint-1208 ranking, learned stopping exceeds score
+gap by `0.0121` public and `0.0076` private. The checkpoint-1234 rows use a
+different, fixed-window-trained reranker and extend split reporting; they are
+not a controlled comparison of output policies against the older rows. Within
+the new pair, multiclass–Ridge exceeds balanced multiclass by `0.0011` public
+and `0.0016` private.
 
 **Evidence.** Codabench results recorded in `docs/experiments.md` and
-`docs/final_report_plan.md`.
+`docs/final_report_plan.md`. Checkpoint 1208 retains the historical public-score
+record (`0.7055`); checkpoint 1234 is the current private-priority baseline and
+has the highest reported project private score (`0.6825`).
 
 ---
 
@@ -700,14 +731,14 @@ its split, model, artifact, evaluator, and policy can be reconstructed.
 |---|---|---|---|---|
 | Development split | Seed 42, 20%, 438 qids | Persisted qid list | `split_dev_qids.json` | Verified in retained feature-screen archive |
 | Sparse retriever | BM25S/VnCoreNLP, `k1=1.2`, `b=0.75` |  | Resolved experiment config | Dependency/JAR hash still consolidate |
-| Chunking | Khoản–Điểm, BGE-M3 tokenizer, 448/64 |  | Shared chunk cache manifest | Hash exists in execution artifacts |
+| Chunking | Fixed token window, BGE-M3 tokenizer, 448/64 |  | Shared fixed-window chunk cache | Current representation; archive hash ingestion pending |
 | Dense 1 | `mainguyen9/vietlegal-harrier-0.6b` |  | Dense-cache manifest | Pin revision before next cache generation |
 | Dense 2 | `intfloat/multilingual-e5-large` |  | Dense-cache manifest | Pin revision before next cache generation |
-| Fusion | WRRF `k=10`, BM25/Harrier/E5 `0.15/0.55/0.30` |  | Frozen handoff/config | Recorded |
-| Reference graph | graph v3, same-document, seed top 5, max 4 | Graph/summary hashes | `results/reference_graph_v3/` | Artifact present |
-| Reranker | Pool 50 epoch 1 / checkpoint `1208` | Checkpoint hash | Kaggle notebook output | Model files external to Git |
+| Fusion | WRRF `k=10`, BM25/Harrier/E5 `0.15/0.65/0.20` |  | Frozen first-stage config | R3-retuned current deployment ratio |
+| Reference expansion | Off; no graph used in current baseline | N/A | Resolved submission config | Current deployment setting |
+| Reranker | Pool 50, fixed-window pointwise-MIL epoch 1 / checkpoint `1234` | Checkpoint hash pending ingestion | Fine-tune notebook output | Model files external to Git; scheduler horizon 5 |
 | LightGBM | `enhanced_v2`, 61 features, seed 42, five folds | Feature schema/order | Feature-screen archive | Artifact verified |
-| Final policy | Threshold and score-gap frozen controls | Policy parameters in metrics | Submission provenance | Artifact/Codabench verified |
+| Final policy | Multiclass–Ridge ensemble | Deployment parameters in run output | Checkpoint-1234 submission | Codabench scores owner-reported; archive pending |
 | Evaluator | Macro P/R then F2 | Repository Git revision | `src/drill_ir/evaluation/metrics.py` | Unit-tested |
 
 ---
@@ -725,7 +756,8 @@ its split, model, artifact, evaluator, and policy can be reconstructed.
 2. **Run the consolidated stage-wise error analysis.**
    - Dependency: retained selected first-stage, reranker, LightGBM OOF, and
      final-policy predictions.
-   - Config: frozen pool-50 checkpoint-1208 `enhanced_v2` pipeline.
+   - Config: current practical pool-50 checkpoint-1234 fixed-window-trained
+     `enhanced_v2` pipeline; compare with checkpoint 1208 as historical control.
    - Output: query-level error JSONL, category summary CSV, audit sample.
    - Updates: Tables 19 and 20.
 

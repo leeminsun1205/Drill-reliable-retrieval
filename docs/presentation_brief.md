@@ -367,7 +367,7 @@ Fixed token windows 448/64 + weighted RRF 0.15/0.65/0.20, k=10
        ↓
 Top 50 fused retrieved chunks
        ↓
-Vietnamese reranker, pointwise MIL epoch 1 / checkpoint 1208
+Vietnamese reranker, fixed-window pointwise MIL epoch 1 / checkpoint 1234
        ↓
 Max aggregation theo aid
        ↓
@@ -376,11 +376,13 @@ LightGBM enhanced_v2 (61 features)
 Balanced multiclass / multiclass–Ridge final-set selection
 ```
 
-Đây là pipeline cuối theo bằng chứng hiện có. Multiclass–Ridge đạt nested-OOF
-F2 `0.6822` và public/private `0.7055/0.6735`; hidden splits chỉ xác nhận sau
-khi trọng số đã được chọn trên development. Checkpoint 1208 được train trên
-hierarchical chunk bags rồi giữ cố định khi chấm fixed windows; phải trình bày
-đây là transfer setting, không phải fixed-window fine-tuning.
+Baseline thực nghiệm hiện tại dùng fixed-window 448/64, references off, WRRF
+`0.15/0.65/0.20`, checkpoint epoch 1 mới `1234`, LightGBM enhanced_v2 và
+multiclass–Ridge. Điểm submission là public/private `0.6978/0.6825`; balanced
+multiclass cùng checkpoint đạt `0.6967/0.6809`. Cặp checkpoint-1208 cũ
+`0.7055/0.6735` vẫn là kết quả public cao nhất. Vì baseline thực tế được ưu
+tiên theo private, cần ghi rõ đây là lựa chọn sau khi xem hidden score, không
+gọi đó là đánh giá chọn mô hình độc lập.
 
 ## 5. Thông tin audit cấu trúc có thể dùng
 
