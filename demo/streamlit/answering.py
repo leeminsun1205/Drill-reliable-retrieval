@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Sequence
+from collections.abc import Iterator, Sequence
 
 from openai import OpenAI
 
@@ -19,8 +19,8 @@ Trả lời ngắn gọn bằng tiếng Việt và dẫn aid tương ứng trong
 Đây là phần hỗ trợ tra cứu, không khẳng định thay cho tư vấn pháp lý chuyên môn."""
 
 
-def generate_answer(question: str, evidence: Sequence[Evidence]) -> str:
-    """Generate a short answer grounded only in the retrieved articles."""
+def stream_answer(question: str, evidence: Sequence[Evidence]) -> Iterator[str]:
+    """Yield answer text as the OpenAI-compatible API streams it."""
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     model = os.environ.get("OPENAI_MODEL", "").strip()
     base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
@@ -29,7 +29,8 @@ def generate_answer(question: str, evidence: Sequence[Evidence]) -> str:
     if not model:
         raise RuntimeError("Set OPENAI_MODEL in the Kaggle launcher")
     if not evidence:
-        return "Chưa tìm thấy Điều luật phù hợp trong các ứng viên truy xuất."
+        yield "Chưa tìm thấy Điều luật phù hợp trong các ứng viên truy xuất."
+        return
 
     evidence_text = []
     for article in evidence:
@@ -46,7 +47,7 @@ def generate_answer(question: str, evidence: Sequence[Evidence]) -> str:
     if base_url:
         client_options["base_url"] = base_url
     client = OpenAI(**client_options)
-    response = client.chat.completions.create(
+    stream = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": INSTRUCTIONS},
@@ -59,8 +60,17 @@ def generate_answer(question: str, evidence: Sequence[Evidence]) -> str:
                 ),
             },
         ],
+        stream=True,
     )
-    content = response.choices[0].message.content
-    if not isinstance(content, str) or not content.strip():
+
+    received_content = False
+    with stream:
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            piece = chunk.choices[0].delta.content
+            if isinstance(piece, str) and piece:
+                received_content = True
+                yield piece
+    if not received_content:
         raise RuntimeError("The chat-completions API returned an empty answer")
-    return content.strip()

@@ -24,8 +24,9 @@ candidate depth, features, and final selection policy are unchanged. Startup
 and per-query GPU memory snapshots are written to the Streamlit log.
 
 The app reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
-from the process environment and calls the OpenAI-compatible Chat Completions
-API. Keep API keys in Kaggle Secrets; never place them in the notebook source.
+from the process environment and streams Chat Completions text into the chat as
+it arrives. Keep API keys in Kaggle Secrets; never place them in the notebook
+source. The configured OpenAI-compatible endpoint must support streaming.
 The Kaggle notebook should populate the API key from Kaggle Secrets and start
 Streamlit in a subprocess. Ngrok is started by the notebook, not by this app.
 

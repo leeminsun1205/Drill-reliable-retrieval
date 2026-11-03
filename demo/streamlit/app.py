@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from answering import generate_answer
+from answering import stream_answer
 from backend import Evidence, load_backend, normalize_evidence
 
 
@@ -80,11 +80,10 @@ if question:
                     normalize_evidence(item)
                     for item in retrieval_backend.search(question)
                 ]
-                answer = generate_answer(question, evidence)
-            st.markdown(answer)
+            answer = st.write_stream(stream_answer(question, evidence))
             show_sources(evidence)
             st.session_state.messages.append(
-                {"role": "assistant", "content": answer, "evidence": evidence}
+                {"role": "assistant", "content": str(answer), "evidence": evidence}
             )
         except Exception as error:
             st.error(f"Chưa xử lý được câu hỏi: {error}")
