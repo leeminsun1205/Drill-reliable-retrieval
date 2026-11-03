@@ -15,6 +15,14 @@ LightGBM model, and the fitted Multiclass–Ridge policy. It requires the
 complete-results archive from the selected Kaggle submission notebook; it does
 not retrain or retune models at startup.
 
+For the interactive process, dense query encoding runs on CPU and, when two
+GPUs are available, the cross-encoder is split across both with batch size 8
+(one GPU is used when only one is available). This keeps the dense encoders
+from competing for GPU memory while using both T4s for reranking. The batch is
+deliberately conservative after the earlier batch-256 OOM. Retrieval weights,
+candidate depth, features, and final selection policy are unchanged. Startup
+and per-query GPU memory snapshots are written to the Streamlit log.
+
 The app reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
 from the process environment and calls the OpenAI-compatible Chat Completions
 API. Keep API keys in Kaggle Secrets; never place them in the notebook source.

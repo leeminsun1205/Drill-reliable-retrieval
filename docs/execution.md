@@ -39,6 +39,12 @@ fixed-window, reference-off, pool-50 pipeline and its saved model artifacts.
 It loads corpus indexes once, then runs the cross-encoder, 61-feature LightGBM,
 and Multiclass–Ridge selector per question. It verifies feature-schema and
 checkpoint/artifact compatibility and fails closed on mismatches.
+Because Streamlit keeps the backend alive between queries, its two dense query
+encoders run on CPU. The cross-encoder uses both CUDA devices with batch size 8
+when two GPUs are available (one GPU otherwise). This keeps retrieval encoder
+weights off the GPUs and uses both T4s for reranking. The batch size is
+conservative after an earlier batch-256 OOM; startup and per-query memory
+snapshots are logged.
 
 The launcher installs `.[dense,vietnamese,ltr,demo]` and `pyngrok`. Attach the
 legal corpus, Harrier and E5 model inputs, the fine-tuning output containing

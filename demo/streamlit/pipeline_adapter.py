@@ -140,6 +140,31 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _log_cuda_memory(torch: Any, stage: str) -> None:
+    if not torch.cuda.is_available():
+        print(f"[demo:cuda] stage={stage} cuda=unavailable", flush=True)
+        return
+    devices = []
+    for index in range(torch.cuda.device_count()):
+        free_bytes, total_bytes = torch.cuda.mem_get_info(index)
+        devices.append({
+            "device": index,
+            "free_gib": round(free_bytes / 2**30, 2),
+            "total_gib": round(total_bytes / 2**30, 2),
+            "torch_allocated_gib": round(torch.cuda.memory_allocated(index) / 2**30, 2),
+            "torch_reserved_gib": round(torch.cuda.memory_reserved(index) / 2**30, 2),
+        })
+    print({"stage": stage, "cuda_memory": devices}, flush=True)
+
+
+def _log_cuda_memory_if_available(stage: str) -> None:
+    try:
+        import torch
+    except ImportError:
+        return
+    _log_cuda_memory(torch, stage)
+
+
 def _verify_checkpoint(archive_root: Path, checkpoint: Path) -> None:
     provenance_path = archive_root / "checkpoint_provenance.json"
     if not provenance_path.is_file():
@@ -342,25 +367,41 @@ class FixedWindowPool50Backend:
             gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
         except ImportError:
             gpu_count = 0
+        # Streamlit keeps one process alive between turns. Keep the two dense
+        # encoders on CPU so their weights do not compete with the reranker;
+        # spread the cross-encoder across both T4s with a conservative batch.
+        # The research runner uses the same two-GPU path for reranking, but can
+        # replace its process after retrieval to release stage memory.
+        runtime = {"accelerator": "cpu", "devices": "auto", "mixed_precision": False}
         if gpu_count >= 2:
-            runtime = {"accelerator": "cuda", "devices": 1, "mixed_precision": False}
-            reranker_device = "cuda:1"
+            reranker_device: str | list[str] = ["cuda:0", "cuda:1"]
         elif gpu_count == 1:
-            runtime = {"accelerator": "cuda", "devices": 1, "mixed_precision": False}
             reranker_device = "cuda:0"
         else:
-            runtime = {"accelerator": "cpu", "devices": "auto", "mixed_precision": False}
             reranker_device = "cpu"
+        reranker_uses_cuda = (
+            any(device.startswith("cuda:") for device in reranker_device)
+            if isinstance(reranker_device, list)
+            else reranker_device.startswith("cuda:")
+        )
         config["reranking"].update(
             {
                 "model_name": str(checkpoint),
                 "batching": "per_query",
-                "batch_size": 16,
-                "fp16": reranker_device.startswith("cuda:"),
+                "batch_size": 8,
+                "fp16": reranker_uses_cuda,
                 "device": reranker_device,
             }
         )
         config["runtime"] = runtime
+        print({
+            "demo_gpu_count": gpu_count,
+            "dense_encoder_device": "cpu",
+            "reranker_device": reranker_device,
+            "reranker_batch_size": config["reranking"]["batch_size"],
+        }, flush=True)
+        if gpu_count:
+            _log_cuda_memory(torch, "before_model_load")
 
         self.articles = list(iter_articles(corpus_path, include_blank=False))
         self.articles_by_aid = {article.aid: article for article in self.articles}
@@ -398,13 +439,16 @@ class FixedWindowPool50Backend:
         query = Query(qid=self._query_counter, question=text, relevant_aids=())
         retrieval_top_k = int(self._artifacts.config["retrieval"]["top_k"])
         first_stage = self.retriever.retrieve([query], top_k=retrieval_top_k)
+        _log_cuda_memory_if_available("after_dense_retrieval")
         component_results = self.retriever.component_results()
         candidates = self.retriever.retrieve_chunks(
             [query],
             top_k=int(self.reranker_config["candidate_pool_size"]),
             dense_depth=int(self.reranker_config["retrieved_chunk_depth"]),
         )
+        _log_cuda_memory_if_available("before_cross_encoder")
         reranked = self.reranker.rerank_chunks([query], candidates)
+        _log_cuda_memory_if_available("after_cross_encoder")
         chunk_scores = self.reranker.chunk_scores_by_qid()[query.qid]
         if not reranked or not reranked[0].aids:
             return []
