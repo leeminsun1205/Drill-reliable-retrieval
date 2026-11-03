@@ -1,4 +1,4 @@
-"""Evidence-grounded answer generation through the OpenAI Responses API."""
+"""Evidence-grounded answer generation through an OpenAI-compatible API."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ def generate_answer(question: str, evidence: Sequence[Evidence]) -> str:
     """Generate a short answer grounded only in the retrieved articles."""
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     model = os.environ.get("OPENAI_MODEL", "").strip()
+    base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
     if not api_key:
         raise RuntimeError("Missing Kaggle Secret OPENAI_API_KEY")
     if not model:
@@ -41,14 +42,25 @@ def generate_answer(question: str, evidence: Sequence[Evidence]) -> str:
         text = article.text[:5000]
         evidence_text.append(f"[{heading}]\n{text}")
 
-    client = OpenAI(api_key=api_key)
-    response = client.responses.create(
+    client_options = {"api_key": api_key}
+    if base_url:
+        client_options["base_url"] = base_url
+    client = OpenAI(**client_options)
+    response = client.chat.completions.create(
         model=model,
-        instructions=INSTRUCTIONS,
-        input=(
-            f"Câu hỏi:\n{question.strip()}\n\n"
-            "Bằng chứng pháp lý đã truy xuất:\n\n"
-            + "\n\n---\n\n".join(evidence_text)
-        ),
+        messages=[
+            {"role": "system", "content": INSTRUCTIONS},
+            {
+                "role": "user",
+                "content": (
+                    f"Câu hỏi:\n{question.strip()}\n\n"
+                    "Bằng chứng pháp lý đã truy xuất:\n\n"
+                    + "\n\n---\n\n".join(evidence_text)
+                ),
+            },
+        ],
     )
-    return response.output_text.strip()
+    content = response.choices[0].message.content
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("The chat-completions API returned an empty answer")
+    return content.strip()

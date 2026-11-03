@@ -31,8 +31,8 @@ remain under `notebooks/temp/`. The authoritative index is
 ### Optional Streamlit legal QA demo
 
 The UI and interactive backend are in `demo/streamlit/`; the Kaggle launcher is
-`notebooks/demo/kaggle_streamlit_legal_qa.ipynb`. Its answer layer calls the OpenAI
-Responses API only after the existing retrieval pipeline returns evidence;
+`notebooks/demo/kaggle_streamlit_legal_qa.ipynb`. Its answer layer calls an
+OpenAI-compatible Chat Completions API only after retrieval returns evidence;
 the UI must not replace the project retriever or send the full corpus to the
 API. `pipeline_adapter.py` implements `search(question)` using the current
 fixed-window, reference-off, pool-50 pipeline and its saved model artifacts.
@@ -45,10 +45,11 @@ legal corpus, Harrier and E5 model inputs, the fine-tuning output containing
 checkpoint-1234, and the selected submission notebook's `*_complete_results.tar.gz`
 output. Retrieval caches are optional; if absent, the adapter builds them at
 startup under `/kaggle/working`. Store `OPENAI_API_KEY` and
-`NGROK_AUTH_TOKEN` as separate Kaggle Secrets; set `OPENAI_MODEL` as a normal
-configuration value. The API key is read by the app process, while the Ngrok
-token is used only by the notebook to expose port 8501. Never print either
-secret or include it in notebook output. The launcher clones the GitHub
+`NGROK_AUTH_TOKEN` as separate Kaggle Secrets; set `OPENAI_MODEL` and optional
+`OPENAI_BASE_URL` as ordinary notebook configuration values. The API key is
+read by the app process, while the Ngrok token is used only by the notebook to
+expose port 8501. Never print either secret or include it in notebook output.
+The launcher clones the GitHub
 repository, so publish the current repo changes before running it in Kaggle.
 
 For authenticated Hugging Face downloads, create a Kaggle Secret named

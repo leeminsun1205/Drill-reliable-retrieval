@@ -15,7 +15,9 @@ LightGBM model, and the fitted Multiclass–Ridge policy. It requires the
 complete-results archive from the selected Kaggle submission notebook; it does
 not retrain or retune models at startup.
 
-The app reads `OPENAI_API_KEY` and `OPENAI_MODEL` from the process environment.
+The app reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
+from the process environment and calls the OpenAI-compatible Chat Completions
+API. Keep API keys in Kaggle Secrets; never place them in the notebook source.
 The Kaggle notebook should populate the API key from Kaggle Secrets and start
 Streamlit in a subprocess. Ngrok is started by the notebook, not by this app.
 
