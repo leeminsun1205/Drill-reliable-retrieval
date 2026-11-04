@@ -25,7 +25,10 @@ def get_backend():
 def show_sources(evidence: list[Evidence]) -> None:
     if not evidence:
         return
-    with st.expander(f"Điều luật được dùng làm căn cứ ({len(evidence)})", expanded=True):
+    with st.expander(
+        f"Văn bản nguồn được truy xuất — trích nguyên văn ({len(evidence)} Điều)",
+        expanded=True,
+    ):
         for index, article in enumerate(evidence, start=1):
             header = f"{index}. aid {article.aid}"
             if article.law_id:
