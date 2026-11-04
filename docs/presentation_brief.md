@@ -384,6 +384,11 @@ multiclass cùng checkpoint đạt `0.6967/0.6809`. Cặp checkpoint-1208 cũ
 tiên theo private, cần ghi rõ đây là lựa chọn sau khi xem hidden score, không
 gọi đó là đánh giá chọn mô hình độc lập.
 
+Slide so sánh chính sách đầu ra dùng riêng bảng dev bốn phương pháp trên cùng
+ranking LightGBM OOF của checkpoint `1234` (fixed top-2, score gap, fold-safe
+learned stopping, Multiclass–Ridge). Không ghép các Macro-F2 public/private
+Codabench vào bảng dev này; xem `tables_experiment.md`, mục R7.
+
 ## 5. Thông tin audit cấu trúc có thể dùng
 
 Audit trên toàn bộ 59.628 article không rỗng ghi nhận:

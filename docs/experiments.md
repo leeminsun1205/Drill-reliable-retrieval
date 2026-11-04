@@ -2857,3 +2857,26 @@ result. Keep the fixed development/nested-OOF protocol as the basis for
 methodological claims, report all compared submissions, and do not tune further
 on private feedback. These scores were owner-reported; the submission artifacts
 have not been independently ingested in this repository.
+
+### Matched dev comparison of four final-set policies
+
+The owner supplied the completed output of
+`kaggle_compare_four_final_policies_dev.ipynb`, which reads the full submission
+bundle for the fixed-window epoch-1/checkpoint-1234 configuration. The four
+policies were compared on the same 438-query seed-42 development split and the
+same saved LightGBM OOF ranking. Fixed top-2 uses the saved OOF ranking directly;
+the score-gap value is its saved nested-OOF estimate; stopping and
+Multiclass–Ridge use five outer query folds, with their threshold/ensemble
+weight tuned inside the training folds.
+
+| Policy | Precision | Recall | Macro-F2 | Protocol |
+|---|---:|---:|---:|---|
+| Fixed top-2 | 0.4189 | 0.6907 | 0.6114 | 5-fold LightGBM OOF ranking; fixed cutoff |
+| Score gap | 0.5689 | 0.7076 | 0.6747 | Saved nested-OOF estimate |
+| Fold-safe learned stopping | 0.5243 | 0.7303 | 0.6771 | 5 outer folds; inner cross-fitted threshold |
+| Multiclass–Ridge ensemble | 0.5757 | 0.7274 | 0.6910 | 5 outer folds; ensemble weight tuned in inner folds |
+
+These are dev estimates and must not be presented as public/private leaderboard
+scores. The full-submission checkpoint-1234 ranking is the common input, so this
+table is the controlled comparison for the current slide; previously reported
+Codabench policy scores remain in their separate benchmark table.

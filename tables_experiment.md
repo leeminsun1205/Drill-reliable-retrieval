@@ -22,7 +22,7 @@ scientific model-selection claim.
 | R4. Structure and cross-reference ablation | Yes | No | Keep as report-only negative-result evidence; do not spend slide space on the factorial table |
 | R5. Reranker adaptation and candidate budget | Yes | No | Supporting checkpoint-selection detail; feed its winner into S3 |
 | R6. LightGBM feature design | Yes | No | Supporting learning-to-rank detail; feed its winner into S3 |
-| R7. Final-set decision policy | Yes | Yes — S3 | Keep fixed top 2, raw threshold, score gap, and oracle; combine with selected R5/R6 milestones |
+| R7. Final-set decision policy | Yes | Yes — S3 | Show the four policies compared on the same checkpoint-1234 dev OOF ranking; keep Codabench scores in R8 |
 | R8. Official benchmark and hidden-split robustness | Yes | Yes — S4 | Keep organizer baseline, at most two published systems, and three project policies |
 | R9. Error attribution and computational cost | Yes | No | Show as a failure funnel or examples rather than a dense slide table |
 
@@ -317,6 +317,24 @@ the number of returned articles per query?
 tune every learned policy without its outer validation fold. Fixed top-k needs
 no tuning. Oracle prefix is non-deployable. Report output-size behavior before
 adopting a new selector.
+
+**Current matched dev comparison for Slide S3.** The following values were
+reported from `kaggle_compare_four_final_policies_dev.ipynb`, using the saved
+full-submission output for fixed-window epoch 1 / checkpoint `1234`. All four
+rows use the same 438-query development split and LightGBM OOF ranking; learned
+selectors are evaluated with their stated cross-fitting protocol. These are
+development estimates, not Codabench scores.
+
+| Policy | Precision | Recall | Macro-F2 | Protocol |
+|---|---:|---:|---:|---|
+| Fixed top-2 | 0.4189 | 0.6907 | 0.6114 | 5-fold LightGBM OOF ranking; fixed cutoff |
+| Score gap | 0.5689 | 0.7076 | 0.6747 | Saved nested-OOF estimate |
+| Fold-safe learned stopping | 0.5243 | 0.7303 | 0.6771 | 5 outer folds; inner cross-fitted threshold |
+| Multiclass–Ridge ensemble | **0.5757** | **0.7274** | **0.6910** | 5 outer folds; ensemble weight tuned in inner folds |
+
+Use this matched table on the slide. Keep the longer historical/policy-screen
+grid below for the report; its rows include earlier ranking snapshots and are
+not interchangeable with this checkpoint-1234 comparison.
 
 | Policy | Precision | Recall | Macro-F2 | Mean output size | Maximum output size | Role |
 |---|---:|---:|---:|---:|---:|---|
