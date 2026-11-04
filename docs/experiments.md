@@ -2132,6 +2132,31 @@ descriptive. The source archive is
 `pool50_epoch1_lightgbm_feature_screen.tar.gz`; its static table contains
 59,628 unique article IDs and records corpus and output SHA-256 hashes.
 
+### Matched fixed-top-2 feature-schema comparison on checkpoint 1234
+
+The owner supplied the completed results from
+`kaggle_lgbm_feature_schema_top2_ablation.ipynb`, which reads the full
+fixed-window/reference-off checkpoint-1234 submission bundle. The reranker-only
+row is read from that same saved dev run; four LightGBM schemas are then rebuilt
+from its saved candidate, component, and reranker-chunk artifacts. All LightGBM
+rows use the same 438 dev qids, five query-grouped OOF folds, seed 42, and fixed
+top-2 output. This is a matched follow-up and must not be conflated with the
+earlier checkpoint-1208 feature screen above.
+
+| Stage / schema | Features | Precision@2 | Recall@2 | Macro-F2@2 |
+|---|---:|---:|---:|---:|
+| Cross-encoder fine-tuned, epoch 1 (reranker-only) | 0 | 0.4064 | 0.6759 | 0.5967 |
+| LightGBM `base_v1` | 15 | 0.4201 | 0.7006 | 0.6180 |
+| LightGBM `enhanced_v1` | 41 | 0.4189 | 0.6957 | 0.6145 |
+| LightGBM `enhanced_v2` | 61 | 0.4189 | 0.6907 | 0.6114 |
+| LightGBM `enhanced_v3` | 69 | 0.4224 | 0.6916 | 0.6134 |
+
+These development figures are owner-supplied from the executed notebook. They
+show that all four schemas exceed the reranker-only Macro-F2 at top-2 in this
+run; `base_v1` has the highest top-2 Recall and Macro-F2, while `enhanced_v3`
+has the highest Precision. Treat the schema comparison as development
+screening, not a confirmatory generalization estimate.
+
 The complete `enhanced_v2` group-removal screen was:
 
 | Removed feature group | Nested-OOF score-gap F2 | Change from full 61 features |
@@ -2303,6 +2328,18 @@ provenance metadata with hashes. The checkpoint weights remain in the attached
 training notebook output. The artifact and matched checkpoint-1234 development
 policy summary have not yet been independently ingested into this repository.
 The previous checkpoint-1208 notebook and measurements remain unchanged.
+
+The follow-up
+`notebooks/submission/kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_base_v1_submission.ipynb`
+uses that complete-results archive as input. It preserves the same fixed-window
+448/64, reference-off, pool-50, checkpoint-1234, R3-retuned WRRF10, five-fold
+seed-42 evaluation, and confirmatory cardinality policy, changing only the
+LightGBM feature schema to `base_v1` (15 features). Saved dev/public/private
+retrieval and reranker artifacts are reused; retrieval and cross-encoder
+inference are not rerun. The notebook refits LightGBM and all three existing
+cardinality cases, validates the resulting public/private ZIPs, and bundles
+their provenance. Its official submission scores remain unmeasured until the
+notebook is executed and submitted.
 
 ### Repository artifact cleanup
 

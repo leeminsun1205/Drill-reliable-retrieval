@@ -91,6 +91,12 @@ and `scripts/`.
   public/private reranking, `enhanced_v2`, and multiclass–Ridge policy stages,
   and packages the full reusable stage outputs and provenance. It does not
   modify the earlier checkpoint-1208 submission notebook.
+- `kaggle_pool50_fixed448_refoff_epoch1_ckpt1234_base_v1_submission.ipynb`:
+  matched `base_v1` submission follow-up. It attaches the complete-results
+  archive from the checkpoint-1234 submission above, reuses its saved retrieval
+  and reranker artifacts, and refits only the 15-feature LightGBM plus the same
+  final-set policy cases. It does not reload dense models/checkpoints or rerun
+  retrieval/reranking.
 
 ### `demo/`
 

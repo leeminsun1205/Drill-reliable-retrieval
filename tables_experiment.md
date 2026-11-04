@@ -304,6 +304,26 @@ predefined group only. Multiple removals are exploratory, not confirmatory.
 **Source:** artifact-verified feature-screen archive; detailed Tables 12 and 13
 in `tables_experiment_catalog.md`.
 
+**Matched fixed-top-2 follow-up for the current fixed-window pipeline.** The
+owner supplied the completed output of
+`kaggle_lgbm_feature_schema_top2_ablation.ipynb`, using the full submission
+bundle for epoch 1 / checkpoint `1234`. This comparison uses the same saved dev
+run and fixed top-2 for the reranker-only baseline and all LightGBM schemas.
+Its values are not interchangeable with the earlier checkpoint-1208 schema
+screen above.
+
+| Stage / schema | Features | Precision@2 | Recall@2 | Macro-F2@2 |
+|---|---:|---:|---:|---:|
+| Cross-encoder fine-tuned, epoch 1 (reranker-only) | 0 | 0.4064 | 0.6759 | 0.5967 |
+| LightGBM `base_v1` | 15 | 0.4201 | **0.7006** | **0.6180** |
+| LightGBM `enhanced_v1` | 41 | 0.4189 | 0.6957 | 0.6145 |
+| LightGBM `enhanced_v2` | 61 | 0.4189 | 0.6907 | 0.6114 |
+| LightGBM `enhanced_v3` | 69 | **0.4224** | 0.6916 | 0.6134 |
+
+All feature-schema rows use five-fold query-grouped OOF predictions, seed 42,
+and the fixed top-2 output policy. The values are development results supplied
+from the executed notebook output; they do not replace Codabench results.
+
 ---
 
 ## R7. Final-Set Decision Policy Comparison
