@@ -267,6 +267,15 @@ private-priority submission uses epoch 1, although epoch 3 leads reranker-only
 dev cutoffs; this is an operational choice, not evidence that epoch 1 is the
 scientifically selected checkpoint.
 
+**Slide progression table (Table 3).** For a compact stage comparison, show
+the best R3 hybrid first-stage row (`0.3573/0.5951/0.5252` at top 2), the fixed
+window warm-start reranker (`0.3995/0.6623/0.5853`), and fixed-window epoch 1
+(`0.4064/0.6759/0.5967`), the checkpoint selected for downstream LightGBM and
+cardinality policy. Epoch 3 scores higher on reranker-only top 2, but is not
+the selected end-to-end checkpoint. The hybrid row is five-fold OOF; the
+reranker rows are measured on the same 438-query development handoff. Label
+this as pipeline progression rather than a controlled one-variable ablation.
+
 ---
 
 ## R6. Learning-to-Rank Feature Design
