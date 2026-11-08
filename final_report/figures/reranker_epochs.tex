@@ -1,0 +1,34 @@
+% Source: docs/experiments.md, Fixed-window three-epoch checkpoint evaluation.
+% Owner-reported measured checkpoint_scoreboard.csv, 2026-11-02; same dev pool.
+\documentclass[border=2pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times.TTF}[Path=../fonts/,BoldFont=Timesbd.TTF,ItalicFont=Timesi.TTF]
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\definecolor{accent}{HTML}{216477}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+ width=15cm,height=3.4cm,
+ xmin=-.15,xmax=3.2,ymin=.57,ymax=.64,
+ xtick={0,1,2,3},ytick={.58,.60,.62,.64},
+ xlabel={Epoch tinh chỉnh (0: mô hình ban đầu)},ylabel={Macro-$F_2$@2},
+ axis lines=left,tick align=outside,
+ ymajorgrids=true,grid style={gray!15},
+ tick label style={font=\fontsize{10}{12}\selectfont,/pgf/number format/dec sep={.}},
+ label style={font=\fontsize{10}{12}\selectfont},
+ legend columns=2,
+ legend style={at={(.5,1.12)},anchor=south,draw=none,font=\fontsize{9}{11}\selectfont},
+ every node near coord/.append style={font=\fontsize{9}{11}\selectfont,/pgf/number format/fixed,/pgf/number format/precision=4,/pgf/number format/fixed zerofill,/pgf/number format/dec sep={.}},
+ ]
+\addplot[color=accent,thick,mark=*,mark size=1.5pt] table[x=epoch,y=f2,col sep=comma]{reranker_epochs.csv};
+\addlegendentry{Reranker: top-2}
+\addplot[color=accent!65!black,thick,dashed,mark=square*,mark size=1.5pt] table[x=epoch,y=lgbm_f2,col sep=comma]{reranker_epochs.csv};
+\addlegendentry{LightGBM enhanced v2: top-2}
+\node[font=\fontsize{9}{11}\selectfont,text=accent!65!black,anchor=south,yshift=2pt] at (axis cs:0,0.601989) {0.6020};
+\node[font=\fontsize{9}{11}\selectfont,text=accent!65!black,anchor=south,yshift=2pt] at (axis cs:1,0.621680) {0.6217};
+\node[font=\fontsize{9}{11}\selectfont,text=accent!65!black,anchor=south,yshift=2pt] at (axis cs:2,0.618791) {0.6188};
+\node[font=\fontsize{9}{11}\selectfont,text=accent!65!black,anchor=north,yshift=-2pt] at (axis cs:3,0.609650) {0.6097};
+\end{axis}
+\end{tikzpicture}
+\end{document}

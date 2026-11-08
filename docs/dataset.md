@@ -652,3 +652,14 @@ as organizer annotations.
 
 Source: Vuong et al., DRiLL Shared Task 2025 overview and its extended journal
 version, linked from `docs/competition_review.md`.
+
+
+## Verified presentation example (2026-11-05)
+
+A direct read of local `data/train.parquet` confirmed query `qid=730`,
+“Viên chức có được tạm hoãn nghĩa vụ quân sự không?”, with relevance labels
+`[55075, 4993]`. The local corpus maps aid 55075 to law_id `78/2015/QH13`
+and aid 4993 to `48/2019/QH14`. This verifies dataset labels/identifier mappings,
+not a new legal interpretation or the system's prediction on that query.
+The problem-statement slide displays these as expected output/evaluation gold;
+they must not appear as inference inputs.

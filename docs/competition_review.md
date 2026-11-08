@@ -83,9 +83,11 @@ top-seven private systems with their public F2 gives:
 | 7 | AImba | 0.6473 | 0.6425 |
 
 * Berry's public F2 of 0.4456 is user-reported from the Codabench leaderboard;
-  it is not listed in the paper's published public top-ten table and has not
-  yet been independently checked against a saved leaderboard snapshot. Berry's
-  private F2 of 0.6710 is reported in the paper's private results table.
+  it is not listed in the paper's published public top-ten table. On 2026-11-06,
+  the owner explicitly confirmed having verified the slide benchmark values
+  and requested that report Table 9 retain the complete slide table unchanged
+  in systems, order and public/private scores. This is owner-verified provenance.
+  Berry's private F2 of 0.6710 is reported in the paper's private results table.
 
 The public table also reports BM25 at F2 0.2771; the two-stage baseline is not
 listed there. The private values above remain the official final ranking;
@@ -248,6 +250,29 @@ overlap. It does not add generated titles, HyDE, or LLM judgments to the main
 comparison because those would simultaneously change representation, candidate
 generation, and the final selector. The resulting LightGBM treatment is an
 EDM-inspired controlled ablation, not an EDM reproduction.
+
+### EDM cascade and published resource costs (paper rechecked 2026-11-05)
+
+Distinguish two LightGBM uses in the paper: Section 3.4 Stage 1 uses
+LambdaMART to reduce 500 articles to 100; Stage 2 uses a LightGBM ranker with
+`objective=rank_xendcg` and LLM-derived scores to reduce 100 to 10. Section 3.5
+then combines LTR signals, per-pair and collective CoT scores in a pointwise
+LightGBM model with a validation-selected threshold. Thus describing EDM as
+only LambdaMART followed by a binary LightGBM omits its intermediate listwise
+ranker. Section 3.2 identifies Qwen2.5-72B-Instruct for law/article description
+generation; do not assume that establishes the exact LLM used for every judge.
+
+Section 4.1 reports a server with four NVIDIA L40 GPUs (48 GB each, 192 GB
+aggregate VRAM), 256 GB RAM and 96 CPU cores. Published preprocessing time is
+24 hours; LambdaMART/LightGBM training approximately 10 minutes. For 219
+queries, retrieval plus Stage 1 takes 2.1 minutes, Stage 2 with LLM scoring
+45.6 minutes, and final selection 23.2 minutes: total 70.9 minutes, reported
+average 19.4 seconds/query. These are published measurements on their server,
+not measurements or latency predictions for this repository or Kaggle T4x2.
+LLM-associated stages account for about 97% of the reported batch runtime
+(derived from 68.8/70.9). Actual deployment cost, API spend, quantization, and
+single-request latency cannot be inferred from these batch timings alone.
+Source: https://aclanthology.org/2025.vlsp-1.19.pdf, Sections 3.2–3.5 and 4.1.
 
 ### FPT IS — rank 2
 

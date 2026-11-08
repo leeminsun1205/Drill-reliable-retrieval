@@ -38,6 +38,11 @@ ltr = [
 ]
 demo = [
     "openai>=1.66,<3",
+    "fastapi==0.162.2",
+    "uvicorn==0.54.0",
+]
+streamlit = [
+    "openai>=1.66,<3",
     "streamlit>=1.41,<2",
 ]
 

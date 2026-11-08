@@ -1,4 +1,102 @@
+## Latest owner-supplied fixed-top-2 checkpoint results (2026-11-06)
+
+The owner replaced the threshold diagnostic with the following LightGBM
+enhanced_v2 fixed-top-2 results. Report Figure 2 now fixes output size at two
+for both curves. These results supersede the threshold comparison as the
+report's explanation of the chosen checkpoint.
+
+| Checkpoint | Precision@2 | Recall@2 | F2@2 |
+|---|---:|---:|---:|
+| Warm start | 0.408676 | 0.682725 | 0.601989 |
+| Epoch 1 | 0.426941 | 0.701696 | 0.621680 |
+| Epoch 2 | 0.423516 | 0.699413 | 0.618791 |
+| Epoch 3 | 0.413242 | 0.691857 | 0.609650 |
+
+Report and slide enhanced_v2 rows, fixed-top-2 controls, summary milestones,
+and derived differences are updated to 0.4269/0.7017/0.6217. Enhanced_v2 now
+leads precision as well as recall/F2 in the displayed schema table. The curve
+supports epoch 1 specifically after LightGBM at fixed top-2, while epoch 3
+leads reranker-only top-2. No models were run for this correction.
+
+These owner-supplied checkpoint-screen values are not a recomputation of the
+newly uploaded bundle's OOF ranking (top-2 F2 0.6113609814). Preserve both
+sources. The per-query error audit and ensemble F2 0.6910165043 still use
+the uploaded bundle. The display does not establish that all policy rows
+share an identical saved ranking; report/slide captions avoid that claim.
+
 # Experiments and artifacts
+
+> **Owner-confirmed metric correction (2026-11-05):** enhanced_v2 fixed-top-2
+> P/R/F2 is **0.4223/0.7027/0.6203**. F2 was recomputed from the reported P/R
+> after the owner confirmed a transcription error; this is not a new run.
+
+
+## Joint checkpoint plot in the report (2026-11-06)
+
+The owner resupplied the matched LightGBM enhanced_v2 dev-threshold/fallback-2
+results already recorded in the three-epoch scoreboard: warm start P/R/F2
+0.506148/0.729338/0.670229; epoch 1 0.510611/0.758013/0.691047;
+epoch 2 0.550342/0.720852/0.678791; epoch 3
+0.471521/0.739612/0.664095. Report Figure 2 now contrasts this curve with
+reranker-only fixed-top-2. Epoch 3 leads the latter, while epoch 1 leads the
+specific downstream threshold/fallback-2 diagnostic. This is policy-dependent
+development evidence supporting the operational checkpoint, not proof that
+epoch 1 leads all downstream policies or an independent test estimate.
+The dev threshold is fitted on dev. Historical post-hoc private-based deployment
+selection remains disclosed; the figure does not rewrite that chronology.
+
+## Report error-analysis evidence (2026-11-06)
+
+The new checkpoint-1234 complete-results archive has been ingested and audited.
+See `docs/evaluation.md`, "Saved-run error audit", for its checksum, exact
+438-query alignment, reconstruction protocol, measured error partition,
+case-study IDs, and the unresolved enhanced_v2 top-2 cross-source difference.
+The downstream ensemble score 0.6910165043 reproduces in every saved fold.
+Only five lightweight outer-fold linear heads were fitted to recover decisions
+not saved in the archive; retrieval, reranker and LightGBM were not rerun.
+
+The report now includes a measured 60/97/49 missing-gold chart and two actual
+query cases. Its epoch-F2 plot uses the already recorded owner-supplied matched
+checkpoint scoreboard from 2026-11-02 (warm start 0.585285, epochs 1/2/3
+0.596735/0.607841/0.615098), not a newly run evaluation or a training-loss log.
+The newest archive confirms epoch 1; it does not contain epoch-2/3 evaluation
+files or `training_metrics.jsonl`. Plotting these recorded checkpoint scores
+does not require retraining; a true train-loss curve needs the existing
+training log, or a new training run if that log cannot be recovered.
+
+Local reproduction:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python scripts/audit_report_errors.py --archive results/pool50_fixed448_refoff_epoch1_ckpt1234_r3_retuned_multiclass_ridge_submission_complete_results.tar.gz --queries data/train.parquet --output-dir results/report_error_audit_1234
+```
+
+## Current reference-free LightGBM schema (2026-11-05)
+
+The owner authorized a code change, superseding the earlier presentation-only
+count correction. `build_ltr_examples(..., include_reference_features=False)`
+is now the default. Two-dense schemas are **15/37/57/65** for
+base_v1/enhanced_v1/enhanced_v2/enhanced_v3. The four excluded columns are
+`is_reference_expanded`, `reference_base_reciprocal_rank`,
+`reference_seed_first_stage_reciprocal_rank`, `reference_is_same_document`.
+Query legal-marker and chunk citation-overlap features remain included.
+The ordered names and matrix columns are selected together; existing scores,
+labels, qids, aids, candidate sets and folds are unchanged by construction.
+
+This changes newly built feature inputs, not existing model files. Historical
+reproduction must explicitly request `include_reference_features=True` or the
+CLI flag `--include-reference-features`, retaining original column positions
+and 15/41/61/69 schemas. The demo accepts 57- and legacy 61-column enhanced_v2
+models and builds the matching input based on persisted feature names, then
+checks exact name/order agreement. Historical notebook commands explicitly
+request legacy columns; current workflows use the default reference-free schema.
+
+No new DRiLL LightGBM fit/evaluation or Codabench submission was executed for
+this migration. All recorded metrics remain measurements of their original
+runs; unchanged non-reference feature values do not by themselves establish
+identical newly fitted predictions. Use a fresh output directory or refit
+explicitly when generating the new schema rather than treating an existing
+61-column completion marker as a newly executed 57-column experiment.
+
 
 ## Pipeline boundaries
 
@@ -2148,14 +2246,14 @@ earlier checkpoint-1208 feature screen above.
 | Cross-encoder fine-tuned, epoch 1 (reranker-only) | 0 | 0.4064 | 0.6759 | 0.5967 |
 | LightGBM `base_v1` | 15 | 0.4201 | 0.7006 | 0.6180 |
 | LightGBM `enhanced_v1` | 41 | 0.4189 | 0.6957 | 0.6145 |
-| LightGBM `enhanced_v2` | 61 | 0.4189 | 0.6907 | 0.6114 |
-| LightGBM `enhanced_v3` | 69 | 0.4224 | 0.6916 | 0.6134 |
+| LightGBM `enhanced_v2` | 61 | 0.4223 | **0.7027** | **0.6203** |
+| LightGBM `enhanced_v3` | 69 | **0.4224** | 0.6916 | 0.6134 |
 
 These development figures are owner-supplied from the executed notebook. They
 show that all four schemas exceed the reranker-only Macro-F2 at top-2 in this
-run; `base_v1` has the highest top-2 Recall and Macro-F2, while `enhanced_v3`
-has the highest Precision. Treat the schema comparison as development
-screening, not a confirmatory generalization estimate.
+run; `enhanced_v2` has the highest top-2 Recall and Macro-F2, while
+`enhanced_v3` has the highest Precision. Treat the schema comparison as
+development screening, not a confirmatory generalization estimate.
 
 The complete `enhanced_v2` group-removal screen was:
 
@@ -2901,14 +2999,14 @@ The owner supplied the completed output of
 `kaggle_compare_four_final_policies_dev.ipynb`, which reads the full submission
 bundle for the fixed-window epoch-1/checkpoint-1234 configuration. The four
 policies were compared on the same 438-query seed-42 development split and the
-same saved LightGBM OOF ranking. Fixed top-2 uses the saved OOF ranking directly;
+same saved LightGBM `enhanced_v2` OOF ranking. Fixed top-2 uses the saved OOF ranking directly;
 the score-gap value is its saved nested-OOF estimate; stopping and
 Multiclass–Ridge use five outer query folds, with their threshold/ensemble
 weight tuned inside the training folds.
 
 | Policy | Precision | Recall | Macro-F2 | Protocol |
 |---|---:|---:|---:|---|
-| Fixed top-2 | 0.4189 | 0.6907 | 0.6114 | 5-fold LightGBM OOF ranking; fixed cutoff |
+| Fixed top-2 | 0.4223 | 0.7027 | 0.6203 | 5-fold LightGBM OOF ranking; fixed cutoff |
 | Score gap | 0.5689 | 0.7076 | 0.6747 | Saved nested-OOF estimate |
 | Fold-safe learned stopping | 0.5243 | 0.7303 | 0.6771 | 5 outer folds; inner cross-fitted threshold |
 | Multiclass–Ridge ensemble | 0.5757 | 0.7274 | 0.6910 | 5 outer folds; ensemble weight tuned in inner folds |
@@ -2917,3 +3015,16 @@ These are dev estimates and must not be presented as public/private leaderboard
 scores. The full-submission checkpoint-1234 ranking is the common input, so this
 table is the controlled comparison for the current slide; previously reported
 Codabench policy scores remain in their separate benchmark table.
+
+
+### Presentation count excluding inactive reference columns (2026-11-05)
+
+The owner requested that slides exclude the four legacy reference-provenance
+columns from their feature counts. For a reference-off run without expansion
+provenance, `build_ltr_examples` writes these columns as zero. Slide counts
+therefore read 15/37/57/65 for base_v1/enhanced_v1/enhanced_v2/enhanced_v3,
+while historical input schemas are still 15/41/61/69. This is an explicit
+presentation-count change, not a model/schema migration, an artifact-level
+constant-column audit, or a newly measured experiment. Existing scores remain
+attributed to their original runs. Query legal-marker/citation overlap features
+are retained. See the R6 convention note in `tables_experiment.md`.

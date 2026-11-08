@@ -29,7 +29,7 @@ configs/             Experiment configurations
 data/                Local datasets (ignored by Git)
 docs/                Research protocol and data/evaluation documentation
 notebooks/           Exploration, visualization, and error analysis
-demo/                Optional Streamlit interface for the Kaggle demo
+demo/                FastAPI + React demo (with legacy Streamlit interface)
 scripts/             Thin command-line entry points
 src/drill_ir/        Reusable research implementation
 tests/               Scientific correctness and regression tests
@@ -86,6 +86,7 @@ when multiple dataset versions are attached.
 
 ## Research documentation
 
+- [Project handoff for a new GPT account](docs/project_handoff.md)
 - [Research plan](docs/research_plan.md)
 - [Dataset](docs/dataset.md)
 - [Evaluation](docs/evaluation.md)
@@ -101,3 +102,7 @@ outside Git.
 
 Dataset access and competition registration are provided through the
 [VLSP 2025 DRiLL shared-task website](https://vlsp.org.vn/vlsp2025/eval/drill).
+
+The current legal QA demo uses **FastAPI + React/TypeScript** with the Kaggle
+launcher `notebooks/demo/kaggle_fastapi_legal_qa.ipynb`. See
+[demo setup](demo/web/README.md) for the single-tunnel workflow.

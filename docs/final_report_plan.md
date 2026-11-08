@@ -1,4 +1,95 @@
+## Latest discussion and slide addition (2026-11-06)
+
+The owner requested the abstract wording "final evaluation results" and a clear
+statement that QA components downstream of retrieval serve demonstration only.
+Report 4.4 now offers a qualified explanation of the score gap: missing
+LLM-based title/summary enrichment (FPT IS) and relevance features (EDM) may
+help representation and candidate discrimination. This is explicitly an
+inference to test under controlled comparisons, not a measured cause.
+Future work names those components plus LLM evidence filtering, with separate
+quality and cost evaluation. No such component was implemented or measured.
+
+The existing fixed-top-2 epoch plot is also inserted as one slide after the
+LightGBM feature comparison and before final-set selection. Its short remark
+contrasts epoch 3's reranker-only lead with epoch 1's downstream enhanced_v2
+lead; no graph values were changed.
+
+## Latest coherence review completed (2026-11-06)
+
+The owner requested a detailed top-to-bottom review. The report now explains
+both index preparation and online data flow around the owner pipeline image,
+links every stage to its input/output and the next decision, introduces and
+interprets all ten tables and three figures, and consistently uses legal
+articles, passages and candidate sets as distinct units. The data discussion
+motivates adaptive output size; the error discussion distinguishes pair counts
+from macro recall and links the largest observed group to future work. Aid
+values in examples are explicitly identifiers, not legal article numbers.
+
+The finalized build is 15 A4 pages in Times New Roman, with twelve cited
+references and a 264-word abstract. Numeric table cells match the pre-review
+version; 22 P/R/F2 rows pass the official formula within rounding tolerance.
+All labels, object references and citations resolve, and the LaTeX log is
+clean. Layout was reviewed from rendered pages. No experiment/model changes
+were made. Current report instructions are consolidated in
+`final_report/README.md`; the section and table/figure review map is in
+`final_report/review_notes.md`. Earlier status snapshots below are historical.
+
+> **Latest prose cleanup:** the report uses decimal dots and thin-space thousands grouping. Nonessential implementation/library/checkpoint/scheduler details were removed. Article window is explained by 448-token length and 64-token overlap. Selection discussion compares EDM validation-score thresholding with query-specific learned prefix length; benefits are stated as design properties, not superiority over published systems. The bibliography now has 12 cited sources. Experimental configurations and provenance in source-of-truth documents remain unchanged.
+
+> **Cập nhật mới nhất 06/11:** Theo số top-2 chủ đồ án vừa cung cấp, enhanced v2 epoch 1 dùng P/R/F2 = 0.426941/0.701696/0.621680; report/slides hiển thị 0.4269/0.7017/0.6217. Hình epoch so sánh top-2 ở cả hai đường, thay đường threshold trước đó. Ghi chú số cũ phía dưới là lịch sử. Nguồn chi tiết ở docs/experiments.md.
+
+## Latest report state: error analysis completed (2026-11-06)
+
+The 15-page PDF now includes the epoch-F2 plot from the previously recorded
+matched checkpoint scoreboard, the measured missing-gold chart (60/97/49),
+and cases qid 14663/2406 from the newly uploaded checkpoint-1234 bundle.
+All reserved regions are filled. There are ten tables and three figures.
+Three error-attribution tests pass; reconstructed outer-fold ensemble scores
+match every archived fold and aggregate to 1e-12. See docs/evaluation.md for
+full provenance and the outstanding 0.6114 versus 0.6203 top-2 source conflict.
+Earlier notes about missing plots/artifacts below are superseded.
+
 # Final experiment and report plan
+
+## Current assembled report (2026-11-06)
+
+The owner requested a serious Vietnamese report aligned with the finalized
+slides, within 15 pages. The current `final_report/main.tex` and `main.pdf`
+are a 15-page draft including cover, abstract/contents and references, nine
+tables and thirteen references. The original member draft remains under
+`final_report/original/`. The source URL follows the abstract.
+
+The report directly includes the owner image
+`slides/figures/Drill_pipeline_final.png`, intact including its LLM portion.
+Table 9 reproduces all ten slide systems in the same order and both score
+columns, which the owner confirmed having verified.
+
+Following owner feedback, the report now displays only the slide feature
+counts 15/37/57/65. Historical-column and metric-editing notes were removed
+from the paper's prose. Original measurement provenance remains documented
+in `docs/experiments.md`, `docs/evaluation.md` and `final_report/README.md`;
+this is not a newly executed model fit. The corrected enhanced_v2 F2 remains
+0.6203. Reference expansion is excluded from the current report scope.
+
+Actual Microsoft Times New Roman regular/bold/italic/bold-italic files are
+installed locally under `final_report/fonts/`, loaded directly by XeLaTeX
+and ignored by Git. The main text is 12 pt, line spacing 1.15. Font metadata
+and Vietnamese glyph coverage were checked; Tinos fallback is removed.
+
+Space is reserved for an epoch-quality plot on page 12 (3.5 cm) and error
+analysis on page 14 (9.5 cm), in two files under `final_report/sections/`.
+These regions must be filled from current-run artifacts before submission.
+No illustrative metrics or fabricated error cases were added. Inspection of
+local result bundles found historical checkpoint-1208 evidence, not the
+current checkpoint-1234 run; request the current complete-results archive
+before attributing errors or drawing a current-run learning curve. Exact
+requested artifacts and proposed analyses are in `final_report/README.md`.
+
+This assembly supersedes the historical table-allocation plan below for the
+current report. The four research questions follow the final slides:
+representation, hybrid retrieval/reranking, signal fusion and output size.
+Historical experiments below remain evidence rather than extra requirements
+for the current report.
 
 The canonical table-by-table execution blueprint is
 `tables_experiment.md`. This file retains the compact finalist summary; when a

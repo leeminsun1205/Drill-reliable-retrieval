@@ -1,3 +1,7 @@
+> Legacy UI: the default demo is now [FastAPI + React](../web/README.md).
+> Install the `streamlit` extra to run this interface. Shared Python modules
+> live in `src/drill_ir/demo/`; local imports here preserve compatibility.
+
 # Streamlit legal QA demo
 
 This folder contains the user interface and OpenAI answer-generation layer for
@@ -10,8 +14,8 @@ The factory must return an object with `search(question)` and return the final
 ranked evidence as `Evidence` records or dictionaries containing `aid` and
 `text` (optionally `law_id`, `title`, and `score`). The adapter preserves fixed
 windows 448/64, reference-off WRRF10 BM25/Harrier/E5 weights
-0.15/0.65/0.20, pool-50 checkpoint-1234 reranking, the trained 61-feature
-LightGBM model, and the fitted Multiclass–Ridge policy. It requires the
+0.15/0.65/0.20, pool-50 checkpoint-1234 reranking, the trained LightGBM model (57 reference-free features for new runs; legacy
+61-column artifacts remain supported with their exact saved feature order), and the fitted Multiclass–Ridge policy. It requires the
 complete-results archive from the selected Kaggle submission notebook; it does
 not retrain or retune models at startup.
 

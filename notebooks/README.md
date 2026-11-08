@@ -139,3 +139,8 @@ not recommended entry points.
 - Kaggle outputs, caches, checkpoints, and raw data do not belong here.
 - A new reportable notebook should go under the stage it evaluates; a thin
   preparation utility should go under `preparation/`.
+
+The default interactive demo is `demo/kaggle_fastapi_legal_qa.ipynb`
+(FastAPI + React, one Ngrok tunnel). The Streamlit notebook is legacy; install
+the additional `streamlit` extra when using it. Shared adapters now live in
+`src/drill_ir/demo/`; see `demo/web/README.md`.

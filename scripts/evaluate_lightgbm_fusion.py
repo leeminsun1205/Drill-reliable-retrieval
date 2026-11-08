@@ -72,6 +72,10 @@ def main() -> None:
         default=True,
         help="Run query-grouped OOF after dropping each interpretable feature group",
     )
+    parser.add_argument(
+        "--include-reference-features", action="store_true",
+        help="Reproduce historical reference-feature schemas; default excludes four reference columns",
+    )
     args = parser.parse_args()
 
     expected_qids = set(
@@ -86,6 +90,7 @@ def main() -> None:
         queries,
         feature_schema=args.feature_schema,
         static_article_features=args.static_article_features,
+        include_reference_features=args.include_reference_features,
     )
     result = evaluate_oof_lightgbm(
         examples,
@@ -133,6 +138,7 @@ def main() -> None:
         }
     result["lightgbm_input_depth_ablation"] = ablation
     result["feature_schema"] = args.feature_schema
+    result["include_reference_features"] = args.include_reference_features
     result["static_article_features"] = (
         {
             "path": str(args.static_article_features),

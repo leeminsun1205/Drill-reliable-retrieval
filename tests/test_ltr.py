@@ -12,6 +12,7 @@ from drill_ir.analysis import (
     ltr_feature_groups,
 )
 from drill_ir.data import Query
+from drill_ir.analysis.ltr import REFERENCE_FEATURE_NAMES
 
 
 class LtrFeatureTest(unittest.TestCase):
@@ -109,7 +110,7 @@ class LtrFeatureTest(unittest.TestCase):
             examples = build_ltr_examples(
                 root, [Query(1, "alpha beta", (10,))]
             )
-            self.assertEqual(examples["features"].shape, (2, 39))
+            self.assertEqual(examples["features"].shape, (2, 35))
             self.assertEqual(examples["labels"].tolist(), [1, 0])
             self.assertEqual(examples["qids"].tolist(), [1, 1])
             self.assertEqual(examples["aids"].tolist(), [10, 20])
@@ -148,7 +149,7 @@ class LtrFeatureTest(unittest.TestCase):
             examples = build_ltr_examples(
                 root, [Query(7, "test query", ())], prefix="public_"
             )
-            self.assertEqual(examples["features"].shape, (1, 39))
+            self.assertEqual(examples["features"].shape, (1, 35))
             self.assertEqual(examples["labels"].tolist(), [0])
 
     def test_builds_separate_features_for_multiple_dense_components(self) -> None:
@@ -188,7 +189,7 @@ class LtrFeatureTest(unittest.TestCase):
                 {"qid": 1, "chunks": [{"aid": 10, "fusion_score": 0.3}]},
             )
             examples = build_ltr_examples(root, [Query(1, "query", (10,))])
-            self.assertEqual(examples["features"].shape, (1, 41))
+            self.assertEqual(examples["features"].shape, (1, 37))
             self.assertIn("dense_bge_m3_score", examples["feature_names"])
             self.assertIn("dense_vietlegal_e5_reciprocal_rank", examples["feature_names"])
             self.assertEqual(
@@ -222,7 +223,12 @@ class LtrFeatureTest(unittest.TestCase):
                 {"explicit_references": [{"qid": 1, "seed_aid": 10, "reference_aid": 20, "scope": "same_document", "base_rank": 2}]},
                 jsonl=False,
             )
-            examples = build_ltr_examples(root, [Query(1, "Theo Điều 3", (20,))])
+            default = build_ltr_examples(root, [Query(1, "Theo Điều 3", (20,))])
+            self.assertFalse(set(REFERENCE_FEATURE_NAMES) & set(default["feature_names"]))
+            examples = build_ltr_examples(
+                root, [Query(1, "Theo Điều 3", (20,))],
+                include_reference_features=True,
+            )
             row = examples["features"][0]
             names = examples["feature_names"]
             self.assertEqual(row[names.index("is_reference_expanded")], 1.0)
@@ -273,7 +279,19 @@ class LtrFeatureTest(unittest.TestCase):
                 feature_schema="enhanced_v2",
             )
 
-            self.assertEqual(examples["features"].shape, (1, 61))
+            self.assertEqual(examples["features"].shape, (1, 57))
+            self.assertFalse(set(REFERENCE_FEATURE_NAMES) & set(examples["feature_names"]))
+            legacy = build_ltr_examples(
+                root, [Query(1, "Điều 3 quy định gì", (10,))],
+                feature_schema="enhanced_v2", include_reference_features=True,
+            )
+            self.assertEqual(legacy["features"].shape, (1, 61))
+            kept = [i for i, name in enumerate(legacy["feature_names"])
+                    if name not in REFERENCE_FEATURE_NAMES]
+            self.assertEqual(examples["feature_names"], tuple(legacy["feature_names"][i] for i in kept))
+            np.testing.assert_array_equal(examples["features"], legacy["features"][:, kept])
+            ref_indices = [legacy["feature_names"].index(name) for name in REFERENCE_FEATURE_NAMES]
+            np.testing.assert_array_equal(legacy["features"][:, ref_indices], np.zeros((1, 4)))
             names = examples["feature_names"]
             row = examples["features"][0]
             self.assertEqual(row[names.index("chunk_reranker_mean")], 3.0)
@@ -299,7 +317,7 @@ class LtrFeatureTest(unittest.TestCase):
                 feature_schema="enhanced_v3",
                 static_article_features=root / "static.jsonl",
             )
-            self.assertEqual(v3["features"].shape, (1, 69))
+            self.assertEqual(v3["features"].shape, (1, 65))
             self.assertEqual(
                 v3["features"][0, v3["feature_names"].index("article_character_count")],
                 1000,

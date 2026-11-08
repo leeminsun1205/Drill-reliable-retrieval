@@ -1,4 +1,20 @@
+> **Latest owner correction (2026-11-06):** use enhanced_v2 epoch-1
+> fixed-top-2 P/R/F2 **0.426941/0.701696/0.621680** (display
+> **0.4269/0.7017/0.6217**). This supersedes the older 0.6203 display below.
+> The checkpoint plot uses fixed-top-2 after both reranker and LightGBM,
+> replacing the briefly supplied threshold/fallback-2 comparison. These are
+> owner-reported checkpoint-screen results, distinct from the uploaded bundle's
+> enhanced_v2 OOF top-2 value 0.6113609814. Policy rows from that bundle retain
+> their original provenance; do not claim identical saved rankings without
+> matching the feature-screen artifact.
+
 # Final Experimental Tables for Report and Slides
+
+> **Resolved transcription error (2026-11-05):** the owner confirmed that
+> enhanced_v2 Macro-F2@2 was entered incorrectly. With P=0.4223 and R=0.7027,
+> use **0.6203**, arithmetically recomputed from reported P/R. R6, R7 and the
+> slides were updated together; no predictions were re-evaluated or models
+> retrained. See docs/evaluation.md.
 
 ## Usage contract
 
@@ -304,6 +320,23 @@ predefined group only. Multiple removals are exploratory, not confirmatory.
 **Source:** artifact-verified feature-screen archive; detailed Tables 12 and 13
 in `tables_experiment_catalog.md`.
 
+**Slide feature-count convention (owner decision, 2026-11-05).**
+The subsequent code migration also excludes these columns by default; see
+`docs/experiments.md` for the new input contract. The metrics below still
+refer to the original runs.
+ For the
+current reference-off presentation, exclude the four legacy reference-provenance
+columns (`is_reference_expanded`, `reference_base_reciprocal_rank`,
+`reference_seed_first_stage_reciprocal_rank`, `reference_is_same_document`),
+which the builder sets to zero when reference provenance is absent. Display
+base/enhanced-v1/v2/v3 counts as **15/37/57/65**. The original artifact schemas
+remain **15/41/61/69** and the recorded measured metrics below are unchanged;
+no refitting or new 57-column experiment was executed in this documentation
+change. The slide table footnote identifies this counting convention. Query
+legal-marker and query/chunk citation-overlap features remain included: they
+are lexical features, not expansion provenance. Do not infer that all remaining
+columns vary or that the checkpoint's serialized input dimension changed.
+
 **Matched fixed-top-2 follow-up for the current fixed-window pipeline.** The
 owner supplied the completed output of
 `kaggle_lgbm_feature_schema_top2_ablation.ipynb`, using the full submission
@@ -315,10 +348,10 @@ screen above.
 | Stage / schema | Features | Precision@2 | Recall@2 | Macro-F2@2 |
 |---|---:|---:|---:|---:|
 | Cross-encoder fine-tuned, epoch 1 (reranker-only) | 0 | 0.4064 | 0.6759 | 0.5967 |
-| LightGBM `base_v1` | 15 | 0.4201 | **0.7006** | **0.6180** |
+| LightGBM `base_v1` | 15 | 0.4201 | 0.7006 | 0.6180 |
 | LightGBM `enhanced_v1` | 41 | 0.4189 | 0.6957 | 0.6145 |
-| LightGBM `enhanced_v2` | 61 | 0.4189 | 0.6907 | 0.6114 |
-| LightGBM `enhanced_v3` | 69 | **0.4224** | 0.6916 | 0.6134 |
+| LightGBM `enhanced_v2` | 61 | **0.4269** | **0.7017** | **0.6217** |
+| LightGBM `enhanced_v3` | 69 | 0.4224 | 0.6916 | 0.6134 |
 
 All feature-schema rows use five-fold query-grouped OOF predictions, seed 42,
 and the fixed top-2 output policy. The values are development results supplied
@@ -340,14 +373,16 @@ adopting a new selector.
 
 **Current matched dev comparison for Slide S3.** The following values were
 reported from `kaggle_compare_four_final_policies_dev.ipynb`, using the saved
-full-submission output for fixed-window epoch 1 / checkpoint `1234`. All four
-rows use the same 438-query development split and LightGBM OOF ranking; learned
-selectors are evaluated with their stated cross-fitting protocol. These are
-development estimates, not Codabench scores.
+full-submission output for fixed-window epoch 1 / checkpoint `1234` and its
+LightGBM `enhanced_v2` ranking. All four rows use the same 438-query
+development split and ranking; learned selectors are evaluated with their
+stated cross-fitting protocol. These are development estimates, not Codabench
+scores. The separate `base_v1` fixed-top-2 result is not substituted here;
+doing so would mix feature schemas in a policy comparison.
 
 | Policy | Precision | Recall | Macro-F2 | Protocol |
 |---|---:|---:|---:|---|
-| Fixed top-2 | 0.4189 | 0.6907 | 0.6114 | 5-fold LightGBM OOF ranking; fixed cutoff |
+| Fixed top-2 | 0.4269 | 0.7017 | 0.6217 | 5-fold LightGBM OOF ranking; fixed cutoff |
 | Score gap | 0.5689 | 0.7076 | 0.6747 | Saved nested-OOF estimate |
 | Fold-safe learned stopping | 0.5243 | 0.7303 | 0.6771 | 5 outer folds; inner cross-fitted threshold |
 | Multiclass–Ridge ensemble | **0.5757** | **0.7274** | **0.6910** | 5 outer folds; ensemble weight tuned in inner folds |

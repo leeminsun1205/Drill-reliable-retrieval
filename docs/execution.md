@@ -1,5 +1,24 @@
 # Local and Kaggle execution
 
+## LightGBM feature-input contract update (2026-11-05)
+
+New LightGBM runs exclude four reference-provenance columns by default: the
+two-dense enhanced_v2 input is 57 columns (base/enhanced-v1/v3: 15/37/65).
+The wrappers `scripts/run_lightgbm_fusion.py`,
+`scripts/evaluate_lightgbm_fusion.py` and
+`scripts/evaluate_lightgbm_dev_artifacts.py` expose
+`--include-reference-features` solely for historical 61-column reproduction.
+Train/dev/inference must use the same ordered feature names. Saved model files
+are not rewritten; the shared demo adapter checks and reproduces the serialized
+57- or 61-column contract. Other dimensions still fail validation.
+
+Use a fresh output directory when refitting the 57-column model; old result
+archives retain their original dimensions and scores. No new training/evaluation
+was executed in the migration. In presentation wording, **Article window** is
+the existing `token_window` representation with budget 448 and overlap 64;
+this naming change does not alter preprocessing or embeddings.
+
+
 ## Intended workflow
 
 Git is the source of truth. The normal workflow is:
@@ -28,7 +47,41 @@ remain under `notebooks/temp/`. The authoritative index is
 
 ## Kaggle setup
 
-### Optional Streamlit legal QA demo
+### FastAPI + React legal QA demo (default, 2026-11-07)
+
+Use `notebooks/demo/kaggle_fastapi_legal_qa.ipynb` and
+`demo/web/README.md`. React/TypeScript is built with `npm ci` and
+`npm run build`; FastAPI serves the build and streamed `/api/chat` responses
+through one Ngrok tunnel on port 8501. Node.js >=20.19 or >=22.12 with npm is
+used when available; otherwise the launcher bootstraps pinned Node.js 22.16.0
+with archive checksum verification. Python dependencies are in `.[dense,vietnamese,ltr,demo]`.
+The notebook waits for model readiness before exposing the tunnel; keep the
+Kaggle session alive. This remains temporary demo hosting.
+
+Reusable adapters now live in `src/drill_ir/demo/`. The original Streamlit
+modules forward imports to these adapters. The pipeline, artifact checks,
+CPU dense query encoders and T4 reranking behavior are preserved. Run exactly
+one Uvicorn worker to load the models once; overlapping chat requests return
+429. Chat history stays in the current browser tab until refresh. Streaming
+answers and full retrieved evidence, including article IDs and scores, are
+retained. No model training or new retrieval measurements accompany this
+migration. See the demo README for endpoints, setup, and limitations.
+
+Local validation: four API contract tests passed with injected retrieval and
+answer providers (no GPU/model/API calls); both launcher notebooks passed
+Python cell syntax checks. `npm ci` from the saved lockfile and
+`npm run build` passed (TypeScript checking and Vite production bundling). A
+TestClient smoke check served the actual built index/static assets, health,
+and streamed chat through FastAPI with an injected backend. The test stack
+emitted one Starlette deprecation warning about the httpx TestClient transport;
+no checks failed. Full model inference and the public Kaggle tunnel still
+require validation in the execution environment.
+
+### Legacy Streamlit legal QA demo
+
+The original launcher requires the optional `streamlit` extra in addition to
+`demo`; it remains available for compatibility.
+
 
 The UI and interactive backend are in `demo/streamlit/`; the Kaggle launcher is
 `notebooks/demo/kaggle_streamlit_legal_qa.ipynb`. Its answer layer calls an

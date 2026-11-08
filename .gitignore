@@ -40,3 +40,7 @@ venv/
 
 # Notebook state
 .ipynb_checkpoints/
+
+# Demo frontend
+node_modules/
+/demo/web/dist/

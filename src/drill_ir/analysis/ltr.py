@@ -41,7 +41,7 @@ FEATURE_NAMES = (
     "query_whitespace_tokens",
 )
 
-DERIVED_FEATURE_NAMES = (
+LEGACY_DERIVED_FEATURE_NAMES = (
     "reranker_score_z",
     "reranker_score_minmax",
     "reranker_score_percentile",
@@ -68,6 +68,18 @@ DERIVED_FEATURE_NAMES = (
     "chunk_type_count",
     "query_has_explicit_legal_reference",
     "query_legal_marker_count",
+)
+
+REFERENCE_FEATURE_NAMES = (
+    "is_reference_expanded",
+    "reference_base_reciprocal_rank",
+    "reference_seed_first_stage_reciprocal_rank",
+    "reference_is_same_document",
+)
+
+DERIVED_FEATURE_NAMES = tuple(
+    name for name in LEGACY_DERIVED_FEATURE_NAMES
+    if name not in REFERENCE_FEATURE_NAMES
 )
 
 ENHANCED_V2_FEATURE_NAMES = (
@@ -307,8 +319,14 @@ def build_ltr_examples(
     prefix: str = "",
     feature_schema: str = "enhanced_v1",
     static_article_features: str | Path | None = None,
+    include_reference_features: bool = False,
 ) -> dict[str, Any]:
-    """Build one feature row per reranked candidate from saved run artifacts."""
+    """Build aligned article rows; exclude legacy reference columns by default.
+
+    Two-dense schemas contain 15/37/57/65 columns. Explicitly enable
+    ``include_reference_features`` only to reproduce historical schemas/models
+    with 15/41/61/69 columns. Train and inference must use the same names/order.
+    """
     if feature_schema not in {
         "base_v1",
         "enhanced_v1",
@@ -403,7 +421,9 @@ def build_ltr_examples(
             }
             for aid, values in by_aid.items()
         }
-    reference_provenance = _load_reference_provenance(feedback_path)
+    reference_provenance = (
+        _load_reference_provenance(feedback_path) if include_reference_features else {}
+    )
 
     expected_qids = set(query_by_qid)
     for name, mapping in (
@@ -421,9 +441,9 @@ def build_ltr_examples(
         + tuple(dense_feature_names)
         + FEATURE_NAMES[9:]
     )
-    feature_names = (
+    full_feature_names = (
         base_feature_names
-        + (DERIVED_FEATURE_NAMES if feature_schema != "base_v1" else ())
+        + (LEGACY_DERIVED_FEATURE_NAMES if feature_schema != "base_v1" else ())
         + (
             ENHANCED_V2_FEATURE_NAMES
             if feature_schema in {"enhanced_v2", "enhanced_v3"}
@@ -431,6 +451,12 @@ def build_ltr_examples(
         )
         + (STATIC_ARTICLE_FEATURE_NAMES if feature_schema == "enhanced_v3" else ())
     )
+
+    kept_indices = [
+        index for index, name in enumerate(full_feature_names)
+        if include_reference_features or name not in REFERENCE_FEATURE_NAMES
+    ]
+    feature_names = tuple(full_feature_names[index] for index in kept_indices)
 
     features: list[list[float]] = []
     labels: list[int] = []
@@ -540,7 +566,7 @@ def build_ltr_examples(
                         else []
                     ),
                 ]
-            features.append(row[: len(feature_names)])
+            features.append([row[index] for index in kept_indices])
             labels.append(int(aid in gold))
             qids.append(qid)
             aids.append(aid)
@@ -554,6 +580,7 @@ def build_ltr_examples(
         "aids": np.asarray(aids, dtype=np.int64),
         "original_ranks": np.asarray(original_ranks, dtype=np.int64),
         "feature_schema": feature_schema,
+        "include_reference_features": include_reference_features,
     }
 
 
@@ -583,6 +610,8 @@ def limit_ltr_examples(
     }
     limited["feature_names"] = examples["feature_names"]
     limited["feature_schema"] = examples.get("feature_schema", "unknown")
+    if "include_reference_features" in examples:
+        limited["include_reference_features"] = examples["include_reference_features"]
     return limited
 
 

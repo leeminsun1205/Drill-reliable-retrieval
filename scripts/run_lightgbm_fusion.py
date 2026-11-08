@@ -80,6 +80,10 @@ def main() -> None:
             "score-gap tuning"
         ),
     )
+    parser.add_argument(
+        "--include-reference-features", action="store_true",
+        help="Reproduce historical reference-feature schemas; default excludes four reference columns",
+    )
     args = parser.parse_args()
 
     dev_qids_path = args.dev_run_dir / "split_dev_qids.json"
@@ -95,6 +99,7 @@ def main() -> None:
         dev_queries,
         feature_schema=args.feature_schema,
         static_article_features=args.static_article_features,
+        include_reference_features=args.include_reference_features,
     )
     oof = evaluate_oof_lightgbm(
         dev_examples,
@@ -134,6 +139,7 @@ def main() -> None:
             prefix=prefix,
             feature_schema=args.feature_schema,
             static_article_features=args.static_article_features,
+            include_reference_features=args.include_reference_features,
         )
         rankings, fitted_model = fit_lightgbm_and_rank(
             dev_examples, examples, seed=args.seed
@@ -182,6 +188,7 @@ def main() -> None:
         "test_run_dir": str(args.test_run_dir),
         "feature_names": list(dev_examples["feature_names"]),
         "feature_schema": args.feature_schema,
+        "include_reference_features": args.include_reference_features,
         "development": {
             "queries": len(dev_queries),
             "candidate_rows": len(dev_examples["labels"]),

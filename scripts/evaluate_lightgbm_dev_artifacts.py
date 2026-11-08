@@ -64,6 +64,10 @@ def main() -> None:
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--score-gap-maximum-cutoffs", type=int, nargs="+", default=(3, 4, 5))
+    parser.add_argument(
+        "--include-reference-features", action="store_true",
+        help="Reproduce historical reference-feature schemas; default excludes four reference columns",
+    )
     args = parser.parse_args()
 
     missing = [name for name in REQUIRED_RUN_FILES if not (args.run_dir / name).is_file()]
@@ -83,10 +87,12 @@ def main() -> None:
         args.run_dir,
         queries,
         feature_schema="enhanced_v2",
+        include_reference_features=args.include_reference_features,
     )
-    if len(examples["feature_names"]) != 61:
+    expected_features = 61 if args.include_reference_features else 57
+    if len(examples["feature_names"]) != expected_features:
         raise ValueError(
-            f"Expected the frozen enhanced_v2 61-feature schema; got {len(examples['feature_names'])}"
+            f"Expected enhanced_v2 {expected_features}-feature schema; got {len(examples['feature_names'])}"
         )
     result = evaluate_oof_lightgbm(
         examples,
@@ -124,6 +130,7 @@ def main() -> None:
         json.dumps(
             {
                 "feature_schema": examples["feature_schema"],
+                "include_reference_features": args.include_reference_features,
                 "feature_count": len(examples["feature_names"]),
                 "feature_names": list(examples["feature_names"]),
                 "rows": len(examples["labels"]),
@@ -194,7 +201,9 @@ def main() -> None:
         "stage": "development_lightgbm_oof_and_refit",
         "source_run_dir": str(args.run_dir),
         "feature_schema": examples["feature_schema"],
+        "include_reference_features": args.include_reference_features,
         "feature_count": len(examples["feature_names"]),
+        "feature_names": list(examples["feature_names"]),
         "queries": len(expected_qids),
         "candidate_rows": len(examples["labels"]),
         "positive_rows": int(examples["labels"].sum()),

@@ -1,4 +1,106 @@
+## Latest owner-supplied fixed-top-2 checkpoint results (2026-11-06)
+
+The owner replaced the threshold diagnostic with the following LightGBM
+enhanced_v2 fixed-top-2 results. Report Figure 2 now fixes output size at two
+for both curves. These results supersede the threshold comparison as the
+report's explanation of the chosen checkpoint.
+
+| Checkpoint | Precision@2 | Recall@2 | F2@2 |
+|---|---:|---:|---:|
+| Warm start | 0.408676 | 0.682725 | 0.601989 |
+| Epoch 1 | 0.426941 | 0.701696 | 0.621680 |
+| Epoch 2 | 0.423516 | 0.699413 | 0.618791 |
+| Epoch 3 | 0.413242 | 0.691857 | 0.609650 |
+
+Report and slide enhanced_v2 rows, fixed-top-2 controls, summary milestones,
+and derived differences are updated to 0.4269/0.7017/0.6217. Enhanced_v2 now
+leads precision as well as recall/F2 in the displayed schema table. The curve
+supports epoch 1 specifically after LightGBM at fixed top-2, while epoch 3
+leads reranker-only top-2. No models were run for this correction.
+
+These owner-supplied checkpoint-screen values are not a recomputation of the
+newly uploaded bundle's OOF ranking (top-2 F2 0.6113609814). Preserve both
+sources. The per-query error audit and ensemble F2 0.6910165043 still use
+the uploaded bundle. The display does not establish that all policy rows
+share an identical saved ranking; report/slide captions avoid that claim.
+
 # Evaluation
+
+
+## Saved-run error audit (2026-11-06)
+
+The owner uploaded the current complete-results archive for fixed windows
+448/64, reference-off, WRRF10 weights 0.15/0.65/0.20, pool 50, checkpoint
+1234 and the multiclass–Ridge policy. Its SHA-256 is
+`abceb131eb131e92714376b49a284f147d3e185ce62790e079f97f4caf9c731f`.
+The local train-Parquet SHA-256 matches the archived input exactly. All
+438 persisted dev queries and 593 deduplicated relevance assignments align.
+
+The archive saves outer-fold metrics and lambda choices, but not per-query
+nested-OOF final decisions. `scripts/audit_report_errors.py` reconstructs them
+by fitting only the five small outer-fold logistic/Ridge heads using the
+saved inner-selected lambdas (0.75 for folds 0–3, 0.5 for fold 4). No neural
+model, LightGBM model, retrieval index or hyperparameter search is rerun.
+Every outer-fold P/R/F2 and the aggregate reproduce within 1e-12:
+0.5757229832572298 / 0.7274353120243532 / 0.6910165043213872.
+
+Measured gold-assignment partition (each (qid, gold aid) counted once):
+
+| Observed state | Assignments |
+|---|---:|
+| Returned by the final policy | 387 |
+| Absent from the actual 50-chunk pool | 60 |
+| In pool, below LightGBM top-5 and below reranker top-5 | 84 |
+| In pool, reranker top-5 but demoted outside LightGBM top-5 | 13 |
+| In LightGBM top-5 but excluded by the selected prefix | 49 |
+| Total | 593 |
+
+The report groups the middle ranking conditions into 97 outside top-5, giving
+three disjoint missing-gold groups 60/97/49 (206 total). These describe saved
+rank positions; they are not controlled causal effects of removing a stage.
+Gold-pair counts are not macro-recall. Actual pool macro-recall is
+0.9318656229615133; reranker/LightGBM top-5 macro-recall is
+0.7795879539030225/0.8012774516199174.
+
+Query-level outcomes: exact gold set 152; gold plus extras 125; only missing
+35; both missing and extra 126. Final false-positive assignments total 560;
+false-negative assignments total 206. Two illustrative report cases are
+qid 14663 (gold 29868/29872; selected 29872; missing gold at LightGBM rank 2)
+and qid 2406 (gold 19739; selected 19739/57446). Source text confirms that
+57446 concerns fare exemption/reduction, whereas the question asks priority
+in buying a ticket. It is described as outside benchmark gold, not as an
+authoritative claim that it is legally unrelated in every setting.
+
+**Unresolved cross-source difference:** this archive's actual enhanced_v2
+OOF top-2 P/R/F2 is 0.4189497716894977 / 0.690661013263753 /
+0.6113609813641646, unlike the previously owner-confirmed slide table
+0.4223/0.7027/0.6203. This does not invalidate the arithmetic correction
+below: it identifies a different stored ranking from the reported table.
+The owner was asked whether a separate newer feature-screen artifact exists.
+The report/slide feature-screen values have not been silently overwritten;
+error analysis uses the newly uploaded predictions and matches its 0.6910
+ensemble score. Confirm the table source before claiming both rows come
+from an identical saved ranking.
+
+Audit outputs, per-query ranks, reconstructed selections and case source text
+are in ignored `results/report_error_audit_1234/`. The measured aggregates and
+input provenance are recorded here so they are not confined to ignored files.
+
+## Resolved metric transcription error (2026-11-05)
+
+The final slide audit found that the previously owner-reported enhanced_v2
+fixed-top-2 triplet 0.4223/0.7027/0.6270 was inconsistent with the official
+formula. The owner confirmed a transcription error and authorized correction:
+Precision **0.4223**, Recall **0.7027**, Macro-F2 **0.6203**. The corrected F2
+is recomputed from the reported P/R:
+`5*0.4223*0.7027/(4*0.4223+0.7027) = 0.6203231949496216`.
+
+Report tables R6/R7, experiment records, handoff, and slide tables/conclusion
+were updated together. This is an owner-confirmed arithmetic correction, not
+an artifact-level re-evaluation or new training run. The final audit checked
+21 P/R/F2 table rows; the two repeated occurrences of this triplet were the
+only discrepancies beyond four-decimal rounding tolerance. Preserve the
+owner-reported provenance of all other values.
 
 ## Split discipline
 

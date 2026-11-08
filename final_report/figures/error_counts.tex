@@ -1,0 +1,29 @@
+% Measured from results/report_error_audit_1234; gold assignments, not macro rates.
+\documentclass[border=2pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times.TTF}[Path=../fonts/,BoldFont=Timesbd.TTF,ItalicFont=Timesi.TTF]
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\definecolor{accent}{HTML}{216477}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+ width=15cm,height=3.4cm,
+ xbar,bar width=9pt,
+ symbolic y coords={Pool,Rank,Prefix},ytick={Pool,Rank,Prefix},y dir=reverse,
+ yticklabels={Không vào tập ứng viên,Ngoài top-5,Bị cắt tiền tố},
+ xmin=0,xmax=110,xtick={0,25,50,75,100},
+ xlabel={Số cặp gold bị bỏ sót},
+ axis y line*=left,axis x line*=bottom,y axis line style={draw=none},
+ xmajorgrids=true,grid style={gray!15},
+ tick label style={font=\fontsize{10}{12}\selectfont},
+ label style={font=\fontsize{10}{12}\selectfont},
+ tick align=outside,xtick style={gray!50},ytick style={draw=none},
+ enlarge y limits=.35,
+ nodes near coords,nodes near coords align={horizontal},
+ every node near coord/.append style={font=\fontsize{10}{12}\selectfont,text=black},
+ ]
+\addplot[fill=accent!80,draw=none] table[x=count,y=stage,col sep=comma]{error_counts.csv};
+\end{axis}
+\end{tikzpicture}
+\end{document}

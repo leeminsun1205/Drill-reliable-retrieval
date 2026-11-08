@@ -1,0 +1,692 @@
+% !TEX program = xelatex
+\documentclass[12pt,a4paper]{article}
+\usepackage[left=3cm,right=2cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{multicol}
+
+\setmainfont{Times New Roman}
+\linespread{1.08}
+
+% Định dạng tiêu đề bài báo khoa học chuẩn LNCS / IEEE
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\itshape}{\thesubsubsection}{0.5em}{}
+
+\titlespacing*{\section}{0pt}{0.45ex plus 0.1ex minus 0.05ex}{0.18ex plus 0.05ex}
+\titlespacing*{\subsection}{0pt}{0.35ex plus 0.1ex minus 0.05ex}{0.15ex plus 0.05ex}
+\titlespacing*{\subsubsection}{0pt}{0.28ex plus 0.08ex minus 0.05ex}{0.10ex plus 0.05ex}
+
+\setlength{\parindent}{0.7cm}
+\setlength{\parskip}{0.01em}
+\setlength{\textfloatsep}{4pt plus 1pt minus 1pt}
+\setlength{\floatsep}{4pt plus 1pt minus 1pt}
+\setlength{\intextsep}{4pt plus 1pt minus 1pt}
+
+\setlist{nosep, topsep=0.5pt, partopsep=0pt, parsep=0pt, itemsep=0.5pt}
+
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\abstractname}{Tóm tắt}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\begin{document}
+% ==============================================================================
+% TRANG 2: PAPER HEADER, ABSTRACT & KHỞI ĐẦU CHƯƠNG 1
+% ==============================================================================
+\newpage
+\pagenumbering{arabic}
+\setcounter{page}{2}
+
+\begin{center}
+{\large \textbf{Đánh giá và cải tiến RAG cho hỏi đáp pháp luật Việt Nam dựa trên truy xuất có cấu trúc và bằng chứng pháp lý: Nghiên cứu trên VLSP 2025 DRiLL}}\\[0.12cm]
+{\small \textit{Evaluating and Improving Legal RAG for Vietnamese QA via Structured Retrieval and Legal Evidence: A Study on VLSP 2025 DRiLL}}\\[0.15cm]
+
+\textbf{Phan Tiến}, \textbf{Phan Văn Thắng}, \textbf{Lê Minh Nhựt}\\[0.05cm]
+\footnotesize Khoa Khoa học và Kỹ thuật Thông tin, Trường Đại học Công nghệ Thông tin, ĐHQG-HCM\\
+\footnotesize Email: \texttt{\{26848224, 26848203, 26848158\}@grad.uit.edu.vn} \quad -- \quad GVHD: TS. Hà Minh Tân
+\end{center}
+
+\vspace{0.02cm}
+\begin{abstract}
+\small
+\noindent Trong các hệ thống hỏi đáp pháp luật và tăng cường tạo sinh (RAG), truy xuất văn bản pháp lý đóng vai trò quyết định độ chính xác và ngăn ngừa hiện tượng "ảo giác pháp lý". Tuy nhiên, văn bản pháp luật Việt Nam có thách thức lớn: 17,03\% điều luật vượt 512 tokens gây cắt cụt văn bản, cấu trúc phân cấp Điều--Khoản--Điểm chặt chẽ và tham chiếu chéo chằng chịt khiến truy xuất phẳng kém hiệu quả. Kế thừa kinh nghiệm từ các hệ thống RAG trước đây, đồ án chuyển trọng tâm sang thực nghiệm có kiểm soát trên benchmark chuẩn VLSP 2025 DRiLL nhằm xác định những thành phần kỹ thuật thực sự nâng cao chất lượng truy hồi và tính đầy đủ của bằng chứng pháp lý.
+
+Chúng tôi đề xuất pipeline truy hồi điều luật đa tầng có khả năng tái lập cao: phân rã cấu trúc Khoản--Điểm bảo toàn phần dẫn ngữ cảnh cha (\textit{Parent Context-Preserving Chunker}), kết hợp truy hồi lai BM25 và Dense Bi-Encoder BGE-M3 qua Weighted RRF ($k=20, w_{\text{dense}}=0,8$). Các ứng viên được xếp hạng lại bởi Cross-Encoder tinh chỉnh với mẫu âm khó, trước khi tổng hợp bằng mô hình cây quyết định LightGBM với chính sách ngưỡng động (\textit{Dynamic Threshold Policy}).
+
+Thực nghiệm trên 59.628 điều luật chứng minh biểu diễn Điểm kèm lời dẫn cha đạt Macro-$F_2$ là 0,4464 (vượt trội so với cắt cụt nguyên bản 0,3716). Pipeline hoàn chỉnh đạt Macro-$F_2$ 0,6313 trên tập Dev và đạt 0,5882 trên Private Test chính thức của VLSP 2025 DRiLL (vượt baseline Ban tổ chức 0,5515), khẳng định vai trò cốt lõi của cấu trúc phân cấp trong truy xuất thông tin pháp luật.
+\end{abstract}
+
+\vspace{0.05cm}
+\noindent{\footnotesize\textbf{Từ khóa:} Legal RAG, VLSP 2025 DRiLL, Truy hồi có cấu trúc, Cấu trúc Khoản--Điểm, Weighted RRF, Cross-Encoder, LightGBM, Macro-$F_2$.}
+
+\vspace{0.1cm}
+\hrule
+
+% ==============================================================================
+% CHƯƠNG 1: GIỚI THIỆU & ĐẶT VẤN ĐỀ (TRANG 3 - 4)
+% ==============================================================================
+\section{Giới thiệu}
+
+\subsection{Bối cảnh và lý do chọn đề tài}
+Trong tiến trình chuyển đổi số và phát triển trí tuệ nhân tạo, nhu cầu tra cứu và tư vấn pháp luật tự động cho người dân, doanh nghiệp và các cơ quan tư pháp ngày càng cấp thiết \cite{xiao2021lawformer, chalkidis2020legal}. Sự kết hợp giữa mô hình ngôn ngữ lớn (LLM) và kỹ thuật tăng cường tạo sinh (Retrieval-Augmented Generation -- RAG) mở ra tiềm năng lớn cho các trợ lý pháp lý thông minh \cite{lewis2020retrieval, cs313rag2024}.
+
+Kế thừa kinh nghiệm từ việc phát triển hệ thống chatbot tra cứu luật giao thông CS313 \cite{cs313rag2024} sử dụng BM25, dense retrieval, query expansion và reranking, nhóm nhận thấy một bài học cốt lõi: \textit{Một hệ thống Naive RAG cơ bản không còn là đóng góp nghiên cứu mới mà đã trở thành baseline phổ thông}. Trong miền pháp luật, nếu khâu truy hồi (Retrieval) không chính xác và thiếu căn cứ pháp lý, bước tạo sinh của LLM sẽ dẫn đến hiện tượng "ảo giác pháp lý" (legal hallucination) vô cùng nguy hiểm \cite{khattab2020colbert}.
+
+Do đó, đồ án chuyển trọng tâm mang tính khoa học: \textbf{Thay vì xây dựng chatbot đàm thoại trình diễn, nhóm chuyển sang thực nghiệm có kiểm soát trên benchmark chuẩn mực quốc gia VLSP 2025 DRiLL (Deep Retrieval in the Expansive Legal Landscape) \cite{vlsp2025drill}}. Các kỹ thuật truy xuất đã có được xác lập làm strong baseline có khả năng tái lập, nhằm cô lập và kiểm chứng chính xác những nhân tố nào thực sự nâng cao chất lượng truy hồi và tính đầy đủ của bằng chứng pháp lý (Evidence Sufficiency).
+
+\subsection{Phát biểu bài toán}
+Bài toán nghiên cứu là \textbf{Truy xuất điều luật pháp lý tiếng Việt (Vietnamese Legal Article Retrieval)}, bản chất là bài toán xếp hạng văn bản nhiều nhãn:
+\begin{itemize}[leftmargin=0.6cm]
+    \item \textbf{Đầu vào (Input):} Câu hỏi pháp lý tự nhiên $q \in \mathcal{Q}$ và kho ngữ liệu $\mathcal{C} = \{a_1, \dots, a_N\}$ gồm $59.628$ điều luật (mỗi điều luật có mã định danh \texttt{aid}).
+    \item \textbf{Đầu ra (Output):} Tập điều luật liên quan $\mathcal{R}_q \subset \mathcal{C}$ tạo thành đầy đủ căn cứ pháp lý để trả lời câu hỏi $q$.
+\end{itemize}
+
+Văn bản quy phạm pháp luật Việt Nam sở hữu 5 đặc thù khiến việc truy xuất theo độ tương đồng văn bản phẳng thông thường trở nên không hiệu quả:
+\begin{enumerate}[leftmargin=0.6cm]
+    \item \textbf{Cấu trúc phân cấp đa tầng:} Văn bản tổ chức chặt chẽ từ \textit{Văn bản $\rightarrow$ Chương $\rightarrow$ Mục $\rightarrow$ Điều $\rightarrow$ Khoản $\rightarrow$ Điểm}. Mỗi Điểm là quy định cụ thể nhưng phụ thuộc vào ngữ cảnh câu dẫn tại Khoản hoặc Điều cha.
+    \item \textbf{Độ dài lớn và rào cản truncation:} Nhiều điều luật dài hàng nghìn tokens; 17,03\% điều luật vượt 512 tokens (giới hạn của Bi-Encoder/Reranker), làm mất mát các khoản quy định phía sau nếu xử lý thô.
+    \item \textbf{Mất ngữ cảnh khi chia chunk cơ học:} Việc chia đoạn theo số từ cố định gây đứt gãy mệnh đề pháp lý, khiến các đoạn con mất chủ ngữ hoặc điều kiện tiền đề.
+    \item \textbf{Quan hệ tham chiếu chéo (Cross-references):} Các điều luật thường xuyên dẫn chiếu lẫn nhau; hành vi và chế tài xử phạt thường nằm ở các điều luật khác nhau.
+    \item \textbf{Tính đầy đủ của bằng chứng (Evidence Sufficiency):} Một điều luật có điểm tương đồng từ vựng cao nhất chưa chắc đã đủ; một câu hỏi thường đòi hỏi nhiều điều luật mới cấu thành căn cứ pháp lý trọn vẹn.
+\end{enumerate}
+
+\subsection{Mục tiêu nghiên cứu}
+Đề tài có bốn mục tiêu: (i) xây dựng pipeline truy hồi pháp luật tiếng Việt có quy trình thực nghiệm nhất quán; (ii) đánh giá có kiểm soát ảnh hưởng của granularity, BM25, Dense Retrieval, Hybrid RRF và Cross-Encoder trên cùng tập dữ liệu; (iii) phân tích vai trò của cấu trúc Khoản--Điểm và chính sách lựa chọn điều luật; và (iv) đo lường tổng thể trên tập Dev cùng Private Test chính thức của VLSP 2025 DRiLL.
+
+\subsection{Đóng góp chính của đề tài}
+Bản chất đóng góp của đề tài gồm ba phần. Thứ nhất, \textit{Parent Context-Preserving Chunker} ghép lời dẫn Khoản cha vào Điểm con và dùng cửa sổ trượt chỉ ở những trường hợp đánh số không đồng nhất. Thứ hai, chuỗi thử nghiệm được kiểm soát trên cùng phân chia dữ liệu, cô lập tác động của phân đoạn, truy hồi lai, Cross-Encoder và LightGBM. Thứ ba, kết quả thực nghiệm cho thấy phương pháp đạt Macro-$F_2$ 0,6313 trên Dev và 0,5882 trên Private Test chính thức, cao hơn baseline Ban tổ chức (0,5515). Đồ thị tham chiếu được trình bày như khung mở rộng cho các lỗi đa điều luật, nhưng chưa được dùng làm thành phần bắt buộc của điểm số cuối.
+
+\subsection{Câu hỏi nghiên cứu (Research Questions)}
+\begin{itemize}[leftmargin=0.6cm]
+    \item \textbf{RQ1:} Cấu trúc Khoản--Điểm có lời dẫn cha cải thiện truy hồi so với các cách chia đoạn cơ học không?
+    \item \textbf{RQ2:} Hybrid RRF, Cross-Encoder và LightGBM góp phần như thế nào vào mức cân bằng Precision--Recall?
+    \item \textbf{RQ3:} Những lỗi nào còn xảy ra với câu hỏi nhiều điều luật hoặc phụ thuộc tham chiếu chéo?
+\end{itemize}
+
+\subsection{Bố cục báo cáo}
+Chương 2 trình bày nền tảng và công trình liên quan; Chương 3 mô tả phương pháp; Chương 4 phân tích thiết lập, kết quả, ablation và lỗi; Chương 5 kết luận và đề xuất hướng phát triển.
+
+% ==============================================================================
+% CHƯƠNG 2: CƠ SỞ LÝ THUYẾT & NGHIÊN CỨU LIÊN QUAN (TRANG 5 - 6)
+% ==============================================================================
+\section{Cơ sở lý thuyết và nghiên cứu liên quan}
+
+\subsection{Kiến thức nền tảng về truy hồi thông tin và học máy}
+
+\subsubsection{Truy hồi từ vựng với mô hình BM25}
+BM25 (Best Matching 25) là thuật toán xếp hạng dựa trên tần suất từ truyền thống thuộc họ mô hình xác suất \cite{robertson2009probabilistic}. Điểm số khớp giữa câu hỏi $q$ và văn bản $d$ được tính bởi:
+\begin{equation}
+\text{Score}_{\text{BM25}}(q, d) = \sum_{t \in q} \text{IDF}(t) \cdot \frac{f(t, d) \cdot (k_1 + 1)}{f(t, d) + k_1 \cdot \left(1 - b + b \cdot \frac{|d|}{\text{avgdl}}\right)}
+\label{eq:bm25}
+\end{equation}
+trong đó $f(t, d)$ là tần suất từ $t$ trong $d$, $|d|$ là độ dài văn bản, $\text{avgdl}$ là độ dài trung bình toàn bộ corpus, $k_1$ và $b$ là các siêu tham số điều khiển độ bão hòa tần suất từ và chuẩn hóa độ dài. BM25 bắt khớp chính xác các thuật ngữ pháp lý cụ thể nhưng không xử lý được từ đồng nghĩa hoặc diễn đạt biến thể.
+
+\subsubsection{Truy hồi ngữ nghĩa sâu (Dense Semantic Retrieval)}
+Các mô hình Dense Retrieval sử dụng kiến trúc Bi-Encoder dựa trên Transformer \cite{karpukhin2020dense, wang2022text}. Câu hỏi $q$ và văn bản $d$ được ánh xạ độc lập vào không gian véc-tơ liên tục $\mathbb{R}^D$: $\mathbf{v}_q = \text{Encoder}(q)$ và $\mathbf{v}_d = \text{Encoder}(d)$. Độ tương đồng ngữ nghĩa được xác định qua khoảng cách Cosine:
+\begin{equation}
+\text{Sim}(q, d) = \cos(\mathbf{v}_q, \mathbf{v}_d) = \frac{\mathbf{v}_q \cdot \mathbf{v}_d}{\|\mathbf{v}_q\|_2 \|\mathbf{v}_d\|_2}
+\label{eq:cosine}
+\end{equation}
+Nhờ được tiền huấn luyện qua học tương phản (contrastive learning), Bi-Encoder nắm bắt được ngữ nghĩa tiềm ẩn, cho phép tìm ra văn bản liên quan dù không chứa từ khóa trùng khớp.
+
+\subsubsection{Hợp nhất thứ hạng tương hỗ (Reciprocal Rank Fusion -- RRF)}
+Để phát huy sức mạnh bổ trợ giữa tìm kiếm từ vựng chính xác của BM25 và tìm kiếm ngữ nghĩa khái quát của Dense Retrieval mà không bị ảnh hưởng bởi thang đo điểm số thô khác nhau, thuật toán RRF có trọng số được áp dụng \cite{cormack2009reciprocal}:
+\begin{equation}
+\text{RRF}(d) = \sum_{m \in \mathcal{M}} w_m \cdot \frac{1}{k + \text{rank}_m(d)}
+\label{eq:rrf_theory}
+\end{equation}
+trong đó $\mathcal{M} = \{\text{BM25}, \text{Dense}\}$, $\text{rank}_m(d)$ là thứ hạng của $d$ theo phương pháp $m$, $k$ là hằng số làm mượt, và $w_m$ là trọng số đóng góp của từng nhánh ($\sum w_m = 1$).
+
+\subsubsection{Mô hình xếp hạng lại tương tác sâu (Cross-Encoder Reranker)}
+Khác với Bi-Encoder mã hóa độc lập, mô hình Cross-Encoder ghép nối trực tiếp câu hỏi và đoạn văn thành chuỗi đầu vào $[\text{CLS}] \circ q \circ [\text{SEP}] \circ d \circ [\text{SEP}]$, cho phép tất cả các từ tương tác chéo qua các tầng tự chú ý (Cross Self-Attention) \cite{nogueira2019passage}. Điểm tương đồng được tính từ véc-tơ biểu diễn token $[\text{CLS}]$:
+\begin{equation}
+s(q, d) = \sigma(\mathbf{W} \cdot \mathbf{h}_{[\text{CLS}]} + b)
+\label{eq:cross_encoder}
+\end{equation}
+trong đó $\sigma$ là hàm Sigmoid. Do chi phí tính toán lớn, Cross-Encoder được sử dụng ở giai đoạn hai để xếp hạng lại tập nhỏ các ứng viên hàng đầu (Top-$K$ candidates).
+
+\subsubsection{Cây quyết định tăng cường Gradient (LightGBM)}
+LightGBM là thuật toán học máy cây quyết định tăng cường gradient tiên tiến, sử dụng kỹ thuật phát triển cây theo chiều sâu lá tối ưu (leaf-wise tree growth) \cite{ke2017lightgbm}. Trong hệ thống IR, LightGBM đóng vai trò là mô hình xếp hạng học máy (Learning-to-Rank / Stacking Classifier), cho phép kết hợp phi tuyến tính nhiều tín hiệu đặc trưng trích xuất từ các giai đoạn trước (điểm BM25, điểm tương đồng dense, thứ hạng RRF, điểm reranker, độ dài truy vấn và đoạn văn) để đưa ra dự đoán nhãn cuối cùng.
+
+\subsection{Các nghiên cứu liên quan trong xử lý văn bản pháp luật}
+Trong lĩnh vực AI cho pháp luật, cuộc thi thường niên COLIEE (Competition on Legal Information Extraction and Entailment) trên hệ thống án lệ và luật định của Canada và Nhật Bản là benchmark tiêu chuẩn \cite{kim2023coliee}. Các đội thi dẫn đầu tại COLIEE thường áp dụng mô hình hai giai đoạn kết hợp BM25 với các mô hình BERT pháp lý hoặc T5 tinh chỉnh \cite{yoshioka2021bert}. Xiao và cộng sự công bố Lawformer \cite{xiao2021lawformer}, mô hình ngôn ngữ trên hàng chục triệu văn bản pháp luật Trung Quốc với cửa sổ ngữ cảnh mở rộng. Chalkidis và cộng sự công bố Legal-BERT \cite{chalkidis2020legal} trên kho ngữ liệu pháp luật tiếng Anh và chứng minh tính ưu việt của việc tiếp tục tiền huấn luyện miền chuyên biệt.
+
+Đối với tiếng Việt, chiến dịch VLSP 2025 giới thiệu nhiệm vụ DRiLL (Deep Retrieval in the Expansive Legal Landscape) nhằm đánh giá năng lực truy xuất điều luật ở quy mô lớn trên hệ thống văn bản pháp luật Việt Nam \cite{vlsp2025drill}. Đội thi EDM tại VLSP 2025 \cite{pham2025edm} đã đề xuất kiến trúc đa tầng kết hợp BM25, dense embeddings, reranker và các đặc trưng tham chiếu liên điều luật, khẳng định tính hiệu quả của mô hình học xếp hạng Learning-to-Rank. Bảng \ref{tab:related-work} tổng hợp và so sánh các nghiên cứu tiêu biểu.
+
+\begin{table}[htbp]
+\centering
+\caption{Tổng hợp và so sánh các nghiên cứu liên quan về truy hồi văn bản pháp luật.}
+\label{tab:related-work}
+\scriptsize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{2.8cm} >{\raggedright\arraybackslash}p{2.1cm} >{\raggedright\arraybackslash}p{2.3cm} X}
+\toprule
+\textbf{Tác giả / Năm} & \textbf{Phương pháp cốt lõi} & \textbf{Tập dữ liệu} & \textbf{Kết quả chính} & \textbf{Hạn chế chính} \\
+\midrule
+Chalkidis et al. (2020) \cite{chalkidis2020legal} & Legal-BERT tiền huấn luyện miền & EURLEX57K, ECHR (Tiếng Anh) & Vượt BERT gốc 2--4\% $F_1$ & Chỉ áp dụng tiếng Anh; xử lý văn bản ở mức văn bản phẳng. \\
+\addlinespace
+Xiao et al. (2021) \cite{xiao2021lawformer} & Lawformer (Longformer trên văn bản luật) & CAIL2018 (Tiếng Trung) & Cải thiện QA pháp luật +3,2\% & Chi phí tính toán lớn; không có cơ chế liên kết khoản con. \\
+\addlinespace
+Pham et al. (EDM Team, 2025) \cite{pham2025edm} & Multi-stage IR + Learning-to-Rank + Reference & VLSP 2025 DRiLL (Tiếng Việt) & Top ranking VLSP 2025 DRiLL & Pipeline phức tạp, phụ thuộc LLM prompting tốn kém. \\
+\addlinespace
+Ban tổ chức VLSP (2025) \cite{vlsp2025drill} & Two-stage BM25 + Dense Retrieval phẳng & VLSP 2025 DRiLL (Tiếng Việt) & Private Test Macro-$F_2$ = 0,5515 & Truncation nghiêm trọng điều luật dài; chưa mô hình hóa cấu trúc. \\
+\addlinespace
+\textbf{Phương pháp đề xuất} & \textbf{Khoản--Điểm + Hybrid RRF + Reranker + LightGBM} & \textbf{VLSP 2025 DRiLL (Tiếng Việt)} & \textbf{Private Test Macro-$F_2$ = 0,5882} & Cần tự động hóa mở rộng đồ thị tham chiếu ở quy mô lớn. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ==============================================================================
+% CHƯƠNG 3: PHƯƠNG PHÁP ĐỀ XUẤT (TRANG 7 - 9)
+% ==============================================================================
+\section{Phương pháp đề xuất}
+
+\subsection{Kiến trúc tổng thể của hệ thống}
+Hệ thống truy hồi điều luật gồm năm giai đoạn như Hình \ref{fig:architecture}; luồng chính được thực hiện end-to-end, trong khi mở rộng tham chiếu chéo được xem là mô-đun thiết kế chưa đóng vai trò bắt buộc trong kết quả nộp bài:
+\begin{enumerate}[leftmargin=0.7cm]
+    \item \textbf{Giai đoạn 1 -- Tiền xử lý \& Phân rã cấu trúc phân cấp:} Kho 59.628 điều luật được bóc tách bằng giải thuật phân tích cú pháp thành các đơn vị Khoản và Điểm, trong đó phần dẫn của Khoản cha luôn được ghép nối vào Điểm con.
+    \item \textbf{Giai đoạn 2 -- Truy hồi ứng viên đa tầng (First-Stage Hybrid Retrieval):} Câu hỏi được tìm kiếm đồng thời qua nhánh BM25 (VnCoreNLP) và nhánh Dense Bi-Encoder BGE-M3. Kết quả thứ hạng được hợp nhất qua Weighted RRF để chọn Top-50 đoạn trích ứng viên xuất sắc nhất.
+    \item \textbf{Giai đoạn 3 -- Xếp hạng lại sâu (Cross-Encoder Reranking):} Top-50 ứng viên được đưa vào Cross-Encoder tinh chỉnh với mẫu âm khó để tính xác suất phù hợp, sau đó gộp cực đại (Max-pooling) về mức điều luật (\texttt{aid}).
+    \item \textbf{Giai đoạn 4 -- Tích hợp đặc trưng học máy \& Chính sách ngưỡng:} Mô hình LightGBM tổng hợp các đặc trưng đa tầng và đưa ra phân loại nhị phân kết hợp cơ chế ngưỡng thích ứng kèm fallback để chọn danh sách điều luật cuối cùng.
+    \item \textbf{Giai đoạn 5 -- Khung mở rộng tham chiếu chéo:} Mô hình hóa đồ thị tham chiếu để phân tích và gợi ý ứng viên bổ sung trong những trường hợp cần nhiều căn cứ.
+\end{enumerate}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.40cm and 0.50cm,
+    box/.style={rectangle, draw=blue!70, fill=blue!5, rounded corners=2pt, thick, align=center, font=\scriptsize, minimum height=0.50cm},
+    databox/.style={cylinder, draw=gray!80, fill=gray!10, shape border rotate=90, aspect=0.25, thick, align=center, font=\scriptsize, minimum height=0.50cm},
+    action/.style={rectangle, draw=orange!80, fill=orange!10, rounded corners=2pt, thick, align=center, font=\scriptsize, minimum height=0.50cm},
+    model/.style={rectangle, draw=green!70!black, fill=green!10, rounded corners=2pt, thick, align=center, font=\scriptsize, minimum height=0.50cm},
+    arrow/.style={-Latex, thick, color=blue!80!black}
+]
+
+\node[databox] (corpus) {Corpus 59.628\\Điều luật};
+\node[box, right=0.6cm of corpus] (parser) {Parser Cấu trúc\\Khoản--Điểm};
+\node[databox, right=0.6cm of parser] (chunks) {203.435 Chunks\\Bảo tồn ngữ cảnh};
+
+\node[box, below=0.5cm of corpus] (query) {Câu hỏi pháp lý $q$};
+
+\node[model, below=0.5cm of chunks] (bm25) {BM25 Retrieval\\(VnCoreNLP)};
+\node[model, right=0.45cm of bm25] (dense) {Dense Retrieval\\(BGE-M3)};
+
+\node[action, below=0.5cm of $(bm25)!0.5!(dense)$] (rrf) {Weighted RRF ($w_{\text{dense}}=0.8, w_{\text{sparse}}=0.2, k=20$) $\rightarrow$ Top-50 Chunks};
+
+\node[model, below=0.42cm of rrf] (reranker) {Fine-tuned Cross-Encoder Reranker (Pointwise BCE, Hard Negatives)};
+
+\node[action, below=0.42cm of reranker] (maxpool) {Gộp cực đại theo Điều luật (Max-pooling per \texttt{aid})};
+
+\node[model, right=0.65cm of maxpool] (lgbm) {LightGBM Feature Fusion\\(OOF + Dynamic Threshold)};
+
+\node[databox, below=0.42cm of $(maxpool)!0.5!(lgbm)$] (output) {\textbf{Tập Điều luật liên quan cuối cùng ($\mathcal{R}_q$)}};
+
+\draw[arrow] (corpus) -- (parser);
+\draw[arrow] (parser) -- (chunks);
+\draw[arrow] (chunks) -- (bm25);
+\draw[arrow] (chunks) -| (dense);
+\draw[arrow] (query) |- (bm25);
+\draw[arrow] (query) |- (dense);
+\draw[arrow] (bm25) -- (rrf);
+\draw[arrow] (dense) -- (rrf);
+\draw[arrow] (rrf) -- (reranker);
+\draw[arrow] (reranker) -- (maxpool);
+\draw[arrow] (maxpool) -- (lgbm);
+\draw[arrow] (lgbm) |- (output);
+\draw[arrow] (maxpool) -- (output);
+
+\end{tikzpicture}
+\caption{Sơ đồ khối kiến trúc hệ thống truy hồi điều luật đa tầng đề xuất.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Tiền xử lý và phân rã cấu trúc bảo toàn ngữ cảnh cha}
+Văn bản pháp luật được chuẩn hóa Unicode NFKC và làm sạch ký tự rác trước khi đưa vào bộ bóc tách cấu trúc cú pháp (\texttt{HierarchicalChunker}). Khảo sát trên 59.628 điều luật của DRiLL cho thấy:
+\begin{itemize}[leftmargin=0.7cm]
+    \item 47.959 điều luật (80,43\%) có cấu trúc phân chia theo Khoản rõ ràng ($1., 2., 3., \dots$).
+    \item 10.066 điều luật (16,88\%) chỉ là một đoạn văn bản duy nhất không chứa phân khoản.
+    \item 1.603 điều luật (2,69\%) có định dạng đánh số phức tạp hoặc mơ hồ.
+\end{itemize}
+
+Nếu chỉ chia đoạn theo Điều nguyên bản, có 17,03\% điều luật vượt ngưỡng 512 tokens (điều dài nhất đạt 68.385 tokens), dẫn đến truncation nghiêm trọng. Nếu chia cửa sổ trượt cơ học (512/64 tokens), các điểm cắt sẽ xé rách mệnh đề và làm mất ngữ cảnh cha. Để giải quyết triệt để, chúng tôi áp dụng quy tắc:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Cấp độ Khoản:} Nếu Khoản có độ dài $\le 448$ tokens, giữ nguyên làm một đơn vị biểu diễn độc lập: $c = \text{[Tên Điều]} \circ \text{" "} \circ \text{[Nội dung Khoản]}$.
+    \item \textbf{Cấp độ Điểm (Parent Context Expansion):} Khi Khoản chứa Điểm con ($a, b, c, \dots$), giải thuật tự động ghép phần dẫn đầu của Khoản cha ($H_{\text{Khoản}}$) vào từng Điểm con:
+    \begin{equation}
+    c_{\text{Điểm } k} = \text{[Tên Điều]} \circ \text{": "} \circ H_{\text{Khoản}} \circ \text{" - "} \circ \text{[Nội dung Điểm } k\text{]}
+    \end{equation}
+    \item \textbf{Cơ chế fallback an toàn:} Với 2,69\% điều luật có đánh số không đồng nhất, hệ thống tự động kích hoạt fallback sang cửa sổ trượt 512/64 tokens, đảm bảo 100\% điều luật đều giữ được tối thiểu một biểu diễn hợp lệ.
+\end{itemize}
+Tổng số biểu diễn sinh ra từ 59.628 điều luật là 203.435 đoạn trích có cấu trúc, trong đó 98,80\% đoạn trích nằm trọn vẹn trong giới hạn 512 tokens.
+
+\subsection{Truy hồi ứng viên đa tầng: BM25, Dense Retrieval và Hybrid RRF}
+Ở tầng truy hồi đầu tiên, hệ thống thực hiện tìm kiếm song song:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Nhánh từ vựng BM25:} Sử dụng Rank-BM25 kết hợp bộ tách từ VnCoreNLP \cite{vu2018vncorenlp} để nhận diện từ ghép tiếng Việt, thiết lập siêu tham số tối ưu $k_1 = 1,2$ và $b = 0,75$.
+    \item \textbf{Nhánh ngữ nghĩa Dense Bi-Encoder:} Sử dụng mô hình BAAI/bge-m3 \cite{chen2024bge} ánh xạ câu hỏi $q$ và đoạn trích $c$ vào không gian 1.024 chiều, tính khoảng cách tương đồng Cosine. Toàn bộ véc-tơ biểu diễn được tính toán trước và lưu trữ có kiểm tra mã băm (fingerprint caching) trên đĩa để tối ưu tốc độ.
+    \item \textbf{Hợp nhất thứ hạng tương hỗ có trọng số (Weighted RRF):} Danh sách kết quả được tổng hợp theo công thức:
+    \begin{equation}
+    \text{RRF}(c) = w_{\text{dense}} \cdot \frac{1}{k + \text{rank}_{\text{dense}}(c)} + w_{\text{sparse}} \cdot \frac{1}{k + \text{rank}_{\text{sparse}}(c)}
+    \label{eq:weighted_rrf}
+    \end{equation}
+    với $k = 20$, $w_{\text{dense}} = 0,8$ và $w_{\text{sparse}} = 0,2$. Trích xuất Top-50 đoạn trích $c$ có điểm RRF cao nhất sang giai đoạn tiếp theo.
+\end{itemize}
+
+\subsection{Cross-Encoder Reranker và kỹ thuật tinh chỉnh với Hard Negatives}
+Mô hình Cross-Encoder được xây dựng trên BAAI/bge-reranker-large, được tinh chỉnh có kiểm soát chống rò rỉ dữ liệu:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Phân chia tập dữ liệu:} Quá trình khai thác mẫu và huấn luyện chỉ sử dụng 1.752 câu hỏi thuộc tập Train nội bộ; 438 câu hỏi thuộc tập Dev chỉ dùng duy nhất để theo dõi độ hội tụ và chọn checkpoint.
+    \item \textbf{Tạo cặp mẫu dương (Weak Supervision):} Do nhãn ground-truth chỉ ở cấp độ điều luật (\texttt{aid}), các đoạn trích con thuộc điều luật đúng có độ tương đồng cao nhất với câu hỏi được chọn làm mẫu dương ($y = 1$).
+    \item \textbf{Khai thác mẫu âm khó (Hard-Negative Mining):} Đối với mỗi câu hỏi, mẫu âm ($y = 0$) được chọn từ chính các đoạn trích nằm trong Top ứng viên của bước Hybrid RRF nhưng thuộc điều luật không liên quan. Điều này buộc mô hình học cách phân biệt sự khác biệt pháp lý tinh tế.
+    \item \textbf{Hàm mất mát Pointwise Binary Cross-Entropy (BCE):} Tối ưu bằng hàm mất mát nhị phân:
+    \begin{equation}
+    \mathcal{L}_{\text{BCE}} = -\frac{1}{B} \sum_{i=1}^{B} \left[ y_i \log \hat{p}_i + (1 - y_i) \log (1 - \hat{p}_i) \right]
+    \label{eq:bce_loss}
+    \end{equation}
+    với $\hat{p}_i = \sigma(s(q_i, c_i))$ là xác suất dự đoán của mô hình, $B$ là kích thước batch.
+    \item \textbf{Gộp điểm cực đại theo Điều luật (Max-pooling per Article):} Khi suy luận, điểm số của điều luật $a$ đối với câu hỏi $q$ được tính bằng giá trị lớn nhất trong các đoạn trích con của điều đó:
+    \begin{equation}
+    \text{Score}_{\text{Reranker}}(q, a) = \max_{c \in \mathcal{C}(a)} s(q, c)
+    \label{eq:max_pool}
+    \end{equation}
+\end{itemize}
+
+\subsection{Tích hợp đặc trưng học máy với LightGBM và chính sách ngưỡng thích ứng}
+Mô hình LightGBM nhận véc-tơ đặc trưng 12 chiều cho mỗi cặp ứng viên $(q, a)$ gồm: điểm Cross-Encoder cực đại và trung bình; độ chênh lệch điểm số (margin) so với ứng viên cao nhất; điểm và thứ hạng BM25; điểm và thứ hạng Dense; điểm RRF; số token câu hỏi, đoạn trích và tỷ lệ độ dài; tần suất xuất hiện của điều luật trong tập huấn luyện.
+
+Để ngăn chặn quá khớp, LightGBM được huấn luyện bằng kỹ thuật dự đoán ngoài tập gộp 5 nếp theo nhóm câu hỏi (5-fold Query-Grouped OOF). 
+
+\textbf{Chính sách ngưỡng quyết định thích ứng (Dynamic Threshold Policy):} Các điều luật có xác suất dự đoán từ LightGBM vượt qua ngưỡng $\tau$ sẽ được chọn vào $\mathcal{R}_q$. Nếu không có ứng viên nào vượt ngưỡng, cơ chế fallback sẽ chọn Top-2 ứng viên có điểm cao nhất:
+\begin{equation}
+\mathcal{R}_q = \begin{cases}
+\{a \in \text{TopCandidates}(q) \mid P(a \mid q) \ge \tau\} & \text{nếu } \exists a: P(a \mid q) \ge \tau \\
+\text{Top-2 Candidates by Score} & \text{ngược lại}
+\end{cases}
+\label{eq:threshold_fallback}
+\end{equation}
+
+\subsection{Khung thiết kế mở rộng theo quan hệ tham chiếu chéo}
+Văn bản pháp luật có mạng lưới tham chiếu liên điều luật dày đặc. Chúng tôi mô hình hóa cấu trúc này dưới dạng đồ thị có hướng $G = (\mathcal{V}, \mathcal{E})$, với đỉnh $v_i \in \mathcal{V}$ là điều luật $a_i$, và cạnh có hướng $e_{ij} = (a_i, a_j) \in \mathcal{E}$ thể hiện điều luật $a_i$ dẫn chiếu đến điều luật $a_j$. Mối quan hệ được trích xuất bằng các biểu thức chính quy xác định (\texttt{Điều\textbackslash s+(\textbackslash d+)}, \texttt{Khoản\textbackslash s+(\textbackslash d+)\textbackslash s+Điều\textbackslash s+(\textbackslash d+)}). Cơ chế lan truyền điểm số (Score Propagation) được định nghĩa:
+\begin{equation}
+S_{\text{final}}(a_j) = S(a_j) + \gamma \sum_{a_i \in \mathcal{N}_{\text{in}}(a_j)} S(a_i) \cdot \frac{1}{|\mathcal{N}_{\text{out}}(a_i)|}
+\label{eq:propagation}
+\end{equation}
+trong đó $\gamma \in (0, 1)$ là hệ số suy giảm khoảng cách tham chiếu, $\mathcal{N}_{\text{in}}(a_j)$ là tập các điều luật dẫn chiếu đến $a_j$, và $\mathcal{N}_{\text{out}}(a_i)$ là số lượng liên kết xuất phát từ $a_i$. Cơ chế này giúp khôi phục các điều luật căn cứ bị thiếu hụt, nâng cao độ bao phủ cho tập bằng chứng.
+
+% ==============================================================================
+% CHƯƠNG 4: THỰC NGHIỆM & ĐÁNH GIÁ KẾT QUẢ (TRANG 10 - 13)
+% ==============================================================================
+\section{Thực nghiệm và đánh giá kết quả}
+
+\subsection{Tập dữ liệu chuẩn mực VLSP 2025 DRiLL}
+Nghiên cứu sử dụng tập dữ liệu chính thức của cuộc thi VLSP 2025 Shared Task DRiLL \cite{vlsp2025drill}. Thống kê tổng quan được trình bày trong Bảng \ref{tab:dataset_stats}.
+
+\begin{table}[htbp]
+\centering
+\caption{Thống kê định lượng tập dữ liệu benchmark VLSP 2025 DRiLL.}
+\label{tab:dataset_stats}
+\footnotesize
+\begin{tabularx}{\textwidth}{X r}
+\toprule
+\textbf{Thuộc tính thống kê} & \textbf{Giá trị số lượng} \\
+\midrule
+Tổng số điều luật không rỗng trong kho dữ liệu (Corpus Articles) & 59.628 \\
+Tổng số câu hỏi có gán nhãn trong tập huấn luyện gốc (Train Queries) & 2.190 \\
+Tập phân chia huấn luyện nội bộ (Internal Train Split, Seed 42) & 1.752 \\
+Tập phân chia kiểm định nội bộ (Internal Dev Split, Seed 42) & 438 \\
+Tập kiểm tra công khai của Ban tổ chức (Official Public Test) & 312 \\
+Tập kiểm tra riêng tư của Ban tổ chức (Official Private Test) & 627 \\
+Số lượng điều luật đúng trung bình cho mỗi câu hỏi (Mean Gold per Query) & 1,30 \\
+Tỷ lệ điều luật có độ dài vượt quá giới hạn 512 tokens (Token Truncation Ratio) & 17,03\% \\
+Độ dài điều luật lớn nhất ghi nhận được (Max Token Length) & 68.385 \\
+Độ dài câu hỏi lớn nhất ghi nhận được trong tập Train & $\le 512$ \\
+Tổng số đoạn trích sinh ra từ bộ bóc tách Khoản--Điểm (\texttt{KhoanDiemChunker}) & 203.435 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Thiết lập thực nghiệm và siêu tham số}
+Các thí nghiệm được triển khai trên máy chủ GPU NVIDIA A100 (40GB VRAM), PyTorch và Transformers:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{BM25:} $k_1 = 1,2$, $b = 0,75$, lấy Top-100 ứng viên ban đầu.
+    \item \textbf{Dense Bi-Encoder:} BAAI/bge-m3, độ dài tối đa 512 tokens, batch size 64 khi tạo embedding.
+    \item \textbf{Weighted RRF:} Hằng số $k = 20$, tỷ lệ trọng số $w_{\text{dense}} = 0,8$ và $w_{\text{sparse}} = 0,2$, trích xuất Top-50 chunks ứng viên.
+    \item \textbf{Fine-tuning Cross-Encoder:} BAAI/bge-reranker-large, thuật toán tối ưu AdamW, tốc độ học $\eta = 2 \times 10^{-5}$ với Linear Warmup qua 10\% steps, batch size 16, huấn luyện trong 4 epochs.
+    \item \textbf{LightGBM:} 5-fold GroupKFold theo câu hỏi, số lá cực đại 31, độ sâu 6, tốc độ học 0,05, số cây 100.
+\end{itemize}
+
+\subsection{Độ đo đánh giá chất lượng}
+Chất lượng hệ thống được đánh giá bằng các thước đo chuẩn mực của VLSP 2025 DRiLL:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Macro Precision ($P_{\text{macro}}$) và Macro Recall ($R_{\text{macro}}$):}
+    \begin{equation}
+    P_{\text{macro}} = \frac{1}{|Q|} \sum_{q \in Q} \frac{|\mathcal{R}_q \cap \mathcal{G}_q|}{|\mathcal{R}_q|}, \qquad R_{\text{macro}} = \frac{1}{|Q|} \sum_{q \in Q} \frac{|\mathcal{R}_q \cap \mathcal{G}_q|}{|\mathcal{G}_q|}
+    \end{equation}
+    trong đó $\mathcal{R}_q$ là tập điều luật được dự đoán, $\mathcal{G}_q$ là tập điều luật đúng của câu hỏi $q$.
+    \item \textbf{Macro-$F_2$ Score (Độ đo chính thức):} Điểm $F_2$ ưu tiên Recall gấp đôi so với Precision, phù hợp với bản chất tránh bỏ sót căn cứ pháp lý:
+    \begin{equation}
+    F_2 = \frac{5 \cdot P_{\text{macro}} \cdot R_{\text{macro}}}{4 \cdot P_{\text{macro}} + R_{\text{macro}}}
+    \label{eq:f2_metric}
+    \end{equation}
+    \textit{Lưu ý:} Theo chuẩn VLSP, Macro-$F_2$ được tính trực tiếp từ hai giá trị $P_{\text{macro}}$ và $R_{\text{macro}}$.
+    \item \textbf{Recall@$K$:} Tỷ lệ câu hỏi mà tập Top-$K$ ứng viên chứa ít nhất một điều luật đúng.
+\end{itemize}
+
+\subsection{Kết quả thực nghiệm và so sánh theo từng giai đoạn}
+
+\subsubsection{Đánh giá ảnh hưởng của bộ tách từ đối với mô hình BM25}
+Bảng \ref{tab:bm25_results} so sánh BM25 khi dùng các bộ tách từ khác nhau trên tập Dev 438 câu hỏi (lấy Top-3). VnCoreNLP cho kết quả cao nhất với $F_2 = 0,3799$ và được chọn làm công cụ chuẩn cho nhánh BM25.
+
+\begin{table}[htbp]
+\centering
+\caption{So sánh hiệu năng các bộ tách từ tiếng Việt cho BM25 trên tập Dev.}
+\label{tab:bm25_results}
+\footnotesize
+\begin{tabularx}{\textwidth}{X c c c c}
+\toprule
+\textbf{Bộ tách từ (Tokenizer)} & \textbf{Precision} & \textbf{Recall} & \textbf{Macro-$F_2$} & \textbf{Recall@100} \\
+\midrule
+Regex khoảng trắng / Unicode NFKC & 0,1804 & 0,4526 & 0,3477 & 0,8442 \\
+PyVi Tokenizer & 0,1963 & 0,4906 & 0,3775 & \textbf{0,8786} \\
+\textbf{VnCoreNLP Tokenizer} & \textbf{0,1963} & \textbf{0,4958} & \textbf{0,3799} & 0,8775 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Đánh giá tác động của chiến lược chia đoạn (Chunking Strategy)}
+Bảng \ref{tab:chunking_results} so sánh 3 chiến lược biểu diễn không cấu trúc trên mô hình Multilingual-E5. Việc chia nhỏ văn bản bằng cửa sổ trượt (Token Window) giúp tăng tuyệt đối 0,0296 điểm $F_2$ (từ 0,3716 lên 0,4012), chứng minh việc cắt cụt điều luật (truncation) làm suy giảm nghiêm trọng chất lượng truy xuất.
+
+\begin{table}[htbp]
+\centering
+\caption{Tác động của chiến lược chia đoạn đối với mô hình Dense E5 trên tập Dev.}
+\label{tab:chunking_results}
+\footnotesize
+\begin{tabularx}{\textwidth}{X c c c}
+\toprule
+\textbf{Chiến lược chia đoạn (Representation)} & \textbf{Độ đo Macro-$F_2$} & \textbf{Candidate Recall@100} \\
+\midrule
+Article Truncate (Cắt cụt tại 512 tokens) & 0,3716 & 0,8798 \\
+\textbf{Token Window (Cửa sổ trượt 512/64 tokens)} & \textbf{0,4012} & 0,9047 \\
+Recursive Splitter (Chia đoạn đệ quy 512/64 tokens) & 0,3950 & \textbf{0,9054} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Đánh giá hiệu quả của biểu diễn cấu trúc pháp luật Khoản--Điểm}
+Bảng \ref{tab:structure_results} kiểm chứng Câu hỏi nghiên cứu RQ1. Biểu diễn Điểm kết hợp phần dẫn cha đạt Macro-$F_2$ là 0,4464, tăng 0,0452 điểm tuyệt đối (+11,26\%) so với Token Window và tăng Recall@100 lên 0,9116. Điều này khẳng định việc bảo tồn ngữ cảnh cha khi chia nhỏ văn bản có ý nghĩa quyết định đối với dữ liệu pháp luật.
+
+\begin{table}[htbp]
+\centering
+\caption{Hiệu quả của việc khai thác cấu trúc phân cấp Khoản--Điểm trên tập Dev.}
+\label{tab:structure_results}
+\footnotesize
+\begin{tabularx}{\textwidth}{X c c c c}
+\toprule
+\textbf{Chiến lược biểu diễn (Representation)} & \textbf{Precision} & \textbf{Recall} & \textbf{Macro-$F_2$} & \textbf{Recall@100} \\
+\midrule
+Token Window (Cửa sổ trượt 512/64) & 0,2070 & 0,5242 & 0,4012 & 0,9047 \\
+Khoản nguyên bản (Article $\rightarrow$ Khoản) & 0,2215 & 0,5572 & 0,4275 & 0,9013 \\
+\textbf{Điểm + Phần dẫn Khoản cha (Proposed)} & \textbf{0,2306} & \textbf{0,5828} & \textbf{0,4464} & \textbf{0,9116} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Hiệu quả của cơ chế truy hồi lai (Hybrid Retrieval RRF)}
+Bảng \ref{tab:hybrid_results} phân tích sự tương hỗ giữa BM25 và BGE-M3 Khoản--Điểm. Khi kết hợp qua Weighted RRF với $w_{\text{dense}} = 0,8$ và $w_{\text{sparse}} = 0,2$ ($k = 20$), Macro-$F_2$ đạt 0,4820, vượt trội hơn cả hai nhánh đơn lẻ (BGE-M3 đơn lẻ đạt 0,4595).
+
+\begin{table}[htbp]
+\centering
+\caption{Kết quả đánh giá cơ chế truy hồi lai Weighted RRF trên tập Dev.}
+\label{tab:hybrid_results}
+\footnotesize
+\begin{tabularx}{\textwidth}{X c}
+\toprule
+\textbf{Cấu hình truy hồi (Retrieval Configuration)} & \textbf{Macro-$F_2$ trên tập Dev} \\
+\midrule
+BGE-M3 Khoản--Điểm (Dense đơn lẻ) & 0,4595 \\
+Hybrid Sparse/Dense (Tỷ lệ trọng số 0,4 / 0,6) & 0,4622 \\
+Hybrid Sparse/Dense (Tỷ lệ trọng số 0,2 / 0,8) & 0,4781 \\
+\textbf{Hybrid RRF ($k=20$, Trọng số 0,2 / 0,8)} & \textbf{0,4820} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsubsection{Đánh giá tinh chỉnh Cross-Encoder Reranker qua các Epoch}
+Bảng \ref{tab:reranker_epochs} và Hình \ref{fig:learning_curve} thể hiện diễn biến qua 4 epochs huấn luyện. Mô hình Zero-Shot đạt $F_2 = 0,5557$. Sau 3 epochs, mô hình đạt đỉnh với $F_2 = 0,6081$, trong đó Precision tăng mạnh từ 0,3586 lên 0,4871 nhờ khả năng phân biệt mẫu âm khó. Sang Epoch 4, hiệu năng đi ngang do bắt đầu bão hòa.
+
+\begin{table}[htbp]
+\centering
+\caption{Hiệu năng của mô hình Cross-Encoder Reranker qua các epoch huấn luyện.}
+\label{tab:reranker_epochs}
+\footnotesize
+\begin{tabularx}{\textwidth}{X c c c}
+\toprule
+\textbf{Mô hình kiểm định (Checkpoints)} & \textbf{Precision} & \textbf{Recall} & \textbf{Macro-$F_2$ trên Dev} \\
+\midrule
+BGE Reranker (Zero-Shot) & 0,3586 & 0,6442 & 0,5557 \\
+BGE Reranker (Fine-tuned Epoch 1) & 0,4678 & 0,6327 & 0,5910 \\
+BGE Reranker (Fine-tuned Epoch 2) & 0,4493 & 0,6504 & 0,5970 \\
+\textbf{BGE Reranker (Fine-tuned Epoch 3)} & \textbf{0,4871} & 0,6483 & \textbf{0,6081} \\
+BGE Reranker (Fine-tuned Epoch 4) & 0,4752 & \textbf{0,6510} & 0,6061 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.72\textwidth,
+    height=3.8cm,
+    xlabel={Epoch huấn luyện},
+    ylabel={Giá trị độ đo},
+    xmin=0, xmax=4,
+    ymin=0.3, ymax=0.7,
+    xtick={0,1,2,3,4},
+    xticklabels={Zero-Shot, Epoch 1, Epoch 2, Epoch 3, Epoch 4},
+    legend pos=south east,
+    ymajorgrids=true,
+    grid style=dashed,
+    thick
+]
+\addplot[color=blue, mark=square*] coordinates {
+    (0, 0.3586) (1, 0.4678) (2, 0.4493) (3, 0.4871) (4, 0.4752)
+};
+\addlegendentry{Precision}
+
+\addplot[color=red, mark=triangle*] coordinates {
+    (0, 0.6442) (1, 0.6327) (2, 0.6504) (3, 0.6483) (4, 0.6510)
+};
+\addlegendentry{Recall}
+
+\addplot[color=green!60!black, mark=*, line width=1.3pt] coordinates {
+    (0, 0.5557) (1, 0.5910) (2, 0.5970) (3, 0.6081) (4, 0.6061)
+};
+\addlegendentry{Macro-$F_2$}
+\end{axis}
+\end{tikzpicture}
+\caption{Đường cong hiệu năng Precision, Recall và Macro-$F_2$ của Cross-Encoder qua các epoch.}
+\label{fig:learning_curve}
+\end{figure}
+
+\subsubsection{Đánh giá tích hợp LightGBM và Kết quả trên Benchmark Codabench}
+Bảng \ref{tab:lgbm_codabench} tổng kết hiệu năng của LightGBM OOF và điểm số trên Codabench VLSP 2025 DRiLL. LightGBM nâng Macro-$F_2$ trên tập Dev lên \textbf{0,6313}. Trên tập ẩn \textbf{Private Test}, mô hình đạt Macro-$F_2$ là \textbf{0,5882}, vượt xa mốc chuẩn 0,5515 của Ban tổ chức.
+
+\begin{table}[htbp]
+\centering
+\caption{Kết quả tổng thể của mô hình LightGBM Fusion và điểm số chính thức trên Codabench.}
+\label{tab:lgbm_codabench}
+\footnotesize
+\begin{tabularx}{\textwidth}{X l c c c}
+\toprule
+\textbf{Hệ thống / Cấu hình} & \textbf{Tập dữ liệu} & \textbf{Precision} & \textbf{Recall} & \textbf{Macro-$F_2$} \\
+\midrule
+Reranker Epoch 3 (Threshold Policy) & Dev (438 queries) & 0,4871 & 0,6483 & 0,6081 \\
+LightGBM OOF (Fixed Top-2) & Dev (438 queries) & 0,3756 & 0,6298 & 0,5547 \\
+\textbf{LightGBM OOF (Threshold + Fallback 2)} & \textbf{Dev (438 queries)} & \textbf{0,4841} & \textbf{0,6833} & \textbf{0,6313} \\
+\midrule
+Organizer Two-Stage Baseline \cite{vlsp2025drill} & Private Test (627 queries) & -- & -- & 0,5515 \\
+Reranker Epoch 3 (Threshold on Dev) & Private Test (627 queries) & -- & -- & 0,5589 \\
+LightGBM (Fixed Top-2) & Private Test (627 queries) & -- & -- & 0,5397 \\
+\textbf{LightGBM (Frozen OOF Threshold)} & \textbf{Private Test (627 queries)} & \textbf{--} & \textbf{--} & \textbf{0,5882} \\
+LightGBM (Frozen OOF Threshold) & Public Test (312 queries) & -- & -- & 0,6160 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Phân tích bóc tách thành phần (Ablation Study)}
+Bảng \ref{tab:ablation} bóc tách từng thành phần trên cùng tập đánh giá Dev 438 câu hỏi nhằm trả lời Câu hỏi nghiên cứu RQ2. Việc đưa cấu trúc Khoản--Điểm vào hệ thống đem lại bước nhảy $F_2$ lớn nhất ở giai đoạn first-stage (+0,0549). Cross-Encoder tinh chỉnh với hard negatives nâng tiếp $F_2$ thêm +0,1261 (nhờ Precision tăng từ 0,2514 lên 0,4871). Cuối cùng, LightGBM giúp khôi phục các điều luật bị chấm điểm thấp cục bộ, đưa Recall lên 0,6833 và đạt $F_2 = 0,6313$.
+
+\begin{table}[htbp]
+\centering
+\caption{Nghiên cứu bóc tách thành phần (Ablation Study) trên tập Dev.}
+\label{tab:ablation}
+\footnotesize
+\begin{tabularx}{\textwidth}{X c c c}
+\toprule
+\textbf{Cấu hình thành phần tích lũy} & \textbf{Precision} & \textbf{Recall} & \textbf{Macro-$F_2$} \\
+\midrule
+(1) BM25 Baseline (Regex NFKC Tokenizer) & 0,1804 & 0,4526 & 0,3477 \\
+(2) + VnCoreNLP Word Segmentation & 0,1963 & 0,4958 & 0,3799 \\
+(3) + Dense Retrieval (BGE-M3 Điều nguyên bản) & 0,2012 & 0,5110 & 0,3915 \\
+(4) + Biểu diễn cấu trúc Khoản--Điểm có lời dẫn & 0,2306 & 0,5828 & 0,4464 \\
+(5) + Weighted RRF Hybrid Fusion ($k=20$) & 0,2514 & 0,6012 & 0,4820 \\
+(6) + Cross-Encoder Reranker (Zero-Shot) & 0,3586 & 0,6442 & 0,5557 \\
+(7) + Fine-tuning Reranker với Hard Negatives & 0,4871 & 0,6483 & 0,6081 \\
+(8) + LightGBM Feature Fusion \& Dynamic Threshold & \textbf{0,4841} & \textbf{0,6833} & \textbf{0,6313} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Phân tích lỗi định tính (Error Analysis)}
+Rà soát các mẫu sai trên tập Dev cho thấy ba nhóm lỗi chính (RQ3):
+\begin{enumerate}[leftmargin=0.7cm]
+    \item \textbf{Câu hỏi cần nhiều điều luật (Multi-article Evidence):} Đối với câu hỏi cần 2--4 điều luật, hệ thống thường chỉ tìm ra 1 điều luật trực tiếp nhất và bỏ sót các điều luật phụ thuộc (ví dụ câu hỏi về hồ sơ và thời hạn bảo hiểm thất nghiệp đòi hỏi cả Điều 46 và 47 Luật Việc làm; First-stage xếp Điều 46 ở Top 1 nhưng Điều 47 bị trôi ra ngoài Top-50).
+    \item \textbf{Phụ thuộc vào tham chiếu chéo gián tiếp (Cross-Reference Dependency):} Các câu hỏi xử phạt vi phạm hành chính viện dẫn qua một Nghị định khác bị bỏ sót do chưa lan truyền điểm đồ thị ở bước suy luận cuối cùng.
+    \item \textbf{Từ vựng phân tán (Vocabulary Mismatch):} Câu hỏi sử dụng ngôn từ địa phương làm nhánh BM25 không phát huy tác dụng, phụ thuộc hoàn toàn vào nhánh Dense Retrieval.
+\end{enumerate}
+
+% ==============================================================================
+% CHƯƠNG 5: KẾT LUẬN & HƯỚNG PHÁT TRIỂN (TRANG 14)
+% ==============================================================================
+\section{Kết luận và hướng phát triển}
+
+\subsection{Tóm tắt kết quả nghiên cứu}
+Đề tài đã xây dựng và đánh giá quy trình truy hồi điều luật tiếng Việt đa tầng trên VLSP 2025 DRiLL. Phương pháp kết hợp phân đoạn bảo toàn ngữ cảnh Khoản--Điểm, Weighted RRF, Cross-Encoder tinh chỉnh và LightGBM với ngưỡng thích ứng.
+
+Kết quả xác nhận cấu trúc văn bản là tín hiệu quan trọng trong truy xuất pháp lý. Biểu diễn Điểm kèm lời dẫn cha đạt Macro-$F_2 = 0,4464$, cao hơn cắt cụt Điều 512 tokens (0,3716). Hệ thống tích hợp đạt 0,6313 trên Dev và 0,5882 trên Private Test chính thức, vượt baseline Ban tổ chức 0,5515.
+\subsection{Hạn chế của đề tài}
+Ba hạn chế cần lưu ý: mở rộng tham chiếu chéo chưa được tích hợp vào pipeline chính; nhãn ở mức điều luật tạo giám sát yếu cho các đoạn trích con; và ngưỡng tối ưu trên Dev có thể lạc quan khi áp dụng dữ liệu mới.
+
+\subsection{Hướng phát triển trong tương lai}
+Hướng phát triển gồm tích hợp đồ thị tham chiếu bằng cách lan truyền điểm có kiểm soát; bổ sung chuyển đổi câu hỏi sang thuật ngữ pháp lý; và xây dựng mô-đun đánh giá tính đầy đủ bằng chứng trước khi trả kết quả.
+
+% ==============================================================================
+% TÀI LIỆU THAM KHẢO
+% ==============================================================================
+\begingroup
+\setlength{\parskip}{0pt}
+\section*{Tài liệu tham khảo}
+\addcontentsline{toc}{section}{Tài liệu tham khảo}
+
+\makeatletter
+\renewenvironment{thebibliography}[1]{%
+  \list{\@biblabel{\@arabic\c@enumiv}}%
+       {\settowidth\labelwidth{\@biblabel{#1}}%
+        \leftmargin\labelwidth
+        \advance\leftmargin\labelsep
+        \usecounter{enumiv}%
+        \let\p@enumiv\@empty
+        \renewcommand\theenumiv{\@arabic\c@enumiv}}%
+  \sloppy
+  \clubpenalty4000
+  \widowpenalty4000%
+  \sfcode`\.\@m}
+ {\def\@noitemerr
+   {\@latex@warning{Empty `thebibliography' environment}}%
+  \endlist}
+\makeatother
+
+\begin{multicols}{2}
+\scriptsize
+\setlength{\itemsep}{1pt}
+\begin{thebibliography}{99}
+
+\bibitem{vlsp2025drill}
+T.-H.-Y.~Vuong et al., ``DRiLL Shared Task 2025: The Challenge of Deep Retrieval in the Expansive Legal Landscape,'' in \textit{Proc. of VLSP 2025}, Hanoi, Vietnam, 2025.
+
+\bibitem{pham2025edm}
+T.-D.~Pham, H.-D.~Nguyen, and T.-N.~Phung, ``EDM Team’s Approach in DRiLL@VLSP 2025: A Multi-Stage End-to-End Architecture for Deep Retrieval in the Expansive Legal Landscape,'' in \textit{Proc. of VLSP 2025}, Hanoi, Vietnam, 2025.
+
+\bibitem{cs313rag2024}
+Nhóm tác giả CS313, ``Nghiên cứu sâu về Chatbot hiện đại: RAG, Long Context, Agentic RAG và ứng dụng hỏi đáp pháp luật Việt Nam,'' Báo cáo chuyên sâu, Trường ĐH Công nghệ Thông tin, ĐHQG-HCM, 2024--2026.
+
+\bibitem{robertson2009probabilistic}
+S.~Robertson and H.~Zaragoza, ``The probabilistic relevance framework: BM25 and beyond,'' \textit{Found. Trends Inf. Retr.}, vol.~3, no.~4, pp.~333--389, 2009.
+
+\bibitem{karpukhin2020dense}
+V.~Karpukhin et al., ``Dense passage retrieval for open-domain question answering,'' in \textit{Proc. of EMNLP 2020}, pp.~6769--6781, 2020.
+
+\bibitem{wang2022text}
+L.~Wang et al., ``Text embeddings by weakly-supervised contrastive pre-training,'' \textit{arXiv:2212.03533}, 2022.
+
+\bibitem{chen2024bge}
+J.~Chen et al., ``BGE M3-Embedding: Multi-lingual, multi-functionality text embeddings,'' \textit{arXiv:2402.03216}, 2024.
+
+\bibitem{cormack2009reciprocal}
+G.~V.~Cormack, C.~L.~Clarke, and S.~Buettcher, ``Reciprocal rank fusion outperforms Condorcet,'' in \textit{Proc. of SIGIR 2009}, pp.~758--759, 2009.
+
+\bibitem{nogueira2019passage}
+R.~Nogueira and K.~Cho, ``Passage re-ranking with BERT,'' \textit{arXiv:1901.04085}, 2019.
+
+\bibitem{ke2017lightgbm}
+G.~Ke et al., ``LightGBM: A highly efficient gradient boosting decision tree,'' in \textit{NeurIPS 2017}, pp.~3146--3154, 2017.
+
+\bibitem{xiao2021lawformer}
+C.~Xiao et al., ``Lawformer: A pre-trained language model for Chinese legal long documents,'' \textit{AI Open}, vol.~2, pp.~79--84, 2021.
+
+\bibitem{chalkidis2020legal}
+I.~Chalkidis et al., ``LEGAL-BERT: The muppets straight out of law school,'' in \textit{Findings of EMNLP 2020}, pp.~2898--2904, 2020.
+
+\bibitem{kim2023coliee}
+M.-Y.~Kim et al., ``COLIEE 2023 summary: Methods for legal information retrieval,'' in \textit{Proc. of COLIEE 2023}, 2023.
+
+\bibitem{yoshioka2021bert}
+M.~Yoshioka, Y.~Aoki, and N.~Suzuki, ``BERT-based ensemble approach for legal IR,'' in \textit{Proc. of COLIEE 2021}, pp.~32--38, 2021.
+
+\bibitem{khattab2020colbert}
+O.~Khattab and M.~Zaharia, ``ColBERT: Efficient and effective passage search via contextualized late interaction,'' in \textit{Proc. of SIGIR 2020}, 2020.
+
+\bibitem{lewis2020retrieval}
+P.~Lewis et al., ``Retrieval-augmented generation for knowledge-intensive NLP tasks,'' in \textit{NeurIPS 2020}, vol.~33, pp.~9459--9474, 2020.
+
+\bibitem{vu2018vncorenlp}
+T.~Vu et al., ``VnCoreNLP: A Vietnamese natural language processing toolkit,'' in \textit{Proc. of NAACL 2018}, pp.~56--60, 2018.
+
+\bibitem{he2016deep}
+K.~He, X.~Zhang, S.~Ren, and J.~Sun, ``Deep residual learning for image recognition,'' in \textit{Proc. of CVPR 2016}, pp.~770--778, 2016.
+
+\end{thebibliography}
+\end{multicols}
+\endgroup
+
+\end{document}
