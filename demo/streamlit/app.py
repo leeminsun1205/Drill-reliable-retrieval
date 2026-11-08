@@ -27,7 +27,7 @@ def show_sources(evidence: list[Evidence]) -> None:
         return
     with st.expander(
         f"Văn bản nguồn được truy xuất — trích nguyên văn ({len(evidence)} Điều)",
-        expanded=True,
+        expanded=False,
     ):
         for index, article in enumerate(evidence, start=1):
             header = f"{index}. aid {article.aid}"

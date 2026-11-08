@@ -62,7 +62,8 @@ Reusable adapters now live in `src/drill_ir/demo/`. The original Streamlit
 modules forward imports to these adapters. The pipeline, artifact checks,
 CPU dense query encoders and T4 reranking behavior are preserved. Run exactly
 one Uvicorn worker to load the models once; overlapping chat requests return
-429. Chat history stays in the current browser tab until refresh. Streaming
+429. Conversation history is now saved in browser localStorage; see the
+interactive workspace update below. Streaming
 answers and full retrieved evidence, including article IDs and scores, are
 retained. No model training or new retrieval measurements accompany this
 migration. See the demo README for endpoints, setup, and limitations.
@@ -76,6 +77,107 @@ and streamed chat through FastAPI with an injected backend. The test stack
 emitted one Starlette deprecation warning about the httpx TestClient transport;
 no checks failed. Full model inference and the public Kaggle tunnel still
 require validation in the execution environment.
+
+
+### Question scope routing (2026-11-08)
+
+The FastAPI demo routes questions before retrieval. Exact common greetings and
+identity/capability questions receive a fixed introduction without an API call.
+Other messages are classified as LEGAL, INTRO, OUT_OF_SCOPE or CLARIFY by a
+non-streaming Chat Completions call using the existing OPENAI_MODEL,
+OPENAI_API_KEY and optional OPENAI_BASE_URL. This is a demo behavior requested
+by the owner, not a research retrieval method or evaluation filter.
+
+INTRO receives the fixed Vietnamese legal-assistant introduction; OUT_OF_SCOPE
+receives a fixed scope refusal; CLARIFY asks for a specific Vietnamese legal
+question. These responses contain no retrieved evidence and invoke neither
+retrieval nor answer generation. They can work even when retrieval startup
+failed. Only LEGAL proceeds through the frozen retrieval/answer pipeline.
+A legal situation without legal keywords (for example unpaid wages) should be
+classified by meaning; mentioning "law" alone is not sufficient. Mixed identity
+and substantive legal questions are instructed to take the legal route.
+
+Classification uses a 30-second request timeout with no retries. Empty,
+unrecognized labels or API errors return HTTP 503 without retrieval; they do
+not misreport an infrastructure failure as an off-topic question. This adds
+one model call and latency/cost for questions outside the exact small-talk
+shortcut, including legal questions. The model identifier is unchanged; no
+confidence threshold is inferred from LightGBM scores. Answer instructions
+also reinforce the Vietnamese-law scope.
+
+Validation: 18 local contract tests passed using fake classifier/model responses
+and retrieval backends. These verify routing, fixed replies, no retrieval on
+blocked messages, and existing streaming/error behavior. They do not measure
+semantic classification accuracy or resistance to adversarial instructions.
+Live classification, provider compatibility and false refusal rates remain
+unmeasured. The legacy Streamlit UI does not run this new pre-retrieval router;
+the default FastAPI demo does. Research scripts and metrics are unaffected.
+
+### Five-turn conversation memory (2026-11-08)
+
+The FastAPI demo accepts optional `history`, up to five completed question/answer
+pairs. React sends the latest five successful turns; each historical answer is
+capped at 6,000 characters and each question at 10,000. Older chat remains
+visible. The workspace update below persists full conversations across refresh
+on the same browser origin; “Cuộc trò chuyện mới” starts empty model context.
+The server stores no conversation between requests; clients remain isolated.
+
+Scope classification receives history. Legal follow-ups use one additional
+Chat Completions call with the same configured model to resolve a standalone
+query before retrieval/reranking; requests without history use the original
+question. The answer prompt receives the original question, history and current
+evidence, and explicitly forbids treating old answers as legal evidence.
+Resolution uses a 30-second timeout/no retries; empty or oversized output fails
+without silently falling back to an ambiguous query. No model is substituted.
+See `demo/web/README.md` for API limits and costs. These changes affect demo
+inference only; experimental scripts, split IDs and metrics remain unchanged.
+Validation: 29 demo contract tests passed with injected API/model responses,
+and TypeScript/Vite production build passed. Tests cover history bounds,
+session isolation, context routing, query resolution and answer-message
+construction; they do not measure live semantic accuracy or retrieval gains.
+The test stack retains the existing Starlette/httpx deprecation warning.
+The legacy Streamlit UI has no new memory.
+
+### Interactive workspace, related questions and clarification (2026-11-08)
+
+The default FastAPI/React demo now persists up to 30 named conversations in
+browser localStorage, including answers and retrieved source text. Only the
+active conversation's last five successful turns become model context. Refresh
+restores history; interrupted turns are marked failed and excluded. New Ngrok
+hostnames have separate browser storage. No shared backend session or database
+was introduced. Storage failure is reported without blocking chat.
+
+The UI supports rename/delete (with confirmation), Markdown export, copy,
+retry, edit with later-turn truncation, welcome examples, status/elapsed time,
+scroll-follow control and retrieved-citation buttons. Sources remain hidden
+until selected, opening alongside chat or in a mobile overlay. Original source
+text and `aid` mapping are preserved; no current-validity claim is inferred.
+
+Legal turns now have an independent clarification check after contextual query
+resolution. Essential missing details can produce a short question and full
+question choices without retrieval. Successful answers with sources request
+three distinct related questions, validated as JSON before showing clickable
+buttons. Suggestion failure keeps the answer and emits a warning. Clarification
+failure reports an error instead of inventing a fact. The helpers use the same
+configured model/endpoint with 20-second timeout/no retries; they add calls,
+latency and cost. Disable independently via DRILL_DEMO_CLARIFICATION=0 and
+DRILL_DEMO_SUGGESTIONS=0. Both default to enabled in the demo only.
+
+Recognized provider model/auth/quota/timeout errors now produce actionable UI
+messages without exposing raw provider responses, keys, or filesystem paths.
+See `demo/web/README.md` for event fields, test commands and browser-storage
+limits. Research experiments, data, split IDs and metrics are not modified.
+Validation: 40 Python demo contract tests and five frontend state tests passed.
+The TypeScript/Vite build passed. Chromium headless checks passed for
+clarification choices, suggested-question submission, citations/source panels,
+clipboard, edit truncation, retry, rename, reload persistence, Markdown export,
+delete, scroll controls and 390-pixel mobile layout. Desktop/mobile screenshots
+were visually inspected; screenshots are ignored under results/demo_ui_checks/.
+Browser checks mock API responses and do not run models. The existing
+Starlette/httpx deprecation warning remains. An initial test caught and fixed
+an event-field naming collision; final checks passed. Model-based clarification
+accuracy, related-question quality, provider JSON compatibility and live Kaggle
+performance have not been measured.
 
 ### Legacy Streamlit legal QA demo
 

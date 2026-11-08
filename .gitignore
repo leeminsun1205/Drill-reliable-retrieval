@@ -44,3 +44,5 @@ venv/
 # Demo frontend
 node_modules/
 /demo/web/dist/
+
+/demo/web/.test-build/
