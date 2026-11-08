@@ -31,14 +31,14 @@ def show_sources(evidence: list[Evidence]) -> None:
     ):
         for index, article in enumerate(evidence, start=1):
             header = f"{index}. aid {article.aid}"
+            if article.score is not None:
+                header += f" · Điểm: {article.score:.4f}"
             if article.law_id:
                 header += f" · {article.law_id}"
             if article.title:
                 header += f" · {article.title}"
             st.markdown(f"**{header}**")
             st.write(article.text)
-            if article.score is not None:
-                st.caption(f"Điểm xếp hạng: {article.score:.4f}")
 
 
 if "messages" not in st.session_state:

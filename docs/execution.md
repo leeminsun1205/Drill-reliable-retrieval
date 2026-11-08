@@ -179,6 +179,51 @@ an event-field naming collision; final checks passed. Model-based clarification
 accuracy, related-question quality, provider JSON compatibility and live Kaggle
 performance have not been measured.
 
+### First-question latency diagnostic (2026-11-08)
+
+Code inspection confirms that `build_reranker` creates an
+`HFCrossEncoderScorer` with `_model=None`; actual tokenizer/checkpoint loading
+occurs in `_load()` on first scoring. Constructing the demo backend therefore
+does not imply that the first reranking forward pass has already run. There
+is currently no explicit full-pipeline warm-up before API readiness. Dense
+encoding also has lazy model loading; whether startup has already exercised it
+depends on cache/index paths. Cold-start loading/initialization can therefore
+be charged to the first question. This is a code-level diagnosis, not a measured
+latency breakdown of the owner's current Kaggle session.
+
+With default interaction helpers enabled, a no-history legal answer uses
+sequential scope and clarification calls before retrieval/answer generation,
+then a suggestion call after the answer. Suggestions delay completion but not
+the first answer token. History adds query resolution. Stage timings are needed
+to attribute a live delay to model loading versus the provider. Moving a
+retrieval-only warm-up before readiness would move cold-start cost to startup,
+not eliminate it; it must not send a paid answer API request or change research
+retrieval settings.
+
+### Owner-reported DataParallel OOM diagnostic (2026-11-08)
+
+The supplied Kaggle traceback fails during `DataParallel.replicate` /
+`broadcast_coalesced`, requesting 982 MiB on GPU 0 with only 354.81 MiB free.
+The same PID reports approximately 14.21 GiB total device memory in use but
+PyTorch allocated/reserved memory of 2.12/3.09 GiB; reserved includes allocated.
+GPU 1 still has approximately 12.05 GiB free. This establishes a GPU-0 memory
+bottleneck, not an aggregate shortage across both devices or a legal-question
+scope/API failure. These are owner-supplied runtime values, not a new local run.
+
+Code inspection shows the demo sets dense encoder runtime to CPU but does not
+explicitly override all dense search-device settings inherited from the saved
+archive. FAISS search placement is independent: `device=auto` resolves to GPU 0
+when GPU FAISS is available, and explicit CUDA placement creates GPU resources
+and copies the flat index. GPU indexes/resources are a plausible explanation
+for much of the same-process memory outside PyTorch's allocator, not confirmed
+by the traceback alone. Inspect the saved dense/profile search config and
+resolved index devices to verify. Moving dense indexes to CPU RAM is a likely
+mitigation if GPU indexes are present; model replication on a memory-constrained
+primary device and remaining CUDA consumers must still be checked. Reducing
+batch size or changing allocator flags alone does not establish a fix for an
+OOM in parameter broadcast. No runtime placement change or GPU validation was
+performed as part of this diagnostic.
+
 ### Legacy Streamlit legal QA demo
 
 The original launcher requires the optional `streamlit` extra in addition to

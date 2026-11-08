@@ -144,6 +144,7 @@ continues to call the answer layer without conversation history.
   evidence as UTF-8 Markdown, retry a failed turn, or edit an earlier question.
   Retrying/editing replaces that turn and drops later turns before constructing
   context; canceled editing changes nothing.
+- Source headings show the ranking score beside `aid`, before the article text.
 - Citation buttons: only retrieved `aid` values become interactive. Selecting a
   citation opens and highlights its source in a side panel (overlay on smaller
   screens). Sources remain closed by default and also open via the source button.
