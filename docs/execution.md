@@ -224,6 +224,18 @@ batch size or changing allocator flags alone does not establish a fix for an
 OOM in parameter broadcast. No runtime placement change or GPU validation was
 performed as part of this diagnostic.
 
+### Source-panel scrolling and welcome example (2026-11-10)
+
+The welcome grid now uses a military-service deferment question instead of
+traffic. Opening the source list resets its own scroll position to the top;
+clicking a later citation aligns that article's heading near the panel top.
+The UI no longer calls scrollIntoView on an entire source section. Source
+position is set only when the user changes the source selection, independently
+of the chat's bottom-follow behavior. Long-article browser regressions passed
+for first-source opening, later-citation alignment and source-list reopening,
+including the mobile overlay; the TypeScript/Vite build also passed. These
+checks use mocked evidence, not live legal inference.
+
 ### Legacy Streamlit legal QA demo
 
 The original launcher requires the optional `streamlit` extra in addition to

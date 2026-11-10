@@ -36,8 +36,8 @@ try {
       { type: 'done' },
     ] : [
       { type: 'status', message: 'Đang tìm điều luật…', stage: 'retrieval' },
-      { type: 'evidence', evidence: [{ aid: '123', law_id: 'Văn bản thử', title: 'Điều luật thử', text: 'Nguyên văn để kiểm tra giao diện. Đây không phải quy định pháp luật.', score: 0.5 }] },
-      { type: 'delta', text: payload.question === 'Dài' ? ('Đoạn nội dung kiểm tra cuộn.\n\n'.repeat(100) + '[aid=123]') : 'Câu trả lời kiểm tra có nguồn [aid=123].' },
+      { type: 'evidence', evidence: [{ aid: '123', law_id: 'Văn bản thử', title: 'Điều luật thử', text: 'Nguyên văn để kiểm tra giao diện. Đây không phải quy định pháp luật.\n\n' + 'Nội dung dài để kiểm tra vị trí cuộn.\n\n'.repeat(100), score: 0.5 }, { aid: '456', law_id: 'Văn bản thử B', title: 'Điều luật thử B', text: 'ĐẦU ĐIỀU THỨ HAI. ' + 'Nội dung dài để kiểm tra vị trí cuộn.\n\n'.repeat(100), score: 0.4 }] },
+      { type: 'delta', text: payload.question === 'Dài' ? ('Đoạn nội dung kiểm tra cuộn.\n\n'.repeat(100) + '[aid=123]') : 'Câu trả lời kiểm tra có nguồn [aid=123] và [aid=456].' },
       { type: 'suggestions', questions: ['Tôi cần chuẩn bị giấy tờ gì?', 'Có thể thực hiện thủ tục ở đâu?', 'Tôi có quyền khiếu nại không?'] },
       { type: 'done' },
     ];
@@ -45,6 +45,8 @@ try {
   });
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.getByRole('heading', { name: /Bạn cần tìm hiểu/ }).waitFor();
+  assert.equal(await page.getByRole('button', { name: /Giao thông/ }).count(), 0);
+  await page.getByRole('button', { name: /Nghĩa vụ quân sự/ }).waitFor();
   await page.screenshot({ path: resolve(artifacts, 'desktop-welcome.png') });
   const ask = async q => {
     await page.getByRole('textbox', { name: 'Câu hỏi pháp luật' }).fill(q);
@@ -59,7 +61,17 @@ try {
   assert.equal(await page.locator('.source-panel').count(), 0);
   await page.getByRole('button', { name: 'aid=123', exact: true }).click();
   await page.getByText('Nguyên văn để kiểm tra giao diện.', { exact: false }).waitFor();
+  assert.equal(await page.locator('.source-panel').evaluate(el => el.scrollTop), 0);
   await page.screenshot({ path: resolve(artifacts, 'desktop-sources.png') });
+  await page.getByRole('button', { name: 'aid=456', exact: true }).click();
+  assert.ok(await page.locator('.source.highlight').evaluate(el => {
+    const panel = el.closest('.source-panel');
+    const offset = el.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+    return offset >= 0 && offset < 40;
+  }));
+  await page.getByRole('button', { name: 'Đóng nguồn', exact: true }).click();
+  await page.locator('.source-toggle').last().click();
+  assert.equal(await page.locator('.source-panel').evaluate(el => el.scrollTop), 0);
   await page.getByRole('button', { name: 'Đóng nguồn', exact: true }).click();
   await page.getByRole('button', { name: 'Sao chép', exact: true }).last().click();
   assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes('[aid=123]'));
@@ -95,6 +107,7 @@ try {
   await page.getByRole('button', { name: 'Mở danh sách hội thoại' }).click();
   await page.getByRole('button', { name: 'Hội thoại đã đổi tên', exact: true }).click();
   await page.getByRole('button', { name: 'aid=123', exact: true }).click();
+  assert.equal(await page.locator('.source-panel').evaluate(el => el.scrollTop), 0);
   await page.screenshot({ path: resolve(artifacts, 'mobile-sources.png') });
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.source-panel').count(), 0);

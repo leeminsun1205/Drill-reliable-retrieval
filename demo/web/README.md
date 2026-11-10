@@ -139,12 +139,16 @@ continues to call the answer layer without conversation history.
   excluded from context. Storage failure shows a notice and leaves chat usable.
   Changing the Ngrok hostname creates a different origin with separate storage.
   Shared-device users should delete private chats when finished.
-- Welcome cards: four illustrative legal topics, without a corpus-coverage claim.
+- Welcome cards: military service, labor, land and family examples, without a
+  corpus-coverage claim.
 - Answer controls: copy, export the entire active conversation with original
   evidence as UTF-8 Markdown, retry a failed turn, or edit an earlier question.
   Retrying/editing replaces that turn and drops later turns before constructing
   context; canceled editing changes nothing.
 - Source headings show the ranking score beside `aid`, before the article text.
+  Opening the source list starts at the top; selecting a citation starts at that
+  article heading. Source scrolling is independent of chat and is not reset
+  during answer updates.
 - Citation buttons: only retrieved `aid` values become interactive. Selecting a
   citation opens and highlights its source in a side panel (overlay on smaller
   screens). Sources remain closed by default and also open via the source button.

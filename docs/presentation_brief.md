@@ -1,3 +1,9 @@
+> **Kịch bản demo (2026-11-10):** [demo_script.md](demo_script.md) có lời dẫn, thao tác, bản rút gọn và câu chuyển khi chờ/lỗi. Bản mở rộng khoảng 2 phút lời nói, chưa tính chờ; thay thế chứ không cộng dồn vào đoạn demo 20–30 giây của kịch bản 10 phút.
+
+> **Bản PDF kịch bản:** [slides/presentation_script.pdf](../slides/presentation_script.pdf), 5 trang A4; xuất từ kịch bản 3 người bằng XeLaTeX, phông Noto Serif/Inter. Nguồn LaTeX nằm cùng thư mục slides (được bỏ qua bởi quy tắc Git hiện tại).
+
+> **Kịch bản 3 người (2026-11-08):** xem [presentation_script.md](presentation_script.md), bám PDF 32 trang hiện tại. Người 1: phần 1–2; người 2: phần 3; người 3: phần 4 và demo ngắn. Mục tiêu khoảng 10 phút, thời gian chưa đo qua diễn tập; dùng LightGBM top-2 F2 0.6217 theo PDF mới nhất.
+
 # Brief nội dung slide trình bày đồ án
 
 > **Chốt sửa số và phạm vi demo:** chủ dự án xác nhận nhập nhầm F2;

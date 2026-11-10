@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import { contextFor, beforeEdit, exportMarkdown, linkCitations, loadConversations, newConversation, newTurn, STORAGE_KEY } from './state';
@@ -7,7 +7,7 @@ import './style.css';
 
 type StreamEvent = { type: string; message?: string; stage?: string; text?: string; evidence?: Evidence[]; questions?: string[] };
 const examples = [
-  ['Giao thông', 'Xe máy vượt đèn đỏ bị xử phạt như thế nào?'],
+  ['Nghĩa vụ quân sự', 'Trường hợp nào được tạm hoãn gọi nhập ngũ?'],
   ['Lao động', 'Công ty nợ lương thì người lao động có thể làm gì?'],
   ['Đất đai', 'Cần chuẩn bị giấy tờ gì khi chuyển nhượng quyền sử dụng đất?'],
   ['Gia đình', 'Cha mẹ ly hôn thì quyền nuôi con được xác định thế nào?'],
@@ -35,6 +35,7 @@ function App() {
   const [clock, setClock] = useState(Date.now());
   const scroll = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const sourcePanel = useRef<HTMLElement>(null);
   const selectedTurn = active.turns.find(t => t.id === source?.turnId);
 
   useEffect(() => {
@@ -47,8 +48,14 @@ function App() {
   }, []);
   useEffect(() => { if (!busy) return; const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, [busy]);
   useEffect(() => { if (follow && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; }, [active.turns, follow]);
-  useEffect(() => {
-    if (source?.aid) document.getElementById(`source-${source.turnId}-${source.aid}`)?.scrollIntoView({ block: 'nearest' });
+  useLayoutEffect(() => {
+    const panel = sourcePanel.current;
+    if (!panel) return;
+    panel.scrollTop = 0;
+    if (source?.aid && selectedTurn?.evidence[0]?.aid !== source.aid) {
+      const article = document.getElementById(`source-${source.turnId}-${source.aid}`);
+      if (article) panel.scrollTop = Math.max(0, article.getBoundingClientRect().top - panel.getBoundingClientRect().top - 20);
+    }
   }, [source]);
   useEffect(() => {
     if (!source) return;
@@ -182,7 +189,7 @@ function App() {
         <form onSubmit={e => { e.preventDefault(); void ask(question, editing || undefined); }}><label className="sr-only" htmlFor="question">Câu hỏi pháp luật</label><div className="composer"><textarea ref={input} id="question" value={question} maxLength={10000} rows={2} placeholder="Nhập câu hỏi pháp luật của bạn…" onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/><button disabled={busy || !question.trim()} type="submit">{busy ? 'Đang xử lý…' : 'Gửi ↑'}</button></div></form><small>Nhớ 5 lượt gần nhất · Thông tin hỗ trợ tra cứu, không thay thế tư vấn pháp lý chuyên môn.</small>
       </div>
     </main>
-    {selectedTurn && <><button className="source-shade" aria-label="Đóng văn bản nguồn" onClick={() => setSource(null)}/><aside className="source-panel" aria-label="Văn bản nguồn"><div className="source-heading"><div><p className="eyebrow">ĐỐI CHIẾU BẰNG CHỨNG</p><h2>Văn bản nguồn</h2></div><button className="icon-button" autoFocus aria-label="Đóng nguồn" onClick={() => setSource(null)}>×</button></div><p className="muted">Nguyên văn từ corpus. Nội dung hiển thị không tự xác nhận hiệu lực hiện tại của văn bản.</p>{selectedTurn.evidence.map((e, i) => <section className={`source ${e.aid === source?.aid ? 'highlight' : ''}`} id={`source-${selectedTurn.id}-${e.aid}`} key={`${e.aid}-${i}`}><h3 className="source-title"><span>{i + 1}. aid {e.aid}</span>{e.score !== null && <span className="source-score">Điểm: {e.score.toFixed(4)}</span>}</h3>{e.law_id && <p className="law-id">{e.law_id}</p>}{e.title && <h4>{e.title}</h4>}<p className="source-text">{e.text}</p></section>)}</aside></>}
+    {selectedTurn && <><button className="source-shade" aria-label="Đóng văn bản nguồn" onClick={() => setSource(null)}/><aside ref={sourcePanel} className="source-panel" aria-label="Văn bản nguồn"><div className="source-heading"><div><p className="eyebrow">ĐỐI CHIẾU BẰNG CHỨNG</p><h2>Văn bản nguồn</h2></div><button className="icon-button" autoFocus aria-label="Đóng nguồn" onClick={() => setSource(null)}>×</button></div><p className="muted">Nguyên văn từ corpus. Nội dung hiển thị không tự xác nhận hiệu lực hiện tại của văn bản.</p>{selectedTurn.evidence.map((e, i) => <section className={`source ${e.aid === source?.aid ? 'highlight' : ''}`} id={`source-${selectedTurn.id}-${e.aid}`} key={`${e.aid}-${i}`}><h3 className="source-title"><span>{i + 1}. aid {e.aid}</span>{e.score !== null && <span className="source-score">Điểm: {e.score.toFixed(4)}</span>}</h3>{e.law_id && <p className="law-id">{e.law_id}</p>}{e.title && <h4>{e.title}</h4>}<p className="source-text">{e.text}</p></section>)}</aside></>}
     {rename && <div className="modal-shade"><form className="modal" role="dialog" aria-modal="true" aria-label="Đổi tên hội thoại" onSubmit={e => { e.preventDefault(); if (renameText.trim()) { patchConversation(rename, c => ({ ...c, title: renameText.trim() })); setRename(null); } }}><h2>Đổi tên hội thoại</h2><input aria-label="Tên hội thoại" autoFocus maxLength={100} value={renameText} onChange={e => setRenameText(e.target.value)}/><div><button type="button" onClick={() => setRename(null)}>Hủy</button><button type="submit" disabled={!renameText.trim()}>Lưu tên</button></div></form></div>}
     {deleteId && <div className="modal-shade"><div className="modal" role="dialog" aria-modal="true" aria-label="Xóa hội thoại"><h2>Xóa hội thoại này?</h2><p>Hội thoại sẽ bị xóa khỏi trình duyệt. Bạn có thể xuất Markdown trước khi xóa.</p><div><button onClick={() => setDeleteId(null)}>Giữ lại</button><button className="danger" onClick={() => removeConversation(deleteId)}>Xóa hội thoại</button></div></div></div>}
   </div>;
