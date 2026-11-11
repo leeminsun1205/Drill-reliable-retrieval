@@ -56,8 +56,14 @@ def create_app(*, backend_factory: Callable = load_backend, answer_stream=None,
             app.state.backend = await run_in_threadpool(backend_factory)
         except Exception:
             logger.exception('Demo backend initialization failed')
-        yield
-        app.state.backend = None
+        try:
+            yield
+        finally:
+            backend = app.state.backend
+            app.state.backend = None
+            close = getattr(backend, 'close', None)
+            if callable(close):
+                await run_in_threadpool(close)
 
     app = FastAPI(title='DRiLL Legal QA', lifespan=lifespan)
     inference_lock = Lock()

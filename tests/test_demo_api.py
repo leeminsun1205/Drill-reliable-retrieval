@@ -201,3 +201,41 @@ def test_provider_model_error_is_actionable_without_leaking_body():
         response = client.post('/api/chat', json={'question': 'Câu hỏi'})
     assert 'OPENAI_MODEL' in response.text
     assert 'SECRET' not in response.text
+
+
+def test_malformed_clarification_json_yields_completed_clarification_without_retrieval(monkeypatch):
+    from drill_ir.demo import interaction
+    backend = Backend()
+    def malformed(*args):
+        raise interaction.InteractionResponseError('Malformed JSON')
+    monkeypatch.setattr(interaction, '_request_json', malformed)
+    with TestClient(create_app(backend_factory=lambda: backend,
+                              clarification_checker=interaction.clarify_question)) as client:
+        response = client.post('/api/chat', json={'question': 'Cần giấy tờ gì để chuyển nhượng đất?'})
+    events = parse(response)
+    assert response.status_code == 200
+    assert events[-1]['type'] == 'done' and events[-1]['kind'] == 'clarification'
+    assert any(e['type'] == 'delta' for e in events)
+    assert not any(e['type'] in ('error', 'evidence') for e in events)
+    assert not backend.questions
+
+
+def test_shutdown_closes_backend_once():
+    backend = Backend()
+    closed = []
+    backend.close = lambda: closed.append(True)
+    with TestClient(create_app(backend_factory=lambda: backend)) as client:
+        assert client.get('/api/health').json()['ready']
+        assert closed == []
+    assert closed == [True]
+
+
+def test_cuda_oom_message_identifies_runtime_memory_failure():
+    def oom(*args):
+        raise RuntimeError('CUDA out of memory. private details')
+    backend = Backend()
+    backend.search = oom
+    with TestClient(create_app(backend_factory=lambda: backend)) as client:
+        response = client.post('/api/chat', json={'question': 'Câu hỏi'})
+    assert 'GPU không đủ bộ nhớ' in response.text
+    assert 'private details' not in response.text

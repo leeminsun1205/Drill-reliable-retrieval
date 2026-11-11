@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import { contextFor, beforeEdit, exportMarkdown, linkCitations, loadConversations, newConversation, newTurn, STORAGE_KEY } from './state';
@@ -13,6 +13,22 @@ const examples = [
   ['Gia đình', 'Cha mẹ ly hôn thì quyền nuôi con được xác định thế nào?'],
 ];
 
+type SourceSelection = { turnId: string; aid?: string } | null;
+const AnswerBody = React.memo(function AnswerBody({ turn, openSource }: {
+  turn: Turn; openSource: React.Dispatch<React.SetStateAction<SourceSelection>>;
+}) {
+  const components = useMemo(() => ({ a: ({ href, children }: React.ComponentProps<'a'>) => {
+    if (href?.startsWith('#source-')) {
+      let aid: string;
+      try { aid = decodeURIComponent(href.slice(8)); } catch { return <span>{children}</span>; }
+      if (turn.evidence.some(e => e.aid === aid)) return <button type="button" className="citation" onClick={() => openSource({ turnId: turn.id, aid })}>{children}</button>;
+      return <span>{children}</span>;
+    }
+    return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+  } }), [turn.id, turn.evidence, openSource]);
+  return <ReactMarkdown components={components}>{linkCitations(turn.answer, turn.evidence)}</ReactMarkdown>;
+});
+
 function App() {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     try { const saved = loadConversations(localStorage.getItem(STORAGE_KEY)); return saved.length ? saved : [newConversation()]; }
@@ -23,10 +39,11 @@ function App() {
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const running = useRef<{ controller: AbortController; conversationId: string } | null>(null);
   const [ready, setReady] = useState<boolean | null>(null);
   const [notice, setNotice] = useState('');
   const [sidebar, setSidebar] = useState(false);
-  const [source, setSource] = useState<{ turnId: string; aid?: string } | null>(null);
+  const [source, setSource] = useState<SourceSelection>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [rename, setRename] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
@@ -38,10 +55,25 @@ function App() {
   const sourcePanel = useRef<HTMLElement>(null);
   const selectedTurn = active.turns.find(t => t.id === source?.turnId);
 
+  const latestConversations = useRef(conversations);
+  latestConversations.current = conversations;
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); }
-    catch { setNotice('Không lưu được lịch sử trên trình duyệt này (bộ nhớ đầy hoặc đang bị chặn). Bạn có thể xuất hội thoại để giữ lại.'); }
-  }, [conversations]);
+    const save = () => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(latestConversations.current)); }
+      catch { setNotice('Không lưu được lịch sử trên trình duyệt này (bộ nhớ đầy hoặc đang bị chặn). Bạn có thể xuất hội thoại để giữ lại.'); }
+    };
+    if (!busy) { save(); return; }
+    // Avoid synchronous serialization of all source text on every stream chunk.
+    const timer = setTimeout(save, 750);
+    return () => clearTimeout(timer);
+  }, [conversations, busy]);
+  useEffect(() => {
+    const save = () => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(latestConversations.current)); } catch { /* already reported by the normal save path */ }
+    };
+    window.addEventListener('pagehide', save);
+    return () => window.removeEventListener('pagehide', save);
+  }, []);
   useEffect(() => {
     const check = () => fetch('/api/health').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(d => setReady(d.ready)).catch(() => setReady(false));
     void check(); const timer = setInterval(check, 15000); return () => clearInterval(timer);
@@ -58,27 +90,30 @@ function App() {
     }
   }, [source]);
   useEffect(() => {
-    if (!source) return;
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setSource(null); };
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (deleteId) setDeleteId(null);
+      else if (rename) setRename(null);
+      else if (source) setSource(null);
+      else if (sidebar) setSidebar(false);
+    };
     document.addEventListener('keydown', close);
     return () => document.removeEventListener('keydown', close);
-  }, [source]);
+  }, [source, sidebar, rename, deleteId]);
 
   function patchConversation(id: string, fn: (c: Conversation) => Conversation) {
     setConversations(old => old.map(c => c.id === id ? fn(c) : c));
   }
   function choose(id: string) {
-    if (inFlight.current) return;
     setActiveId(id); setSource(null); setEditing(null); setQuestion(''); setSidebar(false); setFollow(true);
   }
   function createConversation() {
-    if (inFlight.current) return;
     if (conversations.length >= 30) { setNotice('Bạn đang có 30 cuộc trò chuyện. Hãy xuất và xóa một cuộc trò chuyện trước khi tạo mới.'); return; }
     const c = newConversation(); setConversations(old => [c, ...old]); setActiveId(c.id);
     setSource(null); setQuestion(''); setEditing(null); setSidebar(false); setFollow(true);
   }
   function removeConversation(id: string) {
-    if (inFlight.current) return;
+    if (running.current?.conversationId === id) running.current.controller.abort();
     const remaining = conversations.filter(c => c.id !== id);
     if (!remaining.length) remaining.push(newConversation());
     setConversations(remaining); setDeleteId(null);
@@ -95,6 +130,15 @@ function App() {
   async function ask(raw: string, replaceId?: string) {
     const text = raw.trim();
     if (!text || text.length > 10000 || inFlight.current) return;
+    const controller = new AbortController();
+    running.current = { controller, conversationId: active.id };
+    let timedOut = false;
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const watchIdle = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { timedOut = true; controller.abort(); }, 90000);
+    };
+    watchIdle();
     inFlight.current = true; setBusy(true); setClock(Date.now());
     const conversationId = active.id;
     const base = replaceId ? beforeEdit(active.turns, replaceId) : active.turns;
@@ -105,7 +149,8 @@ function App() {
     setQuestion(''); setEditing(null); setSource(null); setFollow(true);
     let completed = false;
     try {
-      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: text, history }) });
+      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: text, history }), signal: controller.signal });
+      watchIdle();
       if (!response.ok) {
         const body = await response.json();
         throw new Error(typeof body.detail === 'string' ? body.detail : 'Câu hỏi hoặc lịch sử không hợp lệ. Vui lòng rút ngắn và thử lại.');
@@ -130,15 +175,26 @@ function App() {
       };
       try {
         while (true) {
-          const { done, value } = await reader.read(); buffer += decoder.decode(value, { stream: !done });
-          const lines = buffer.split('\n'); buffer = lines.pop() || ''; lines.forEach(accept);
+          const { done, value } = await reader.read();
+          watchIdle(); buffer += decoder.decode(value, { stream: !done });
+          const lines = buffer.split('\n'); buffer = lines.pop() || '';
+          for (const line of lines) { accept(line); if (completed) break; }
+          if (completed) break;
           if (done) { if (buffer.trim()) accept(buffer); break; }
         }
-      } finally { await reader.cancel(); reader.releaseLock(); }
+      } finally {
+        void reader.cancel().catch(() => {});
+        reader.releaseLock();
+      }
       if (!completed) throw new Error('Kết nối bị gián đoạn. Bạn có thể gửi lại câu hỏi.');
     } catch (error) {
-      update(t => ({ ...t, status: '', complete: false, error: error instanceof Error ? error.message : 'Chưa xử lý được câu hỏi.', elapsed: Date.now() - turn.started }));
-    } finally { inFlight.current = false; setBusy(false); }
+      update(t => ({ ...t, status: '', complete: false, error: controller.signal.aborted ? (timedOut ? 'Kết nối không nhận được dữ liệu trong 90 giây. Bạn có thể gửi lại câu hỏi.' : 'Đã dừng lượt trả lời. Bạn có thể gửi lại khi cần.') : error instanceof Error ? error.message : 'Chưa xử lý được câu hỏi.', elapsed: Date.now() - turn.started }));
+    } finally {
+      clearTimeout(idleTimer!); controller.abort();
+      if (running.current?.controller === controller) {
+        running.current = null; inFlight.current = false; setBusy(false);
+      }
+    }
   }
   function startEdit(turn: Turn) {
     setEditing(turn.id); setQuestion(turn.question); input.current?.focus();
@@ -148,12 +204,12 @@ function App() {
     {sidebar && <button className="sidebar-shade" aria-label="Đóng danh sách hội thoại" onClick={() => setSidebar(false)}/>}
     <aside className={`sidebar ${sidebar ? 'shown' : ''}`} aria-label="Danh sách hội thoại">
       <div className="brand">⚖ <span>DRiLL<span className="brand-sub">PHÁP LUẬT VIỆT NAM</span></span></div>
-      <button className="new-chat" disabled={busy} onClick={createConversation}>＋ Cuộc trò chuyện mới</button>
+      <button className="new-chat" onClick={createConversation}>＋ Cuộc trò chuyện mới</button>
       <p className="eyebrow sidebar-label">HỘI THOẠI CỦA BẠN</p>
       <nav>{conversations.map(c => <div className={`conversation ${c.id === active.id ? 'active' : ''}`} key={c.id}>
-        <button className="conversation-title" disabled={busy} title={c.title} onClick={() => choose(c.id)}>{c.title}</button>
-        <button className="icon-button" disabled={busy} aria-label={`Đổi tên ${c.title}`} onClick={() => { setRename(c.id); setRenameText(c.title); }}>✎</button>
-        <button className="icon-button" disabled={busy} aria-label={`Xóa ${c.title}`} onClick={() => setDeleteId(c.id)}>×</button>
+        <button className="conversation-title" title={c.title} onClick={() => choose(c.id)}>{c.title}</button>
+        <button className="icon-button" aria-label={`Đổi tên ${c.title}`} onClick={() => { setRename(c.id); setRenameText(c.title); }}>✎</button>
+        <button className="icon-button" aria-label={`Xóa ${c.title}`} onClick={() => setDeleteId(c.id)}>×</button>
       </div>)}</nav>
       <div className="sidebar-footer"><p>Lịch sử lưu trên trình duyệt này.</p><p>Không chia sẻ thiết bị nếu hội thoại chứa thông tin riêng tư.</p></div>
     </aside>
@@ -165,16 +221,8 @@ function App() {
         <div className="chat-content">
           {!active.turns.length && <section className="welcome"><div className="welcome-icon">⚖</div><p className="eyebrow">TRA CỨU CÓ CĂN CỨ</p><h1>Bạn cần tìm hiểu<br/>vấn đề pháp luật nào?</h1><p>Đặt câu hỏi theo tình huống của bạn.<br/>Mỗi câu trả lời đi cùng nguồn để bạn đối chiếu.</p><div className="example-grid">{examples.map(([label, text]) => <button key={label} disabled={busy} onClick={() => void ask(text)}><span>{label} ↗</span>{text}</button>)}</div><small>Câu hỏi mẫu giúp bạn bắt đầu; phạm vi trả lời phụ thuộc bằng chứng tìm được.</small></section>}
           {active.turns.map(turn => <article className="turn" key={turn.id}>
-            <div className="question"><span>BẠN</span><p>{turn.question}</p><button className="text-button" disabled={busy} onClick={() => startEdit(turn)}>Sửa câu hỏi</button></div>
-            <div className="answer"><p className="eyebrow">DRiLL · TRẢ LỜI</p><ReactMarkdown components={{ a: ({ href, children }) => {
-              if (href?.startsWith('#source-')) {
-                let aid: string;
-                try { aid = decodeURIComponent(href.slice(8)); } catch { return <span>{children}</span>; }
-                if (turn.evidence.some(e => e.aid === aid)) return <button className="citation" onClick={() => setSource({ turnId: turn.id, aid })}>{children}</button>;
-                return <span>{children}</span>;
-              }
-              return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
-            } }}>{linkCitations(turn.answer, turn.evidence)}</ReactMarkdown>
+            <div className="question"><span>BẠN</span><p>{turn.question}</p><button className="text-button" onClick={() => startEdit(turn)}>Sửa câu hỏi</button></div>
+            <div className="answer"><p className="eyebrow">DRiLL · TRẢ LỜI</p><AnswerBody turn={turn} openSource={setSource}/>
               {turn.status && <div className="progress" role="status"><div className="steps">{[['understanding', 'Hiểu câu hỏi'], ['retrieval', 'Tìm điều luật'], ['answer', 'Soạn trả lời']].map(([key, label]) => <span className={turn.stage === key ? 'current' : ''} key={key}>{label}</span>)}</div><p><span className="spinner"/>{turn.status} <small>{Math.max(0, Math.floor((clock - turn.started) / 1000))} giây</small></p></div>}
               {turn.error && <p className="error" role="alert">{turn.error}</p>}
               {turn.warning && <p className="muted">{turn.warning}</p>}
@@ -185,13 +233,13 @@ function App() {
         </div>
       </div>
       {!follow && <button className="jump-button" onClick={() => { setFollow(true); if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; }}>↓ Về tin nhắn mới nhất</button>}
-      <div className="composer-area">{editing && <div className="editing">Đang sửa câu hỏi. Khi gửi, các lượt phía sau sẽ được bỏ để cập nhật ngữ cảnh.<button onClick={() => { setEditing(null); setQuestion(''); }}>Hủy</button></div>}
-        <form onSubmit={e => { e.preventDefault(); void ask(question, editing || undefined); }}><label className="sr-only" htmlFor="question">Câu hỏi pháp luật</label><div className="composer"><textarea ref={input} id="question" value={question} maxLength={10000} rows={2} placeholder="Nhập câu hỏi pháp luật của bạn…" onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/><button disabled={busy || !question.trim()} type="submit">{busy ? 'Đang xử lý…' : 'Gửi ↑'}</button></div></form><small>Nhớ 5 lượt gần nhất · Thông tin hỗ trợ tra cứu, không thay thế tư vấn pháp lý chuyên môn.</small>
+      <div className="composer-area">{busy && running.current?.conversationId !== active.id && <p className="muted">Đang trả lời hội thoại khác. Bạn có thể xem lịch sử hoặc bấm Dừng để gửi câu hỏi mới.</p>}{editing && <div className="editing">Đang sửa câu hỏi. Khi gửi, các lượt phía sau sẽ được bỏ để cập nhật ngữ cảnh.<button onClick={() => { setEditing(null); setQuestion(''); }}>Hủy</button></div>}
+        <form onSubmit={e => { e.preventDefault(); void ask(question, editing || undefined); }}><label className="sr-only" htmlFor="question">Câu hỏi pháp luật</label><div className="composer"><textarea ref={input} id="question" value={question} maxLength={10000} rows={2} placeholder="Nhập câu hỏi pháp luật của bạn…" onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}/><button className="stop-button" type="button" aria-label="Dừng trả lời" onClick={() => running.current?.controller.abort()} hidden={!busy}>Dừng ■</button>{!busy && <button disabled={!question.trim()} type="submit">Gửi ↑</button>}</div></form><small>Nhớ 5 lượt gần nhất · Thông tin hỗ trợ tra cứu, không thay thế tư vấn pháp lý chuyên môn.</small>
       </div>
     </main>
     {selectedTurn && <><button className="source-shade" aria-label="Đóng văn bản nguồn" onClick={() => setSource(null)}/><aside ref={sourcePanel} className="source-panel" aria-label="Văn bản nguồn"><div className="source-heading"><div><p className="eyebrow">ĐỐI CHIẾU BẰNG CHỨNG</p><h2>Văn bản nguồn</h2></div><button className="icon-button" autoFocus aria-label="Đóng nguồn" onClick={() => setSource(null)}>×</button></div><p className="muted">Nguyên văn từ corpus. Nội dung hiển thị không tự xác nhận hiệu lực hiện tại của văn bản.</p>{selectedTurn.evidence.map((e, i) => <section className={`source ${e.aid === source?.aid ? 'highlight' : ''}`} id={`source-${selectedTurn.id}-${e.aid}`} key={`${e.aid}-${i}`}><h3 className="source-title"><span>{i + 1}. aid {e.aid}</span>{e.score !== null && <span className="source-score">Điểm: {e.score.toFixed(4)}</span>}</h3>{e.law_id && <p className="law-id">{e.law_id}</p>}{e.title && <h4>{e.title}</h4>}<p className="source-text">{e.text}</p></section>)}</aside></>}
-    {rename && <div className="modal-shade"><form className="modal" role="dialog" aria-modal="true" aria-label="Đổi tên hội thoại" onSubmit={e => { e.preventDefault(); if (renameText.trim()) { patchConversation(rename, c => ({ ...c, title: renameText.trim() })); setRename(null); } }}><h2>Đổi tên hội thoại</h2><input aria-label="Tên hội thoại" autoFocus maxLength={100} value={renameText} onChange={e => setRenameText(e.target.value)}/><div><button type="button" onClick={() => setRename(null)}>Hủy</button><button type="submit" disabled={!renameText.trim()}>Lưu tên</button></div></form></div>}
-    {deleteId && <div className="modal-shade"><div className="modal" role="dialog" aria-modal="true" aria-label="Xóa hội thoại"><h2>Xóa hội thoại này?</h2><p>Hội thoại sẽ bị xóa khỏi trình duyệt. Bạn có thể xuất Markdown trước khi xóa.</p><div><button onClick={() => setDeleteId(null)}>Giữ lại</button><button className="danger" onClick={() => removeConversation(deleteId)}>Xóa hội thoại</button></div></div></div>}
+    {rename && <div className="modal-shade" onClick={e => { if (e.target === e.currentTarget) setRename(null); }}><form className="modal" role="dialog" aria-modal="true" aria-label="Đổi tên hội thoại" onSubmit={e => { e.preventDefault(); if (renameText.trim()) { patchConversation(rename, c => ({ ...c, title: renameText.trim() })); setRename(null); } }}><div className="modal-title"><h2>Đổi tên hội thoại</h2><button type="button" aria-label="Đóng đổi tên" onClick={() => setRename(null)}>×</button></div><input aria-label="Tên hội thoại" autoFocus maxLength={100} value={renameText} onChange={e => setRenameText(e.target.value)}/><div><button type="button" onClick={() => setRename(null)}>Hủy</button><button type="submit" disabled={!renameText.trim()}>Lưu tên</button></div></form></div>}
+    {deleteId && <div className="modal-shade" onClick={e => { if (e.target === e.currentTarget) setDeleteId(null); }}><div className="modal" role="dialog" aria-modal="true" aria-label="Xóa hội thoại"><div className="modal-title"><h2>Xóa hội thoại này?</h2><button type="button" aria-label="Đóng xác nhận xóa" onClick={() => setDeleteId(null)}>×</button></div><p>Hội thoại sẽ bị xóa khỏi trình duyệt. Nếu đang trả lời, lượt đó sẽ được dừng. Bạn có thể xuất Markdown trước khi xóa.</p><div><button onClick={() => setDeleteId(null)}>Giữ lại</button><button className="danger" onClick={() => removeConversation(deleteId)}>Xóa hội thoại</button></div></div></div>}
   </div>;
 }
 

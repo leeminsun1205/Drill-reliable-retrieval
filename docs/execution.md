@@ -157,8 +157,8 @@ Legal turns now have an independent clarification check after contextual query
 resolution. Essential missing details can produce a short question and full
 question choices without retrieval. Successful answers with sources request
 three distinct related questions, validated as JSON before showing clickable
-buttons. Suggestion failure keeps the answer and emits a warning. Clarification
-failure reports an error instead of inventing a fact. The helpers use the same
+buttons. Suggestion failure keeps the answer and emits a warning. Invalid clarification format/schema now returns a fixed request for more
+details, without retrieval; provider/network failure still reports an error. The helpers use the same
 configured model/endpoint with 20-second timeout/no retries; they add calls,
 latency and cost. Disable independently via DRILL_DEMO_CLARIFICATION=0 and
 DRILL_DEMO_SUGGESTIONS=0. Both default to enabled in the demo only.
@@ -236,6 +236,101 @@ for first-source opening, later-citation alignment and source-list reopening,
 including the mobile overlay; the TypeScript/Vite build also passed. These
 checks use mocked evidence, not live legal inference.
 
+### Invalid provider JSON in clarification (2026-11-10)
+
+The owner supplied a JSONDecodeError at json.loads in the clarification helper,
+before retrieval. The provider response content was not supplied; the log does
+not distinguish prose, whitespace or another invalid JSON format. The shared
+interaction parser now accepts one valid JSON object wrapped in a BOM, code
+fence or prose, while rejecting malformed, multiple/ambiguous objects and arrays.
+Raw provider output is not displayed or logged by the new parser.
+
+Clarification format/schema errors now complete the turn with a fixed request
+for more details, empty choices and no retrieval. This explicitly supersedes
+the prior format-error behavior that failed the whole turn; it does not assume
+that the user's original question was incomplete. Auth/network errors remain
+errors. Suggestions use the same parser and retain the existing nonfatal
+warning on invalid output. No model/endpoint substitution, extra API call,
+retry or experimental retrieval change was introduced. Live provider response
+quality remains unmeasured. Validation: 62 demo contract tests passed with
+mocked providers; the existing Starlette/httpx deprecation warning remains.
+
+### Intermittently locked UI controls (2026-11-10)
+
+A local HTTP/browser regression reproduced the frontend staying busy after a
+protocol done event while the HTTP response body remained open. The frontend
+now treats done as completion and cancels the reader/connection without waiting
+for EOF. A 90-second no-data watchdog covers header and body waits and unlocks
+the client on stalled connections; valid progress/data resets the timer. This
+is not a total processing-time limit and does not warm up the lazy models.
+
+Only starting another AI request is blocked during a tab's existing request.
+Browsing/new conversations, rename, delete confirmation and source controls
+remain responsive. The composer adds Dừng; deleting the running conversation
+aborts its client request. Background response updates remain bound to the
+originating conversation ID. Modal close buttons, Escape and backdrop dismissal
+are supported. Partial stopped/timeout answers are excluded from history context.
+Server inference may finish an already-running GPU step before releasing its
+lock; a newly submitted request may still get 429 during that cleanup.
+
+Streaming no longer serializes full localStorage history on every chunk:
+a 750-ms quiet-period save, completion flush and pagehide flush reduce synchronous
+main-thread work. Stable Markdown citation renderers avoid remounting buttons
+on every streamed update. No overlay-obstruction cause was established from
+the user's report; the regression specifically confirmed the request-state bug.
+
+Validation: TypeScript/Vite build, the existing desktop/mobile browser checks,
+and new real-local-HTTP interaction regressions passed. The new checks cover
+open bodies after done, stalled requests, navigation/rename/X/source close,
+manual stop, deleting a running conversation, bounded storage writes and idle
+timeout. All server data are test fixtures, with no model/provider calls.
+Research retrieval behavior and metrics remain unchanged.
+
+
+### Persistent-demo GPU placement fix (2026-11-11)
+
+The owner's first-query log shows approximately 11 GiB in the same process on
+GPU 0 before reranker loading, while PyTorch allocated/reserved are zero;
+a later DataParallel broadcast fails on that device despite GPU 1 being free.
+This confirms per-device headroom is the problem. It does not identify all
+non-PyTorch allocations. The local selected archive inspected in this task
+already has base FAISS search device=cpu and no profile override; therefore
+GPU FAISS allocation in the owner's attached runtime remains a hypothesis,
+not a confirmed explanation of all 11 GiB.
+
+The demo now explicitly pins base and all profile dense search devices to CPU,
+independently of the existing CPU encoder placement, to prevent an attached
+GPU-capable FAISS/config override from allocating indexes on CUDA. CPU FAISS
+index construction was sanity-checked locally with no GPU resource object.
+CPU RAM demand can increase when the former placement was GPU.
+
+Immediately after the first dense retrieval and before lazy reranker loading,
+the demo snapshots free VRAM and selects devices with at least 6 GiB free.
+Two eligible GPUs retain DataParallel (freer GPU first); one uses that GPU
+without DataParallel; none uses CPU. Six GiB is a conservative operational
+headroom threshold, not a measured guarantee of peak model memory. For the
+owner's supplied [3.52,14.46] GiB free snapshot the selector chooses cuda:1.
+The choice and free-memory snapshot are logged under
+`demo_reranker_placement_after_retrieval`. It is selected once per process;
+other processes can still consume VRAM later. Restart the app after OOM to
+apply a fresh placement. No already-loaded model is silently moved or replaced.
+
+Checkpoint, chunking, budgets, WRRF weights, scoring length and batch size 8
+are retained; GPU paths keep their existing fp16 inference setting, CPU uses
+its standard non-CUDA path. CPU/GPU floating-point/tie behavior is not asserted
+bitwise identical. Research configs and experimental measurements are unchanged.
+FastAPI shutdown now invokes backend.close to release index/model resources.
+CUDA OOM has a dedicated UI message. The position_ids unexpected-key warning
+was followed by successful dense encoding in the supplied log and is not the
+reported fatal exception.
+
+Validation: 78 demo contract tests passed, including the supplied free-memory
+snapshots, two/one/no-GPU placement, profile override safety, loaded-model
+relocation rejection and shutdown cleanup. A real tiny CPU FAISS index was
+constructed successfully without GPU resources. No live Kaggle/CUDA run was
+available; full-corpus CPU RAM use and live OOM recovery remain unverified.
+The existing Starlette/httpx test deprecation warning remains.
+
 ### Legacy Streamlit legal QA demo
 
 The original launcher requires the optional `streamlit` extra in addition to
@@ -252,8 +347,8 @@ It loads corpus indexes once, then runs the cross-encoder, 61-feature LightGBM,
 and Multiclass–Ridge selector per question. It verifies feature-schema and
 checkpoint/artifact compatibility and fails closed on mismatches.
 Because Streamlit keeps the backend alive between queries, its two dense query
-encoders run on CPU. The cross-encoder uses both CUDA devices with batch size 8
-when two GPUs are available (one GPU otherwise). This keeps retrieval encoder
+encoders run on CPU. The cross-encoder now chooses two GPUs, one GPU or CPU by free VRAM after
+first retrieval, with batch size 8; see the 2026-11-11 placement fix above. This keeps retrieval encoder
 weights off the GPUs and uses both T4s for reranking. The batch size is
 conservative after an earlier batch-256 OOM; startup and per-query memory
 snapshots are logged.

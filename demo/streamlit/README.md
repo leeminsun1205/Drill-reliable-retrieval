@@ -19,13 +19,12 @@ windows 448/64, reference-off WRRF10 BM25/Harrier/E5 weights
 complete-results archive from the selected Kaggle submission notebook; it does
 not retrain or retune models at startup.
 
-For the interactive process, dense query encoding runs on CPU and, when two
-GPUs are available, the cross-encoder is split across both with batch size 8
-(one GPU is used when only one is available). This keeps the dense encoders
-from competing for GPU memory while using both T4s for reranking. The batch is
-deliberately conservative after the earlier batch-256 OOM. Retrieval weights,
-candidate depth, features, and final selection policy are unchanged. Startup
-and per-query GPU memory snapshots are written to the Streamlit log.
+For the interactive process, dense encoders and FAISS indexes run on CPU.
+After first retrieval, the shared adapter chooses reranking devices by free
+VRAM (at least 6 GiB per device): two eligible GPUs, otherwise one, otherwise
+CPU. Batch size remains 8. Device choice and CUDA snapshots are logged; the
+threshold is operational headroom, not a measured peak-memory guarantee.
+See `../web/README.md` for the current runtime behavior and limitations.
 
 The app reads `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
 from the process environment and streams Chat Completions text into the chat as

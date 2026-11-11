@@ -170,7 +170,9 @@ related questions as JSON, validated for count, type, uniqueness and length (up
 to 300 characters each). They are displayed below the answer and clicking one
 submits it immediately. Suggestions are not legal facts and may need their own
 retrieval. Invalid/unavailable suggestions emit a warning and do not discard the
-answer. Clarification failures instead emit an error without guessing details.
+answer. Invalid clarification formatting now produces a fixed request for
+more detail; authentication/network failures still emit an error. Neither
+case silently proceeds to retrieval or guesses missing details.
 
 Both helpers use the existing configured OPENAI_MODEL/endpoint (no substitution),
 with 20-second timeouts and no retries. Set `DRILL_DEMO_CLARIFICATION=0` or
@@ -208,3 +210,71 @@ Verified locally: 40 Python demo tests, five frontend state tests, production
 build, and Chromium desktop/mobile interaction checks all passed with mocked
 API/model responses. The existing Starlette/httpx test deprecation warning
 remains. No live model/provider or Kaggle GPU run was performed for this update.
+
+### Provider JSON compatibility fix (2026-11-10)
+
+Interaction JSON accepts a single valid object with an optional BOM, code fence
+or prose wrapper. Empty, malformed, ambiguous/multiple objects and invalid
+schemas remain unusable; the parser never repairs JSON syntax or logs raw
+provider content. For clarification only, invalid format/schema returns a
+fixed request for details with no retrieval instead of crashing the turn.
+This is a deliberate refinement of the earlier fail-with-error behavior.
+Provider auth/network failures are not turned into requests for user details.
+Related-question format failure still retains the answer and emits a warning.
+No extra model call, retry or provider-specific JSON-mode option was added.
+
+### Responsive controls during streaming (2026-11-10)
+
+A real local HTTP regression reproduced controls remaining locked when a stream
+sent `done` but did not close the HTTP body. The frontend now completes at the
+protocol `done` event, cancels its reader/connection and releases request state
+without waiting for EOF. A 90-second no-data watchdog covers both response
+headers and streaming reads; progress/data reset that timer. It is an idle
+limit, not a total answer-duration limit.
+
+The composer exposes “Dừng” while a request runs. Browsing/creating/renaming
+conversations, opening/closing sources and opening delete confirmation remain
+available during requests. There is still at most one submitted chat request
+per browser tab. Deleting the running conversation aborts its client request;
+responses update the originating conversation by ID even after navigation.
+Stopped/timeout turns retain partial text but are excluded from model context.
+Closing a client connection cannot immediately interrupt an already-running
+server GPU operation; a new request can still receive 429 until it finishes.
+
+Modal dialogs support their close button, Escape and outside click. Citation
+renderers keep a stable React component identity during streaming. History is
+saved after a 750-ms quiet period while streaming and flushed at completion or
+pagehide, instead of serializing the entire history on each chunk.
+
+`tests/interactions.mjs` uses a local HTTP server, not an AI provider. It checks
+an open body after done, stalled responses, navigation/rename/delete/source
+controls while busy, stop, deleting a running conversation, bounded storage
+writes and the idle timeout. It is included in `npm run test:browser`. Both
+this suite and the existing desktop/mobile browser suite passed locally,
+along with the TypeScript/Vite build. No live Kaggle timing was measured.
+
+### GPU memory placement (2026-11-11)
+
+Dense encoders and all FAISS search indexes are explicitly placed on CPU. After
+first retrieval, before the reranker is loaded, devices are chosen from a free
+VRAM snapshot: at least 6 GiB free per participating device, prefer two eligible
+GPUs with the freer one as primary, otherwise one GPU, otherwise CPU. The
+threshold is operational headroom, not a measured guarantee. The model,
+checkpoint, candidate pool and batch size 8 are preserved. CPU fallback can be
+slower and CPU indexes require RAM. No live Kaggle memory/latency validation
+has been performed. Other processes allocating memory after selection can
+still cause OOM.
+
+After pulling the backend fix, stop the previous API process and rerun the
+launch cell (browser refresh alone cannot release its GPU allocations). The
+first legal query logs `demo_reranker_placement_after_retrieval` with free GiB
+and selected_device. For [3.52,14.46] GiB free it chooses cuda:1. No frontend
+rebuild is needed for this backend-only change. FastAPI invokes backend.close
+on shutdown. The local test suite is:
+
+```bash
+python -m pytest tests/test_demo_runtime.py tests/test_demo_api.py tests/test_demo_scope.py tests/test_demo_memory.py tests/test_demo_interaction.py
+```
+
+78 tests passed with mocked models/devices. A tiny real FAISS CPU index also
+passed a local allocation check; full-corpus CPU RAM usage remains unmeasured.

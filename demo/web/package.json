@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "test": "tsc src/state.ts --target ES2022 --module ESNext --moduleResolution bundler --skipLibCheck --outDir .test-build && node --test tests/state.test.mjs",
-    "test:browser": "npm run build && node tests/browser.mjs"
+    "test:browser": "npm run build && node tests/browser.mjs && node tests/interactions.mjs"
   },
   "dependencies": {
     "react": "19.0.0",

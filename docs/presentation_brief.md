@@ -1,3 +1,5 @@
+> **Demo đất đai 3–5 phút (2026-11-10):** [demo_script.md](demo_script.md) thay thế kịch bản demo 2 phút, mở rộng đủ tính năng hiện có. Mục tiêu khoảng 4 phút 30 giây khi kết hợp 1–2 lượt trực tiếp với hội thoại đã chạy trước được công bố rõ; thời gian chưa đo qua diễn tập và phụ thuộc API.
+
 > **Kịch bản demo (2026-11-10):** [demo_script.md](demo_script.md) có lời dẫn, thao tác, bản rút gọn và câu chuyển khi chờ/lỗi. Bản mở rộng khoảng 2 phút lời nói, chưa tính chờ; thay thế chứ không cộng dồn vào đoạn demo 20–30 giây của kịch bản 10 phút.
 
 > **Bản PDF kịch bản:** [slides/presentation_script.pdf](../slides/presentation_script.pdf), 5 trang A4; xuất từ kịch bản 3 người bằng XeLaTeX, phông Noto Serif/Inter. Nguồn LaTeX nằm cùng thư mục slides (được bỏ qua bởi quy tắc Git hiện tại).

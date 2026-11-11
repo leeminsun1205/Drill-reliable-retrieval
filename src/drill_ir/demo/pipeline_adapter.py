@@ -29,6 +29,9 @@ from drill_ir.retrieval import build_retriever
 from drill_ir.text_features import chunk_pair_features
 
 from drill_ir.demo.backend import Evidence
+from drill_ir.demo.runtime import (
+    RERANKER_MIN_FREE_GIB, pin_dense_search_to_cpu, place_unloaded_reranker,
+)
 
 
 ARTIFACT_GLOB = "*pool50_fixed448_refoff_epoch1_ckpt1234*complete_results.tar.gz"
@@ -321,6 +324,7 @@ class FixedWindowPool50Backend:
         self.artifact_root = WORK_ROOT / "complete_results"
         artifacts = _load_artifacts(archive_path, self.artifact_root, checkpoint)
         config = artifacts.config
+        dense_search_devices = pin_dense_search_to_cpu(config["retrieval"])
         self._artifacts = artifacts
         self._query_counter = int(time.time()) * 1_000_000
 
@@ -367,8 +371,8 @@ class FixedWindowPool50Backend:
             gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
         except ImportError:
             gpu_count = 0
-        # Streamlit keeps one process alive between turns. Keep the two dense
-        # encoders on CPU so their weights do not compete with the reranker;
+        # The demo keeps one process alive between turns. Keep both dense
+        # encoders and vector indexes on CPU, leaving VRAM for the reranker;
         # spread the cross-encoder across both T4s with a conservative batch.
         # The research runner uses the same two-GPU path for reranking, but can
         # replace its process after retrieval to release stage memory.
@@ -397,7 +401,9 @@ class FixedWindowPool50Backend:
         print({
             "demo_gpu_count": gpu_count,
             "dense_encoder_device": "cpu",
+            "dense_search_devices": dense_search_devices,
             "reranker_device": reranker_device,
+            "reranker_placement_selection": "after_first_retrieval",
             "reranker_batch_size": config["reranking"]["batch_size"],
         }, flush=True)
         if gpu_count:
@@ -430,6 +436,29 @@ class FixedWindowPool50Backend:
         self.retriever = retriever
         self.reranker = reranker
         self.reranker_config = config["reranking"]
+        self._reranker_placement_pending = True
+
+    def _place_reranker_after_retrieval(self) -> None:
+        if not self._reranker_placement_pending:
+            return
+        try:
+            import torch
+        except ImportError:
+            free_gib = []
+        else:
+            free_gib = (
+                [torch.cuda.mem_get_info(i)[0] / 2**30 for i in range(torch.cuda.device_count())]
+                if torch.cuda.is_available() else []
+            )
+        device = place_unloaded_reranker(self.reranker.scorer, free_gib)
+        self.reranker_config.update({'device': device, 'fp16': device != 'cpu'})
+        self._reranker_placement_pending = False
+        print({
+            'stage': 'demo_reranker_placement_after_retrieval',
+            'free_gib': free_gib,
+            'minimum_free_gib': RERANKER_MIN_FREE_GIB,
+            'selected_device': device,
+        }, flush=True)
 
     def search(self, question: str) -> list[Evidence]:
         text = str(question).strip()
@@ -446,6 +475,7 @@ class FixedWindowPool50Backend:
             top_k=int(self.reranker_config["candidate_pool_size"]),
             dense_depth=int(self.reranker_config["retrieved_chunk_depth"]),
         )
+        self._place_reranker_after_retrieval()
         _log_cuda_memory_if_available("before_cross_encoder")
         reranked = self.reranker.rerank_chunks([query], candidates)
         _log_cuda_memory_if_available("after_cross_encoder")
